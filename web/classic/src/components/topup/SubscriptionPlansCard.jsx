@@ -490,7 +490,7 @@ const SubscriptionPlansCard = ({
               {plans.map((p, index) => {
                 const plan = p?.plan;
                 const totalAmount = Number(plan?.total_amount || 0);
-                const { symbol, rate } = getCurrencyConfig();
+                const { rate } = getCurrencyConfig();
                 const price = Number(plan?.price_amount || 0);
                 const convertedPrice = price * rate;
                 const displayPrice = convertedPrice.toFixed(
@@ -568,7 +568,7 @@ const SubscriptionPlansCard = ({
                       <div className='py-2'>
                         <div className='flex items-baseline justify-start'>
                           <span className='text-xl font-bold text-purple-600'>
-                            {symbol}
+                            ¥
                           </span>
                           <span className='text-3xl font-bold text-purple-600'>
                             {displayPrice}
