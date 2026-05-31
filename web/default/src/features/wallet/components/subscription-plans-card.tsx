@@ -62,8 +62,6 @@ import type { PaymentMethod, TopupInfo } from '../types'
 interface SubscriptionPlansCardProps {
   topupInfo: TopupInfo | null
   onAvailabilityChange?: (available: boolean) => void
-  userQuota?: number
-  onPurchaseSuccess?: () => void | Promise<void>
 }
 
 function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {
@@ -93,8 +91,6 @@ function getBillingPreferenceLabel(
 export function SubscriptionPlansCard({
   topupInfo,
   onAvailabilityChange,
-  userQuota,
-  onPurchaseSuccess,
 }: SubscriptionPlansCardProps) {
   const { t } = useTranslation()
 
@@ -637,8 +633,6 @@ export function SubscriptionPlansCard({
         enableWaffoPancake={enableWaffoPancake}
         enableOnlineTopUp={enableOnlineTopUp}
         epayMethods={epayMethods}
-        userQuota={userQuota}
-        onPurchaseSuccess={onPurchaseSuccess}
         purchaseLimit={
           selectedPlan?.plan?.max_purchase_per_user
             ? Number(selectedPlan.plan.max_purchase_per_user)
