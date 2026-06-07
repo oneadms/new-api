@@ -461,6 +461,30 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           )
         },
         meta: { label: t('User') },
+      },
+      {
+        id: 'ip',
+        accessorFn: (row) => row.ip,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('IP')} />
+        ),
+        cell: function IpCell({ row }) {
+          const log = row.original
+          const ip = log.ip
+          if (!ip) return null
+          if (!isDisplayableLogType(log.type) && log.type !== 1) return null
+
+          return (
+            <StatusBadge
+              label={ip}
+              copyText={ip}
+              size='sm'
+              showDot={false}
+              className='border-border/60 bg-muted/30 text-foreground h-6 rounded-md border px-2 py-0.5 [font-family:var(--font-body)] font-mono text-xs'
+            />
+          )
+        },
+        meta: { label: t('IP') },
       }
     )
   }
