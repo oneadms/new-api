@@ -41,13 +41,72 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 
-const schema = z.object({
-  enabled: z.boolean(),
-  minQuota: z.coerce.number().int().min(0),
-  maxQuota: z.coerce.number().int().min(0),
-})
+const createSchema = (t: (key: string) => string) =>
+  z
+    .object({
+      enabled: z.boolean(),
+      minQuota: z.coerce.number().int().min(0),
+      maxQuota: z.coerce.number().int().min(0),
+      luckyEnabled: z.boolean(),
+      minStakeQuota: z.coerce.number().int().positive(),
+      maxStakeQuota: z.coerce.number().int().positive(),
+      minFailurePercent: z.coerce.number().min(0).max(100),
+      maxFailurePercent: z.coerce.number().min(0).max(100),
+    })
+    .superRefine((values, context) => {
+      if (values.maxQuota < values.minQuota) {
+        context.addIssue({
+          code: 'custom',
+          path: ['maxQuota'],
+          message: t('Maximum must not be lower than minimum'),
+        })
+      }
+      if (values.maxStakeQuota < values.minStakeQuota) {
+        context.addIssue({
+          code: 'custom',
+          path: ['maxStakeQuota'],
+          message: t('Maximum must not be lower than minimum'),
+        })
+      }
+      if (values.maxFailurePercent < values.minFailurePercent) {
+        context.addIssue({
+          code: 'custom',
+          path: ['maxFailurePercent'],
+          message: t('Maximum must not be lower than minimum'),
+        })
+      }
+    })
 
-type Values = z.infer<typeof schema>
+type Values = z.infer<ReturnType<typeof createSchema>>
+
+const luckyNumberFields = [
+  {
+    name: 'minStakeQuota',
+    label: 'Minimum lucky check-in stake',
+    min: 1,
+    step: 1,
+  },
+  {
+    name: 'maxStakeQuota',
+    label: 'Maximum lucky check-in stake',
+    min: 1,
+    step: 1,
+  },
+  {
+    name: 'minFailurePercent',
+    label: 'Minimum failure probability (%)',
+    min: 0,
+    max: 100,
+    step: 0.01,
+  },
+  {
+    name: 'maxFailurePercent',
+    label: 'Maximum failure probability (%)',
+    min: 0,
+    max: 100,
+    step: 0.01,
+  },
+] as const
 
 export function CheckinSettingsSection({
   defaultValues,
@@ -56,10 +115,16 @@ export function CheckinSettingsSection({
     enabled: boolean
     minQuota: number
     maxQuota: number
+    luckyEnabled: boolean
+    minStakeQuota: number
+    maxStakeQuota: number
+    minFailureBps: number
+    maxFailureBps: number
   }
 }) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const schema = createSchema(t)
 
   const form = useForm<Values>({
     resolver: zodResolver(schema) as unknown as Resolver<Values>,
@@ -67,11 +132,17 @@ export function CheckinSettingsSection({
       enabled: defaultValues.enabled,
       minQuota: defaultValues.minQuota,
       maxQuota: defaultValues.maxQuota,
+      luckyEnabled: defaultValues.luckyEnabled,
+      minStakeQuota: defaultValues.minStakeQuota,
+      maxStakeQuota: defaultValues.maxStakeQuota,
+      minFailurePercent: defaultValues.minFailureBps / 100,
+      maxFailurePercent: defaultValues.maxFailureBps / 100,
     },
   })
 
   const { isDirty, isSubmitting } = form.formState
   const enabled = form.watch('enabled')
+  const luckyEnabled = form.watch('luckyEnabled')
 
   async function onSubmit(values: Values) {
     const updates: Array<{ key: string; value: string }> = []
@@ -96,6 +167,32 @@ export function CheckinSettingsSection({
         value: String(values.maxQuota),
       })
     }
+
+    const luckyUpdates = [
+      ['lucky_checkin_setting.enabled', values.luckyEnabled],
+      ['lucky_checkin_setting.min_stake_quota', values.minStakeQuota],
+      ['lucky_checkin_setting.max_stake_quota', values.maxStakeQuota],
+      [
+        'lucky_checkin_setting.min_failure_bps',
+        Math.round(values.minFailurePercent * 100),
+      ],
+      [
+        'lucky_checkin_setting.max_failure_bps',
+        Math.round(values.maxFailurePercent * 100),
+      ],
+    ] as const
+    const luckyDefaults = [
+      defaultValues.luckyEnabled,
+      defaultValues.minStakeQuota,
+      defaultValues.maxStakeQuota,
+      defaultValues.minFailureBps,
+      defaultValues.maxFailureBps,
+    ]
+    luckyUpdates.forEach(([key, value], index) => {
+      if (value !== luckyDefaults[index]) {
+        updates.push({ key, value: String(value) })
+      }
+    })
 
     if (updates.length === 0) {
       toast.info(t('No changes to save'))
@@ -144,7 +241,7 @@ export function CheckinSettingsSection({
           />
 
           {enabled && (
-            <div className='grid gap-6 sm:grid-cols-2'>
+            <div className='grid gap-6 border-b pb-6 sm:grid-cols-2'>
               <FormField
                 control={form.control}
                 name='minQuota'
@@ -189,6 +286,63 @@ export function CheckinSettingsSection({
                 )}
               />
             </div>
+          )}
+
+          {enabled && (
+            <>
+              <FormField
+                control={form.control}
+                name='luckyEnabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Enable lucky check-in')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Allow users to risk quota for a chance to win the same amount'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={updateOption.isPending || isSubmitting}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+
+              {luckyEnabled && (
+                <div className='grid gap-6 sm:grid-cols-2'>
+                  {luckyNumberFields.map(
+                    ({ name, label, min, step, ...fieldProps }) => (
+                      <FormField
+                        key={name}
+                        control={form.control}
+                        name={name}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t(label)}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type='number'
+                                min={min}
+                                step={step}
+                                {...fieldProps}
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )
+                  )}
+                </div>
+              )}
+            </>
           )}
         </SettingsForm>
       </Form>

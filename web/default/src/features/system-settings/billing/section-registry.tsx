@@ -195,6 +195,11 @@ const BILLING_SECTIONS = [
           enabled: settings['checkin_setting.enabled'],
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
+          luckyEnabled: settings['lucky_checkin_setting.enabled'],
+          minStakeQuota: settings['lucky_checkin_setting.min_stake_quota'],
+          maxStakeQuota: settings['lucky_checkin_setting.max_stake_quota'],
+          minFailureBps: settings['lucky_checkin_setting.min_failure_bps'],
+          maxFailureBps: settings['lucky_checkin_setting.max_failure_bps'],
         }}
       />
     ),

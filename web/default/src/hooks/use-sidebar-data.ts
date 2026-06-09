@@ -22,6 +22,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  Gamepad2,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -104,6 +105,11 @@ export function useSidebarData(): SidebarData {
             title: t('Wallet'),
             url: '/wallet',
             icon: Wallet,
+          },
+          {
+            title: t('Battle Arena'),
+            url: '/battle',
+            icon: Gamepad2,
           },
           {
             title: t('Profile'),

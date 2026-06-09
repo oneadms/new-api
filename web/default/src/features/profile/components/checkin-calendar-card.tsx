@@ -24,6 +24,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Dices,
   Sparkles,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -35,9 +36,12 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Tooltip,
@@ -70,6 +74,9 @@ export function CheckinCalendarCard({
   const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
   const [initialLoaded, setInitialLoaded] = useState(false)
   const [collapsed, setCollapsed] = useState<boolean>(false)
+  const [luckyDialogVisible, setLuckyDialogVisible] = useState(false)
+  const [luckyStake, setLuckyStake] = useState<number | ''>('')
+  const [pendingStake, setPendingStake] = useState<number | undefined>()
 
   const currentMonthStr = useMemo(() => {
     const y = currentMonth.getFullYear()
@@ -121,6 +128,30 @@ export function CheckinCalendarCard({
 
   const checkedToday = checkinData?.stats?.checked_in_today === true
   const todayAward = checkinRecordsMap[todayString]
+  const lucky = checkinData?.lucky
+
+  const luckyFailurePercent = useMemo(() => {
+    if (!lucky || luckyStake === '') return null
+    if (lucky.max_stake_quota === lucky.min_stake_quota) {
+      return lucky.min_failure_bps / 100
+    }
+    const boundedStake = Math.min(
+      lucky.max_stake_quota,
+      Math.max(lucky.min_stake_quota, luckyStake)
+    )
+    const bps =
+      lucky.min_failure_bps +
+      ((boundedStake - lucky.min_stake_quota) *
+        (lucky.max_failure_bps - lucky.min_failure_bps)) /
+        (lucky.max_stake_quota - lucky.min_stake_quota)
+    return bps / 100
+  }, [lucky, luckyStake])
+
+  const formatDelta = useCallback(
+    (quota: number) =>
+      `${quota >= 0 ? '+' : '-'}${formatQuotaWithCurrency(Math.abs(quota))}`,
+    []
+  )
 
   useEffect(() => {
     if (initialLoaded) return
@@ -140,22 +171,30 @@ export function CheckinCalendarCard({
   )
 
   const doCheckin = useCallback(
-    async (token?: string) => {
+    async (token?: string, stakeQuota?: number) => {
       setCheckinLoading(true)
       try {
-        const res = await performCheckin(token)
+        const res = await performCheckin(token, stakeQuota)
         if (res.success && res.data) {
-          toast.success(
-            `${t('Check-in successful! Received')} ${formatQuotaWithCurrency(res.data.quota_awarded)}`
-          )
+          const resultMessage = res.data.lucky
+            ? res.data.won
+              ? t('Lucky check-in won')
+              : t('Lucky check-in lost')
+            : t('Check-in successful! Received')
+          const notify =
+            res.data.lucky && !res.data.won ? toast.error : toast.success
+          notify(`${resultMessage} ${formatDelta(res.data.quota_awarded)}`)
           refetch()
           setTurnstileModalVisible(false)
+          setLuckyDialogVisible(false)
+          setPendingStake(undefined)
         } else {
           if (!token && shouldTriggerTurnstile(res.message)) {
             if (!turnstileSiteKey) {
               toast.error(t('Turnstile is enabled but site key is empty.'))
               return
             }
+            setPendingStake(stakeQuota)
             setTurnstileModalVisible(true)
             return
           }
@@ -170,7 +209,7 @@ export function CheckinCalendarCard({
         setCheckinLoading(false)
       }
     },
-    [refetch, shouldTriggerTurnstile, t, turnstileSiteKey]
+    [formatDelta, refetch, shouldTriggerTurnstile, t, turnstileSiteKey]
   )
 
   const handlePrevMonth = () => {
@@ -266,13 +305,74 @@ export function CheckinCalendarCard({
               key={turnstileWidgetKey}
               siteKey={turnstileSiteKey}
               onVerify={(token) => {
-                doCheckin(token)
+                doCheckin(token, pendingStake)
               }}
               onExpire={() => {
                 setTurnstileWidgetKey((v) => v + 1)
               }}
             />
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={luckyDialogVisible} onOpenChange={setLuckyDialogVisible}>
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>{t('Lucky check-in')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'Win the amount you stake, or lose it. This still uses today’s check-in.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className='space-y-3'>
+            <Input
+              type='number'
+              min={lucky?.min_stake_quota}
+              max={lucky?.max_stake_quota}
+              value={luckyStake}
+              onChange={(event) =>
+                setLuckyStake(
+                  event.target.value === '' ? '' : Number(event.target.value)
+                )
+              }
+              placeholder={
+                lucky
+                  ? `${lucky.min_stake_quota} - ${lucky.max_stake_quota}`
+                  : undefined
+              }
+            />
+            {luckyFailurePercent !== null && (
+              <p className='text-muted-foreground text-sm'>
+                {t('Failure probability')}: {luckyFailurePercent.toFixed(2)}%
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setLuckyDialogVisible(false)}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              onClick={() =>
+                luckyStake !== '' && doCheckin(undefined, luckyStake)
+              }
+              disabled={
+                checkinLoading ||
+                luckyStake === '' ||
+                !lucky ||
+                luckyStake < lucky.min_stake_quota ||
+                luckyStake > lucky.max_stake_quota
+              }
+            >
+              <Dices />
+              {t('Try my luck')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -313,23 +413,41 @@ export function CheckinCalendarCard({
                 </div>
                 <p className='text-muted-foreground mt-1 line-clamp-2 text-xs sm:text-sm'>
                   {checkedToday && todayAward !== undefined
-                    ? `${t('Today')} +${formatQuotaWithCurrency(todayAward)}`
+                    ? `${t('Today')} ${formatDelta(todayAward)}`
                     : t('Check in daily to receive random quota rewards')}
                 </p>
               </div>
             </Button>
-            <Button
-              onClick={() => doCheckin()}
-              disabled={checkinLoading || checkedToday}
-              size='sm'
-              className='w-full shrink-0 sm:w-auto'
-            >
-              {checkinLoading
-                ? t('Loading...')
-                : checkedToday
-                  ? t('Checked in')
-                  : t('Check in now')}
-            </Button>
+            <div className='flex w-full shrink-0 gap-2 sm:w-auto'>
+              {lucky?.enabled && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='flex-1 sm:flex-none'
+                  disabled={checkinLoading || checkedToday}
+                  onClick={() => {
+                    setLuckyStake(lucky.min_stake_quota)
+                    setLuckyDialogVisible(true)
+                  }}
+                >
+                  <Dices />
+                  {t('Try my luck')}
+                </Button>
+              )}
+              <Button
+                onClick={() => doCheckin()}
+                disabled={checkinLoading || checkedToday}
+                size='sm'
+                className='flex-1 sm:flex-none'
+              >
+                {checkinLoading
+                  ? t('Loading...')
+                  : checkedToday
+                    ? t('Checked in')
+                    : t('Check in now')}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -450,7 +568,7 @@ export function CheckinCalendarCard({
                                 {t('Checked in')}
                               </div>
                               <div className='text-muted-foreground mt-0.5'>
-                                +{formatQuotaWithCurrency(quotaAwarded)}
+                                {formatDelta(quotaAwarded)}
                               </div>
                             </div>
                           </TooltipContent>

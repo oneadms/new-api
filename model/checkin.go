@@ -1,13 +1,22 @@
 package model
 
 import (
+	crand "crypto/rand"
 	"errors"
+	"math/big"
 	"math/rand"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrCheckinDisabled          = errors.New("签到功能未启用")
+	ErrAlreadyCheckedInToday    = errors.New("今日已签到")
+	ErrLuckyCheckinDisabled     = errors.New("运气签到功能未启用")
+	ErrInsufficientCheckinQuota = errors.New("余额不足，无法进行运气签到")
 )
 
 // Checkin 签到记录
@@ -52,10 +61,10 @@ func HasCheckedInToday(userId int) (bool, error) {
 // UserCheckin 执行用户签到
 // MySQL 和 PostgreSQL 使用事务保证原子性
 // SQLite 不支持嵌套事务，使用顺序操作 + 手动回滚
-func UserCheckin(userId int) (*Checkin, error) {
+func UserCheckin(userId int, stakeQuota *int) (*Checkin, error) {
 	setting := operation_setting.GetCheckinSetting()
 	if !setting.Enabled {
-		return nil, errors.New("签到功能未启用")
+		return nil, ErrCheckinDisabled
 	}
 
 	// 检查今天是否已签到
@@ -64,13 +73,13 @@ func UserCheckin(userId int) (*Checkin, error) {
 		return nil, err
 	}
 	if hasChecked {
-		return nil, errors.New("今日已签到")
+		return nil, ErrAlreadyCheckedInToday
 	}
 
 	// 计算随机额度奖励
-	quotaAwarded := setting.MinQuota
-	if setting.MaxQuota > setting.MinQuota {
-		quotaAwarded = setting.MinQuota + rand.Intn(setting.MaxQuota-setting.MinQuota+1)
+	quotaAwarded, err := calculateCheckinQuota(setting.MinQuota, setting.MaxQuota, stakeQuota)
+	if err != nil {
+		return nil, err
 	}
 
 	today := time.Now().Format("2006-01-02")
@@ -80,19 +89,50 @@ func UserCheckin(userId int) (*Checkin, error) {
 		QuotaAwarded: quotaAwarded,
 		CreatedAt:    time.Now().Unix(),
 	}
+	minimumRequiredQuota := 0
+	if stakeQuota != nil {
+		minimumRequiredQuota = *stakeQuota
+	}
 
 	// 根据数据库类型选择不同的策略
 	if common.UsingSQLite {
 		// SQLite 不支持嵌套事务，使用顺序操作 + 手动回滚
-		return userCheckinWithoutTransaction(checkin, userId, quotaAwarded)
+		return userCheckinWithoutTransaction(checkin, userId, quotaAwarded, minimumRequiredQuota)
 	}
 
 	// MySQL 和 PostgreSQL 支持事务，使用事务保证原子性
-	return userCheckinWithTransaction(checkin, userId, quotaAwarded)
+	return userCheckinWithTransaction(checkin, userId, quotaAwarded, minimumRequiredQuota)
+}
+
+func calculateCheckinQuota(minQuota, maxQuota int, stakeQuota *int) (int, error) {
+	if stakeQuota == nil {
+		quotaAwarded := minQuota
+		if maxQuota > minQuota {
+			quotaAwarded = minQuota + rand.Intn(maxQuota-minQuota+1)
+		}
+		return quotaAwarded, nil
+	}
+
+	luckySetting := operation_setting.GetLuckyCheckinSetting()
+	if !luckySetting.Enabled {
+		return 0, ErrLuckyCheckinDisabled
+	}
+	failureBps, err := luckySetting.FailureBps(*stakeQuota)
+	if err != nil {
+		return 0, err
+	}
+	roll, err := crand.Int(crand.Reader, big.NewInt(operation_setting.FailureProbabilityBps))
+	if err != nil {
+		return 0, errors.New("运气签到随机数生成失败")
+	}
+	if roll.Int64() < int64(failureBps) {
+		return -*stakeQuota, nil
+	}
+	return *stakeQuota, nil
 }
 
 // userCheckinWithTransaction 使用事务执行签到（适用于 MySQL 和 PostgreSQL）
-func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) (*Checkin, error) {
+func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int, minimumRequiredQuota int) (*Checkin, error) {
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		// 步骤1: 创建签到记录
 		// 数据库有唯一约束 (user_id, checkin_date)，可以防止并发重复签到
@@ -100,10 +140,17 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 			return errors.New("签到失败，请稍后重试")
 		}
 
-		// 步骤2: 在事务中增加用户额度
-		if err := tx.Model(&User{}).Where("id = ?", userId).
-			Update("quota", gorm.Expr("quota + ?", quotaAwarded)).Error; err != nil {
+		// 步骤2: 在事务中更新用户额度，运气签到必须先拥有完整押注额度
+		query := tx.Model(&User{}).Where("id = ?", userId)
+		if minimumRequiredQuota > 0 {
+			query = query.Where("quota >= ?", minimumRequiredQuota)
+		}
+		result := query.Update("quota", gorm.Expr("quota + ?", quotaAwarded))
+		if result.Error != nil {
 			return errors.New("签到失败：更新额度出错")
+		}
+		if minimumRequiredQuota > 0 && result.RowsAffected == 0 {
+			return ErrInsufficientCheckinQuota
 		}
 
 		return nil
@@ -122,20 +169,30 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 }
 
 // userCheckinWithoutTransaction 不使用事务执行签到（适用于 SQLite）
-func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded int) (*Checkin, error) {
+func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded int, minimumRequiredQuota int) (*Checkin, error) {
 	// 步骤1: 创建签到记录
 	// 数据库有唯一约束 (user_id, checkin_date)，可以防止并发重复签到
 	if err := DB.Create(checkin).Error; err != nil {
 		return nil, errors.New("签到失败，请稍后重试")
 	}
 
-	// 步骤2: 增加用户额度
-	// 使用 db=true 强制直接写入数据库，不使用批量更新
-	if err := IncreaseUserQuota(userId, quotaAwarded, true); err != nil {
+	// 步骤2: 更新用户额度，运气签到必须先拥有完整押注额度
+	query := DB.Model(&User{}).Where("id = ?", userId)
+	if minimumRequiredQuota > 0 {
+		query = query.Where("quota >= ?", minimumRequiredQuota)
+	}
+	result := query.Update("quota", gorm.Expr("quota + ?", quotaAwarded))
+	if result.Error != nil || (minimumRequiredQuota > 0 && result.RowsAffected == 0) {
 		// 如果增加额度失败，需要回滚签到记录
 		DB.Delete(checkin)
+		if result.Error == nil {
+			return nil, ErrInsufficientCheckinQuota
+		}
 		return nil, errors.New("签到失败：更新额度出错")
 	}
+	go func() {
+		_ = cacheIncrUserQuota(userId, int64(quotaAwarded))
+	}()
 
 	return checkin, nil
 }

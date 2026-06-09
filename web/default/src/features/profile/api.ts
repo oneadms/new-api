@@ -176,11 +176,15 @@ export async function getCheckinStatus(
  * Perform daily checkin
  */
 export async function performCheckin(
-  turnstileToken?: string
+  turnstileToken?: string,
+  stakeQuota?: number
 ): Promise<ApiResponse<CheckinResponse>> {
   const url = turnstileToken
     ? `/api/user/checkin?turnstile=${encodeURIComponent(turnstileToken)}`
     : '/api/user/checkin'
-  const res = await api.post(url)
+  const res = await api.post(
+    url,
+    stakeQuota === undefined ? undefined : { stake_quota: stakeQuota }
+  )
   return res.data
 }

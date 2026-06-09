@@ -221,6 +221,13 @@ export interface CheckinStats {
 export interface CheckinStatusResponse {
   /** Whether check-in feature is enabled */
   enabled: boolean
+  lucky: {
+    enabled: boolean
+    min_stake_quota: number
+    max_stake_quota: number
+    min_failure_bps: number
+    max_failure_bps: number
+  }
   /** Check-in statistics */
   stats: CheckinStats
 }
@@ -231,4 +238,6 @@ export interface CheckinStatusResponse {
 export interface CheckinResponse {
   /** Quota awarded for this check-in */
   quota_awarded: number
+  lucky: boolean
+  won: boolean
 }

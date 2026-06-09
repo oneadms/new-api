@@ -25,6 +25,7 @@ import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { BattleSettingsSection } from './battle-settings-section'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -90,6 +91,28 @@ const OPERATIONS_SECTIONS = [
           WorkerValidKey: settings.WorkerValidKey,
           WorkerAllowHttpImageRequestEnabled:
             settings.WorkerAllowHttpImageRequestEnabled,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'battle',
+    titleKey: 'Battle Arena',
+    build: (settings: OperationsSettings) => (
+      <BattleSettingsSection
+        defaultValues={{
+          enabled: settings['battle_setting.enabled'],
+          minDropQuota: settings['battle_setting.min_drop_quota'],
+          maxDropQuota: settings['battle_setting.max_drop_quota'],
+          maxRoundLossQuota: settings['battle_setting.max_round_loss_quota'],
+          maxRoundGainQuota: settings['battle_setting.max_round_gain_quota'],
+          maxDailyLossQuota: settings['battle_setting.max_daily_loss_quota'],
+          maxDailyGainQuota: settings['battle_setting.max_daily_gain_quota'],
+          maxPlayersPerRoom: settings['battle_setting.max_players_per_room'],
+          tickRate: settings['battle_setting.tick_rate'],
+          bulletDamage: settings['battle_setting.bullet_damage'],
+          respawnSeconds: settings['battle_setting.respawn_seconds'],
+          dropExpireSeconds: settings['battle_setting.drop_expire_seconds'],
         }}
       />
     ),

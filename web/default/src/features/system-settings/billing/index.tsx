@@ -105,6 +105,11 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
+  'lucky_checkin_setting.enabled': false,
+  'lucky_checkin_setting.min_stake_quota': 1000,
+  'lucky_checkin_setting.max_stake_quota': 10000,
+  'lucky_checkin_setting.min_failure_bps': 2500,
+  'lucky_checkin_setting.max_failure_bps': 7500,
 }
 
 export function BillingSettings() {

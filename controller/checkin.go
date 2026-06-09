@@ -12,9 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type CheckinRequest struct {
+	StakeQuota *int `json:"stake_quota,omitempty"`
+}
+
 // GetCheckinStatus 获取用户签到状态和历史记录
 func GetCheckinStatus(c *gin.Context) {
 	setting := operation_setting.GetCheckinSetting()
+	luckySetting := operation_setting.GetLuckyCheckinSetting()
 	if !setting.Enabled {
 		common.ApiErrorMsg(c, "签到功能未启用")
 		return
@@ -38,7 +43,14 @@ func GetCheckinStatus(c *gin.Context) {
 			"enabled":   setting.Enabled,
 			"min_quota": setting.MinQuota,
 			"max_quota": setting.MaxQuota,
-			"stats":     stats,
+			"lucky": gin.H{
+				"enabled":         luckySetting.Enabled,
+				"min_stake_quota": luckySetting.MinStakeQuota,
+				"max_stake_quota": luckySetting.MaxStakeQuota,
+				"min_failure_bps": luckySetting.MinFailureBps,
+				"max_failure_bps": luckySetting.MaxFailureBps,
+			},
+			"stats": stats,
 		},
 	})
 }
@@ -52,8 +64,15 @@ func DoCheckin(c *gin.Context) {
 	}
 
 	userId := c.GetInt("id")
+	var request CheckinRequest
+	if c.Request.ContentLength != 0 {
+		if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+			common.ApiErrorMsg(c, "无效的签到参数")
+			return
+		}
+	}
 
-	checkin, err := model.UserCheckin(userId)
+	checkin, err := model.UserCheckin(userId, request.StakeQuota)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -61,12 +80,20 @@ func DoCheckin(c *gin.Context) {
 		})
 		return
 	}
-	model.RecordLog(userId, model.LogTypeSystem, fmt.Sprintf("用户签到，获得额度 %s", logger.LogQuota(checkin.QuotaAwarded)))
+	action := "用户签到，获得额度"
+	if request.StakeQuota != nil {
+		action = "用户运气签到，额度变化"
+	}
+	model.RecordLog(userId, model.LogTypeSystem, fmt.Sprintf("%s %s", action, logger.LogQuota(checkin.QuotaAwarded)))
+	won := checkin.QuotaAwarded >= 0
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "签到成功",
 		"data": gin.H{
 			"quota_awarded": checkin.QuotaAwarded,
-			"checkin_date":  checkin.CheckinDate},
+			"checkin_date":  checkin.CheckinDate,
+			"lucky":         request.StakeQuota != nil,
+			"won":           won,
+		},
 	})
 }

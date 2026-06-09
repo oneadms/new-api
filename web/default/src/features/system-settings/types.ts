@@ -266,6 +266,11 @@ export type BillingSettings = {
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
+  'lucky_checkin_setting.enabled': boolean
+  'lucky_checkin_setting.min_stake_quota': number
+  'lucky_checkin_setting.max_stake_quota': number
+  'lucky_checkin_setting.min_failure_bps': number
+  'lucky_checkin_setting.max_failure_bps': number
 }
 
 export type OperationsSettings = {
@@ -305,6 +310,18 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'battle_setting.enabled': boolean
+  'battle_setting.min_drop_quota': number
+  'battle_setting.max_drop_quota': number
+  'battle_setting.max_round_loss_quota': number
+  'battle_setting.max_round_gain_quota': number
+  'battle_setting.max_daily_loss_quota': number
+  'battle_setting.max_daily_gain_quota': number
+  'battle_setting.max_players_per_room': number
+  'battle_setting.tick_rate': number
+  'battle_setting.bullet_damage': number
+  'battle_setting.respawn_seconds': number
+  'battle_setting.drop_expire_seconds': number
 }
 
 export type SecuritySettings = {

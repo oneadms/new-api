@@ -58,8 +58,14 @@ jobs:
             VERSION_TAG="${GITHUB_REF#refs/tags/}"
             PUBLISH_LATEST=false
           else
-            VERSION_TAG="main-$(git rev-parse --short HEAD)"
-            PUBLISH_LATEST=true
+            REF_NAME="${GITHUB_REF_NAME:-main}"
+            SAFE_REF_NAME="$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
+            VERSION_TAG="${SAFE_REF_NAME:-main}-$(git rev-parse --short HEAD)"
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              PUBLISH_LATEST=true
+            else
+              PUBLISH_LATEST=false
+            fi
           fi
 
           echo "$VERSION_TAG" > VERSION
@@ -87,7 +93,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ env.GHCR_REPOSITORY }}
+          images: ghcr.io/${{ github.repository }}
 
       - name: Prepare image tags
         id: tags

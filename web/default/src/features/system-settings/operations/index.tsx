@@ -63,6 +63,18 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.flush_interval': 5,
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
+  'battle_setting.enabled': false,
+  'battle_setting.min_drop_quota': 100,
+  'battle_setting.max_drop_quota': 1000,
+  'battle_setting.max_round_loss_quota': 5000,
+  'battle_setting.max_round_gain_quota': 5000,
+  'battle_setting.max_daily_loss_quota': 20000,
+  'battle_setting.max_daily_gain_quota': 20000,
+  'battle_setting.max_players_per_room': 8,
+  'battle_setting.tick_rate': 30,
+  'battle_setting.bullet_damage': 34,
+  'battle_setting.respawn_seconds': 3,
+  'battle_setting.drop_expire_seconds': 18,
 }
 
 export function OperationsSettings() {
