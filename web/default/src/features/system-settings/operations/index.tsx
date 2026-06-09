@@ -64,6 +64,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
   'battle_setting.enabled': false,
+  'battle_setting.hide_room_input': true,
   'battle_setting.min_drop_quota': 100,
   'battle_setting.max_drop_quota': 1000,
   'battle_setting.max_round_loss_quota': 5000,

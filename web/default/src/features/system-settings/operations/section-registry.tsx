@@ -102,6 +102,7 @@ const OPERATIONS_SECTIONS = [
       <BattleSettingsSection
         defaultValues={{
           enabled: settings['battle_setting.enabled'],
+          hideRoomInput: settings['battle_setting.hide_room_input'],
           minDropQuota: settings['battle_setting.min_drop_quota'],
           maxDropQuota: settings['battle_setting.max_drop_quota'],
           maxRoundLossQuota: settings['battle_setting.max_round_loss_quota'],

@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export type BattleStatus = {
   enabled: boolean
+  hide_room_input: boolean
   quota: number
   daily_lost: number
   daily_won: number

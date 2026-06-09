@@ -51,6 +51,7 @@ func GetBattleStatus(c *gin.Context) {
 		"message": "",
 		"data": gin.H{
 			"enabled":             setting.Enabled,
+			"hide_room_input":     setting.HideRoomInput,
 			"quota":               quota,
 			"daily_lost":          usage.Lost,
 			"daily_won":           usage.Won,

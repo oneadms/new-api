@@ -4,6 +4,7 @@ import "github.com/QuantumNous/new-api/setting/config"
 
 type BattleSetting struct {
 	Enabled            bool `json:"enabled"`
+	HideRoomInput      bool `json:"hide_room_input"`
 	MinDropQuota       int  `json:"min_drop_quota"`
 	MaxDropQuota       int  `json:"max_drop_quota"`
 	MaxRoundLossQuota  int  `json:"max_round_loss_quota"`
@@ -26,6 +27,7 @@ type BattleSetting struct {
 
 var battleSetting = BattleSetting{
 	Enabled:            false,
+	HideRoomInput:      true,
 	MinDropQuota:       100,
 	MaxDropQuota:       1000,
 	MaxRoundLossQuota:  5000,

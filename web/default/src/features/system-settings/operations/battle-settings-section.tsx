@@ -47,6 +47,7 @@ const createSchema = (t: TFunction) =>
   z
     .object({
       enabled: z.boolean(),
+      hideRoomInput: z.boolean(),
       minDropQuota: z.coerce.number().int().min(0),
       maxDropQuota: z.coerce.number().int().min(0),
       maxRoundLossQuota: z.coerce.number().int().min(0),
@@ -65,7 +66,7 @@ const createSchema = (t: TFunction) =>
     })
 
 type Values = z.infer<ReturnType<typeof createSchema>>
-type NumericFieldName = Exclude<keyof Values, 'enabled'>
+type NumericFieldName = Exclude<keyof Values, 'enabled' | 'hideRoomInput'>
 
 type BattleSettingsSectionProps = {
   defaultValues: Values
@@ -73,6 +74,7 @@ type BattleSettingsSectionProps = {
 
 const optionKeys: Record<keyof Values, string> = {
   enabled: 'battle_setting.enabled',
+  hideRoomInput: 'battle_setting.hide_room_input',
   minDropQuota: 'battle_setting.min_drop_quota',
   maxDropQuota: 'battle_setting.max_drop_quota',
   maxRoundLossQuota: 'battle_setting.max_round_loss_quota',
@@ -237,6 +239,32 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
               </SettingsSwitchItem>
             )}
           />
+
+          {enabled && (
+            <FormField
+              control={form.control}
+              name='hideRoomInput'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Hide room input')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Send all players to the default lobby and hide the room selector.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={updateOption.isPending || isSubmitting}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+          )}
 
           {enabled && (
             <div className='grid gap-6 sm:grid-cols-2 xl:grid-cols-3'>

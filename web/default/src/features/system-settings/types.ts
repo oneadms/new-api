@@ -311,6 +311,7 @@ export type OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
   'battle_setting.enabled': boolean
+  'battle_setting.hide_room_input': boolean
   'battle_setting.min_drop_quota': number
   'battle_setting.max_drop_quota': number
   'battle_setting.max_round_loss_quota': number

@@ -39,6 +39,7 @@ import type {
 } from './types'
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'closed'
+const defaultRoomId = 'lobby'
 
 function createEmptyInput(): BattleInput {
   return {
@@ -196,7 +197,7 @@ export function Battle() {
   const wsRef = useRef<WebSocket | null>(null)
   const inputRef = useRef<BattleInput>(createEmptyInput())
   const snapshotRef = useRef<BattleSnapshot | null>(null)
-  const [roomId, setRoomId] = useState('lobby')
+  const [roomId, setRoomId] = useState('')
   const [connectionState, setConnectionState] =
     useState<ConnectionState>('idle')
   const [snapshot, setSnapshot] = useState<BattleSnapshot | null>(null)
@@ -229,11 +230,14 @@ export function Battle() {
   }, [])
 
   const connect = useCallback(() => {
-    if (!battleStatus.data?.enabled) return
+    const statusData = battleStatus.data
+    if (!statusData?.enabled) return
     wsRef.current?.close()
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const normalizedRoom = roomId.trim() || 'lobby'
+    const normalizedRoom = statusData.hide_room_input
+      ? defaultRoomId
+      : roomId.trim() || defaultRoomId
     const ws = new WebSocket(
       `${protocol}//${window.location.host}/api/battle/ws?room=${encodeURIComponent(
         normalizedRoom
@@ -280,7 +284,7 @@ export function Battle() {
         current === 'connected' || current === 'connecting' ? 'closed' : current
       )
     }
-  }, [battleStatus.data?.enabled, roomId, t])
+  }, [battleStatus.data, roomId, t])
 
   useEffect(() => {
     return () => {
@@ -386,6 +390,7 @@ export function Battle() {
   const status = battleStatus.data
   const events = snapshot?.events ?? []
   const connected = connectionState === 'connected'
+  const hideRoomInput = Boolean(status?.hide_room_input)
   const connectionLabel = {
     idle: t('Idle'),
     connecting: t('Connecting'),
@@ -417,13 +422,20 @@ export function Battle() {
         </div>
 
         <div className='flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center'>
-          <Input
-            value={roomId}
-            onChange={(event) => setRoomId(event.target.value)}
-            disabled={connected || connectionState === 'connecting'}
-            className='h-9 w-full sm:w-44'
-            aria-label={t('Room')}
-          />
+          {hideRoomInput ? (
+            <div className='border-input bg-muted/40 flex h-9 items-center rounded-md border px-3 text-sm font-medium whitespace-nowrap'>
+              {t('Lobby')}
+            </div>
+          ) : (
+            <Input
+              value={roomId}
+              onChange={(event) => setRoomId(event.target.value)}
+              disabled={connected || connectionState === 'connecting'}
+              placeholder={t('Lobby')}
+              className='h-9 w-full sm:w-44'
+              aria-label={t('Room')}
+            />
+          )}
           <Button
             onClick={connected ? disconnect : connect}
             disabled={
