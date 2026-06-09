@@ -29,6 +29,8 @@ import { Input } from '@/components/ui/input'
 import { getBattleStatus } from './api'
 import { drawBattleCanvas, getCanvasMetrics, screenToWorld } from './lib/canvas'
 import type {
+  BattleBullet,
+  BattleDrop,
   BattleEvent,
   BattleInput,
   BattlePlayer,
@@ -48,6 +50,144 @@ function createEmptyInput(): BattleInput {
     aim_x: 1,
     aim_y: 0,
   }
+}
+
+const battleEventTypes = new Set<BattleEvent['type']>([
+  'hit',
+  'knockout',
+  'quota_pickup',
+  'quota_failed',
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function stringValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  const next = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(next) ? next : fallback
+}
+
+function positiveNumber(value: unknown, fallback: number): number {
+  const next = finiteNumber(value, fallback)
+  return next > 0 ? next : fallback
+}
+
+function optionalPositiveNumber(value: unknown): number | undefined {
+  const next = finiteNumber(value, 0)
+  return next > 0 ? next : undefined
+}
+
+function normalizeArray<T>(
+  value: unknown,
+  normalize: (item: unknown) => T | null
+): T[] {
+  if (!Array.isArray(value)) return []
+  return value.reduce<T[]>((items, item) => {
+    const next = normalize(item)
+    if (next) items.push(next)
+    return items
+  }, [])
+}
+
+function normalizePlayer(value: unknown): BattlePlayer | null {
+  if (!isRecord(value)) return null
+  const userId = finiteNumber(value.user_id, 0)
+  if (userId <= 0) return null
+  return {
+    user_id: userId,
+    username: stringValue(value.username, `#${userId}`),
+    x: finiteNumber(value.x, 0),
+    y: finiteNumber(value.y, 0),
+    hp: finiteNumber(value.hp, 0),
+    alive: Boolean(value.alive),
+    score: finiteNumber(value.score, 0),
+    deaths: finiteNumber(value.deaths, 0),
+    round_loss: finiteNumber(value.round_loss, 0),
+    round_gain: finiteNumber(value.round_gain, 0),
+  }
+}
+
+function normalizeBullet(value: unknown): BattleBullet | null {
+  if (!isRecord(value)) return null
+  return {
+    id: stringValue(value.id, ''),
+    owner_id: finiteNumber(value.owner_id, 0),
+    x: finiteNumber(value.x, 0),
+    y: finiteNumber(value.y, 0),
+  }
+}
+
+function normalizeDrop(value: unknown): BattleDrop | null {
+  if (!isRecord(value)) return null
+  return {
+    id: stringValue(value.id, ''),
+    from_user_id: finiteNumber(value.from_user_id, 0),
+    quota: finiteNumber(value.quota, 0),
+    x: finiteNumber(value.x, 0),
+    y: finiteNumber(value.y, 0),
+  }
+}
+
+function isBattleEventType(value: string): value is BattleEvent['type'] {
+  return battleEventTypes.has(value as BattleEvent['type'])
+}
+
+function normalizeEvent(value: unknown): BattleEvent | null {
+  if (!isRecord(value)) return null
+  const type = stringValue(value.type)
+  if (!isBattleEventType(type)) return null
+  const createdAt = finiteNumber(value.created_at, Date.now())
+  return {
+    id: stringValue(value.id, `${type}-${createdAt}`),
+    type,
+    user_id: optionalPositiveNumber(value.user_id),
+    target_user_id: optionalPositiveNumber(value.target_user_id),
+    quota: optionalPositiveNumber(value.quota),
+    created_at: createdAt,
+  }
+}
+
+function normalizeSnapshot(value: Record<string, unknown>): BattleSnapshot {
+  return {
+    type: 'snapshot',
+    room_id: stringValue(value.room_id, 'lobby') || 'lobby',
+    me: finiteNumber(value.me, 0),
+    server_time: finiteNumber(value.server_time, Date.now()),
+    map_width: positiveNumber(value.map_width, 1600),
+    map_height: positiveNumber(value.map_height, 900),
+    players: normalizeArray(value.players, normalizePlayer),
+    bullets: normalizeArray(value.bullets, normalizeBullet),
+    drops: normalizeArray(value.drops, normalizeDrop),
+    events: normalizeArray(value.events, normalizeEvent),
+  }
+}
+
+function parseBattleServerMessage(data: string): BattleServerMessage | null {
+  let payload: unknown
+  try {
+    payload = JSON.parse(data)
+  } catch {
+    return null
+  }
+  if (!isRecord(payload)) return null
+
+  const type = stringValue(payload.type)
+  if (type === 'snapshot') {
+    return normalizeSnapshot(payload)
+  }
+  if (type === 'joined' || type === 'error') {
+    return {
+      type,
+      room_id: stringValue(payload.room_id) || undefined,
+      message: stringValue(payload.message) || undefined,
+    }
+  }
+  return null
 }
 
 export function Battle() {
@@ -109,20 +249,24 @@ export function Battle() {
     }
 
     ws.onmessage = (event: MessageEvent<string>) => {
-      try {
-        const message = JSON.parse(event.data) as BattleServerMessage
-        if (message.type === 'snapshot') {
-          snapshotRef.current = message
-          setSnapshot(message)
-          return
-        }
-        if (message.type === 'error') {
-          const nextError = message.message || 'Connection failed'
-          setLastError(nextError)
-          toast.error(t(nextError))
-        }
-      } catch {
+      const message = parseBattleServerMessage(event.data)
+      if (!message) {
         setLastError('Connection failed')
+        return
+      }
+      if (message.type === 'snapshot') {
+        snapshotRef.current = message
+        setSnapshot(message)
+        return
+      }
+      if (message.type === 'joined') {
+        setConnectionState('connected')
+        return
+      }
+      if (message.type === 'error') {
+        const nextError = message.message || 'Connection failed'
+        setLastError(nextError)
+        toast.error(t(nextError))
       }
     }
 
@@ -240,6 +384,7 @@ export function Battle() {
   )
 
   const status = battleStatus.data
+  const events = snapshot?.events ?? []
   const connected = connectionState === 'connected'
   const connectionLabel = {
     idle: t('Idle'),
@@ -404,14 +549,18 @@ export function Battle() {
           <section className='shrink-0 rounded-md border p-4'>
             <h2 className='text-base font-medium'>{t('Events')}</h2>
             <div className='text-muted-foreground mt-3 max-h-44 space-y-2 overflow-auto text-sm'>
-              {snapshot?.events
-                .slice(-8)
-                .reverse()
-                .map((event) => (
-                  <div key={event.id}>
-                    {battleEventText(event, snapshot, t)}
-                  </div>
-                )) || <div>{t('No events yet')}</div>}
+              {events.length > 0 ? (
+                events
+                  .slice(-8)
+                  .reverse()
+                  .map((event) => (
+                    <div key={event.id}>
+                      {snapshot ? battleEventText(event, snapshot, t) : null}
+                    </div>
+                  ))
+              ) : (
+                <div>{t('No events yet')}</div>
+              )}
               {lastError && (
                 <div className='text-destructive'>{t(lastError)}</div>
               )}

@@ -705,7 +705,7 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 		Players:    make([]PlayerSnapshot, 0, len(r.players)),
 		Bullets:    make([]BulletSnapshot, 0, len(r.bullets)),
 		Drops:      make([]DropSnapshot, 0, len(r.drops)),
-		Events:     append([]BattleEvent(nil), r.events...),
+		Events:     append(make([]BattleEvent, 0, len(r.events)), r.events...),
 	}
 	for _, p := range r.players {
 		base.Players = append(base.Players, PlayerSnapshot{

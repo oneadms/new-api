@@ -97,7 +97,11 @@ export function drawBattleCanvas(
     return
   }
 
-  snapshot.drops.forEach((drop) => {
+  const drops = Array.isArray(snapshot.drops) ? snapshot.drops : []
+  const bullets = Array.isArray(snapshot.bullets) ? snapshot.bullets : []
+  const players = Array.isArray(snapshot.players) ? snapshot.players : []
+
+  drops.forEach((drop) => {
     const point = toScreen(drop.x, drop.y, metrics)
     ctx.save()
     ctx.translate(point.x, point.y)
@@ -109,7 +113,7 @@ export function drawBattleCanvas(
     ctx.restore()
   })
 
-  snapshot.bullets.forEach((bullet) => {
+  bullets.forEach((bullet) => {
     const point = toScreen(bullet.x, bullet.y, metrics)
     ctx.beginPath()
     ctx.fillStyle = '#f97316'
@@ -120,8 +124,8 @@ export function drawBattleCanvas(
     ctx.shadowBlur = 0
   })
 
-  const me = snapshot.players.find((player) => player.user_id === snapshot.me)
-  snapshot.players.forEach((player) => {
+  const me = players.find((player) => player.user_id === snapshot.me)
+  players.forEach((player) => {
     drawPlayer(ctx, player, metrics, player.user_id === snapshot.me)
   })
 

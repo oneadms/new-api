@@ -25,6 +25,7 @@ type battleWebSocketTestMessage struct {
 	MapWidth  int                        `json:"map_width"`
 	MapHeight int                        `json:"map_height"`
 	Players   []battlesvc.PlayerSnapshot `json:"players"`
+	Events    []battlesvc.BattleEvent    `json:"events"`
 }
 
 func readBattleWebSocketTestMessage(t *testing.T, conn *websocket.Conn, messageType string) battleWebSocketTestMessage {
@@ -131,6 +132,7 @@ func TestBattleWebSocketJoinsRoomAndAppliesServerMovement(t *testing.T) {
 	assert.Equal(t, 7, initial.Me)
 	assert.Equal(t, 800, initial.MapWidth)
 	assert.Equal(t, 600, initial.MapHeight)
+	assert.NotNil(t, initial.Events)
 	initialPlayer := battleWebSocketTestPlayer(t, initial, 7)
 
 	input := battlesvc.PlayerInput{AimX: 1}
