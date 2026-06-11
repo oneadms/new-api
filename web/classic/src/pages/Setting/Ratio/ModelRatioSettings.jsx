@@ -42,6 +42,7 @@ export default function ModelRatioSettings(props) {
   const [inputs, setInputs] = useState({
     ModelPrice: '',
     ModelRatio: '',
+    ActualModelRatio: '',
     CacheRatio: '',
     CreateCacheRatio: '',
     CompletionRatio: '',
@@ -179,6 +180,28 @@ export default function ModelRatioSettings(props) {
                 },
               ]}
               onChange={(value) => setInputs({ ...inputs, ModelRatio: value })}
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('实际模型倍率')}
+              extraText={t('实际扣费用的模型倍率，留空则使用展示给用户的模型倍率')}
+              placeholder={t('为一个 JSON 文本，键为模型名称，值为倍率')}
+              field={'ActualModelRatio'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => verifyJSON(value),
+                  message: '不是合法的 JSON 字符串',
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, ActualModelRatio: value })
+              }
             />
           </Col>
         </Row>

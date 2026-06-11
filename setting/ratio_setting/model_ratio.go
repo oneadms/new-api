@@ -330,6 +330,7 @@ var defaultAudioCompletionRatio = map[string]float64{
 
 var modelPriceMap = types.NewRWMap[string, float64]()
 var modelRatioMap = types.NewRWMap[string, float64]()
+var actualModelRatioMap = types.NewRWMap[string, float64]()
 var completionRatioMap = types.NewRWMap[string, float64]()
 
 var defaultCompletionRatio = map[string]float64{
@@ -392,6 +393,14 @@ func UpdateModelRatioByJSONString(jsonStr string) error {
 	return types.LoadFromJsonStringWithCallback(modelRatioMap, jsonStr, InvalidateExposedDataCache)
 }
 
+func ActualModelRatio2JSONString() string {
+	return actualModelRatioMap.MarshalJSONString()
+}
+
+func UpdateActualModelRatioByJSONString(jsonStr string) error {
+	return types.LoadFromJsonString(actualModelRatioMap, jsonStr)
+}
+
 // 处理带有思考预算的模型名称，方便统一定价
 func handleThinkingBudgetModel(name, prefix, wildcard string) string {
 	if strings.HasPrefix(name, prefix) && strings.Contains(name, "-thinking-") {
@@ -414,6 +423,22 @@ func GetModelRatio(name string) (float64, bool, string) {
 		return 37.5, operation_setting.SelfUseModeEnabled, name
 	}
 	return ratio, true, name
+}
+
+func GetActualModelRatio(name string) (float64, bool, string) {
+	name = FormatMatchingModelName(name)
+
+	if ratio, ok := actualModelRatioMap.Get(name); ok {
+		return ratio, true, name
+	}
+
+	if strings.HasSuffix(name, CompactModelSuffix) {
+		if wildcardRatio, ok := actualModelRatioMap.Get(CompactWildcardModelKey); ok {
+			return wildcardRatio, true, name
+		}
+	}
+
+	return GetModelRatio(name)
 }
 
 func DefaultModelRatio2JSONString() string {
@@ -699,6 +724,10 @@ func UpdateAudioCompletionRatioByJSONString(jsonStr string) error {
 
 func GetModelRatioCopy() map[string]float64 {
 	return modelRatioMap.ReadAll()
+}
+
+func GetActualModelRatioCopy() map[string]float64 {
+	return actualModelRatioMap.ReadAll()
 }
 
 func GetModelPriceCopy() map[string]float64 {

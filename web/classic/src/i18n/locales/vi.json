@@ -2056,6 +2056,8 @@
     "模型价格：{{symbol}}{{price}} * {{ratioType}}：{{ratio}} = {{symbol}}{{total}}": "Giá mô hình: {{symbol}}{{price}} * {{ratioType}}: {{ratio}} = {{symbol}}{{total}}",
     "模型价格：{{symbol}}{{price}} / 次": "Giá mô hình: {{symbol}}{{price}} / lượt gọi",
     "模型价格未配置": "Giá mô hình chưa được cấu hình",
+    "实际扣费用的模型倍率，留空则使用展示给用户的模型倍率": "Tỷ lệ mô hình dùng để tính phí thực tế. Để trống để dùng tỷ lệ hiển thị cho người dùng.",
+    "实际模型倍率": "Tỷ lệ mô hình thực tế",
     "模型倍率": "Tỷ lệ mô hình",
     "模型倍率 {{modelRatio}}": "Model ratio {{modelRatio}}",
     "模型倍率 {{modelRatio}}，缓存倍率 {{cacheRatio}}，输出倍率 {{completionRatio}}，{{ratioType}} {{ratio}}": "Tỷ lệ mô hình {{modelRatio}}, tỷ lệ bộ nhớ đệm {{cacheRatio}}, tỷ lệ hoàn thành {{completionRatio}}, {{ratioType}} {{ratio}}",

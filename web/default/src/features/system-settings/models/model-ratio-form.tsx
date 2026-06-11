@@ -43,6 +43,7 @@ import { ModelRatioVisualEditor } from './model-ratio-visual-editor'
 type ModelFormValues = {
   ModelPrice: string
   ModelRatio: string
+  ActualModelRatio: string
   CacheRatio: string
   CreateCacheRatio: string
   CompletionRatio: string
@@ -204,6 +205,25 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                   <FormDescription>
                     {t(
                       'JSON map of model → multiplier applied to quota billing.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='ActualModelRatio'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Actual model ratio')}</FormLabel>
+                  <FormControl>
+                    <Textarea rows={8} {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'JSON map of model → multiplier used for billing. Leave empty to use the displayed model ratio.'
                     )}
                   </FormDescription>
                   <FormMessage />

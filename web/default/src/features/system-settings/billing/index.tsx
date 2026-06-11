@@ -41,6 +41,7 @@ const defaultBillingSettings: BillingSettings = {
   DisplayTokenStatEnabled: true,
   ModelPrice: '',
   ModelRatio: '',
+  ActualModelRatio: '',
   CacheRatio: '',
   CreateCacheRatio: '',
   CompletionRatio: '',
@@ -110,6 +111,8 @@ const defaultBillingSettings: BillingSettings = {
   'lucky_checkin_setting.max_stake_quota': 10000,
   'lucky_checkin_setting.min_failure_bps': 2500,
   'lucky_checkin_setting.max_failure_bps': 7500,
+  'lucky_checkin_setting.actual_min_failure_bps': 2500,
+  'lucky_checkin_setting.actual_max_failure_bps': 7500,
 }
 
 export function BillingSettings() {
