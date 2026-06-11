@@ -41,6 +41,8 @@ const SITE_SECTIONS = [
           },
           SystemName: settings.SystemName,
           Logo: settings.Logo,
+          BackgroundImage: settings.BackgroundImage,
+          ContentOpacity: settings.ContentOpacity,
           Footer: settings.Footer,
           About: settings.About,
           HomePageContent: settings.HomePageContent,

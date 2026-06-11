@@ -19,12 +19,20 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+import { getStatus } from '@/lib/api'
+import { mapStatusDataToConfig } from '@/hooks/use-system-config'
 import { updateSystemOption } from '../api'
 import type { UpdateOptionRequest } from '../types'
 
 // Configuration keys that require status refresh
 const STATUS_RELATED_KEYS = [
   'theme.frontend',
+  'SystemName',
+  'Logo',
+  'BackgroundImage',
+  'ContentOpacity',
+  'Footer',
   'HeaderNavModules',
   'SidebarModulesAdmin',
   'Notice',
@@ -43,7 +51,7 @@ export function useUpdateOption() {
 
   return useMutation({
     mutationFn: (request: UpdateOptionRequest) => updateSystemOption(request),
-    onSuccess: (data, variables) => {
+    onSuccess: async (data, variables) => {
       if (data.success) {
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
@@ -53,6 +61,15 @@ export function useUpdateOption() {
           queryClient.invalidateQueries({ queryKey: ['status'] })
           try {
             window.localStorage.removeItem('status')
+          } catch {
+            /* empty */
+          }
+          try {
+            const status = await getStatus()
+            useSystemConfigStore
+              .getState()
+              .setConfig(mapStatusDataToConfig(status))
+            window.localStorage.setItem('status', JSON.stringify(status))
           } catch {
             /* empty */
           }

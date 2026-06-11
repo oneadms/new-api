@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -50,6 +51,7 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { safeNumberFieldProps } from '../utils/numeric-field'
 
 const _systemInfoSchema = z.object({
   theme: z.object({
@@ -58,6 +60,8 @@ const _systemInfoSchema = z.object({
   SystemName: z.string().min(1),
   ServerAddress: z.string().optional(),
   Logo: z.string().url().optional().or(z.literal('')),
+  BackgroundImage: z.string().url().optional().or(z.literal('')),
+  ContentOpacity: z.coerce.number().min(0).max(100),
   Footer: z.string().optional(),
   About: z.string().optional(),
   HomePageContent: z.string().optional(),
@@ -78,6 +82,12 @@ function normalizeValue(value: unknown): string {
   return typeof value === 'string' ? value : String(value)
 }
 
+function normalizeContentOpacity(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed)) return 100
+  return Math.min(100, Math.max(0, Math.round(parsed)))
+}
+
 export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -90,6 +100,8 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     SystemName: normalizeValue(defaultValues.SystemName),
     ServerAddress: normalizeValue(defaultValues.ServerAddress),
     Logo: normalizeValue(defaultValues.Logo),
+    BackgroundImage: normalizeValue(defaultValues.BackgroundImage),
+    ContentOpacity: normalizeContentOpacity(defaultValues.ContentOpacity),
     Footer: normalizeValue(defaultValues.Footer),
     About: normalizeValue(defaultValues.About),
     HomePageContent: normalizeValue(defaultValues.HomePageContent),
@@ -108,6 +120,15 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     }),
     ServerAddress: z.string().optional(),
     Logo: z.string().url().optional().or(z.literal('')),
+    BackgroundImage: z.string().url().optional().or(z.literal('')),
+    ContentOpacity: z.coerce
+      .number()
+      .min(0, {
+        error: () => t('Content opacity must be between 0 and 100'),
+      })
+      .max(100, {
+        error: () => t('Content opacity must be between 0 and 100'),
+      }),
     Footer: z.string().optional(),
     About: z.string().optional(),
     HomePageContent: z.string().optional(),
@@ -130,6 +151,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
           let v = normalizeValue(value)
           if (key === 'ServerAddress') {
             v = v.replace(/\/+$/, '')
+          }
+          if (key === 'ContentOpacity') {
+            v = String(normalizeContentOpacity(value))
           }
           await updateOption.mutateAsync({
             key,
@@ -254,6 +278,73 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+
+              <FormField
+                control={form.control}
+                name='BackgroundImage'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Background Image URL')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t('https://example.com/background.jpg')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('URL to the background image (optional)')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='ContentOpacity'
+                render={({ field }) => {
+                  const value = normalizeContentOpacity(field.value)
+
+                  return (
+                    <FormItem>
+                      <FormLabel>{t('Content Background Opacity')}</FormLabel>
+                      <FormControl>
+                        <div className='flex min-h-8 items-center gap-3'>
+                          <Slider
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={[value]}
+                            onValueChange={(nextValue) => {
+                              const next = Array.isArray(nextValue)
+                                ? nextValue[0]
+                                : nextValue
+                              field.onChange(
+                                typeof next === 'number' ? next : 100
+                              )
+                            }}
+                            onValueCommitted={field.onBlur}
+                          />
+                          <Input
+                            type='number'
+                            min={0}
+                            max={100}
+                            step={1}
+                            className='w-20 shrink-0'
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </div>
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Lower values let the background image show through'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
               />
 
               <FormField

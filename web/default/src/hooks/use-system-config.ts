@@ -37,6 +37,8 @@ interface StatusApiResponse {
   data: {
     system_name?: string
     logo?: string
+    background_image?: string
+    content_opacity?: number | string
     footer_html?: string
     demo_site_enabled?: boolean
     display_token_stat_enabled?: boolean
@@ -94,10 +96,42 @@ export function mapStatusDataToConfig(
   return {
     systemName: data.system_name || DEFAULT_SYSTEM_NAME,
     logo: data.logo || DEFAULT_LOGO,
+    backgroundImage: data.background_image || '',
+    contentOpacity: normalizeOpacity(data.content_opacity),
     footerHtml: data.footer_html,
     demoSiteEnabled: data.demo_site_enabled,
     displayTokenStatEnabled: data.display_token_stat_enabled,
     currency,
+  }
+}
+
+function normalizeOpacity(value: unknown): number {
+  const parsed = toNumber(value, 100)
+  return Math.min(100, Math.max(0, Math.round(parsed)))
+}
+
+function formatCssUrl(value: string): string {
+  return `url(${JSON.stringify(value)})`
+}
+
+function applySystemBackground(
+  backgroundImage: string,
+  contentOpacity: number
+) {
+  if (typeof document === 'undefined') return
+
+  const root = document.documentElement
+  const trimmedImage = backgroundImage.trim()
+  const opacity = normalizeOpacity(contentOpacity)
+
+  root.style.setProperty('--app-content-bg-percent', `${opacity}%`)
+
+  if (trimmedImage) {
+    root.dataset.systemBackground = 'true'
+    root.style.setProperty('--app-background-image', formatCssUrl(trimmedImage))
+  } else {
+    root.removeAttribute('data-system-background')
+    root.style.removeProperty('--app-background-image')
   }
 }
 
@@ -168,6 +202,10 @@ export function useSystemConfig(options: UseSystemConfigOptions = {}) {
   useEffect(() => {
     if (autoLoad) loadConfig()
   }, [autoLoad, loadConfig])
+
+  useEffect(() => {
+    applySystemBackground(config.backgroundImage, config.contentOpacity)
+  }, [config.backgroundImage, config.contentOpacity])
 
   // Preload logo image when URL changes
   useEffect(() => {

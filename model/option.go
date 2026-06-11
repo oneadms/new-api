@@ -70,6 +70,8 @@ func InitOptionMap() {
 	common.OptionMap["Footer"] = common.Footer
 	common.OptionMap["SystemName"] = common.SystemName
 	common.OptionMap["Logo"] = common.Logo
+	common.OptionMap["BackgroundImage"] = common.BackgroundImage
+	common.OptionMap["ContentOpacity"] = strconv.Itoa(common.ContentOpacity)
 	common.OptionMap["ServerAddress"] = ""
 	common.OptionMap["WorkerUrl"] = system_setting.WorkerUrl
 	common.OptionMap["WorkerValidKey"] = system_setting.WorkerValidKey
@@ -481,6 +483,10 @@ func updateOptionMap(key string, value string) (err error) {
 		common.SystemName = value
 	case "Logo":
 		common.Logo = value
+	case "BackgroundImage":
+		common.BackgroundImage = value
+	case "ContentOpacity":
+		common.ContentOpacity, _ = strconv.Atoi(value)
 	case "WeChatServerAddress":
 		common.WeChatServerAddress = value
 	case "WeChatServerToken":
