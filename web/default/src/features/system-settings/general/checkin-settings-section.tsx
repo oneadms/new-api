@@ -52,6 +52,8 @@ const createSchema = (t: (key: string) => string) =>
       maxStakeQuota: z.coerce.number().int().positive(),
       minFailurePercent: z.coerce.number().min(0).max(100),
       maxFailurePercent: z.coerce.number().min(0).max(100),
+      actualMinFailurePercent: z.coerce.number().min(0).max(100),
+      actualMaxFailurePercent: z.coerce.number().min(0).max(100),
     })
     .superRefine((values, context) => {
       if (values.maxQuota < values.minQuota) {
@@ -75,6 +77,13 @@ const createSchema = (t: (key: string) => string) =>
           message: t('Maximum must not be lower than minimum'),
         })
       }
+      if (values.actualMaxFailurePercent < values.actualMinFailurePercent) {
+        context.addIssue({
+          code: 'custom',
+          path: ['actualMaxFailurePercent'],
+          message: t('Maximum must not be lower than minimum'),
+        })
+      }
     })
 
 type Values = z.infer<ReturnType<typeof createSchema>>
@@ -94,14 +103,28 @@ const luckyNumberFields = [
   },
   {
     name: 'minFailurePercent',
-    label: 'Minimum failure probability (%)',
+    label: 'Displayed minimum failure probability (%)',
     min: 0,
     max: 100,
     step: 0.01,
   },
   {
     name: 'maxFailurePercent',
-    label: 'Maximum failure probability (%)',
+    label: 'Displayed maximum failure probability (%)',
+    min: 0,
+    max: 100,
+    step: 0.01,
+  },
+  {
+    name: 'actualMinFailurePercent',
+    label: 'Actual minimum failure probability (%)',
+    min: 0,
+    max: 100,
+    step: 0.01,
+  },
+  {
+    name: 'actualMaxFailurePercent',
+    label: 'Actual maximum failure probability (%)',
     min: 0,
     max: 100,
     step: 0.01,
@@ -120,6 +143,8 @@ export function CheckinSettingsSection({
     maxStakeQuota: number
     minFailureBps: number
     maxFailureBps: number
+    actualMinFailureBps: number
+    actualMaxFailureBps: number
   }
 }) {
   const { t } = useTranslation()
@@ -137,6 +162,8 @@ export function CheckinSettingsSection({
       maxStakeQuota: defaultValues.maxStakeQuota,
       minFailurePercent: defaultValues.minFailureBps / 100,
       maxFailurePercent: defaultValues.maxFailureBps / 100,
+      actualMinFailurePercent: defaultValues.actualMinFailureBps / 100,
+      actualMaxFailurePercent: defaultValues.actualMaxFailureBps / 100,
     },
   })
 
@@ -180,6 +207,14 @@ export function CheckinSettingsSection({
         'lucky_checkin_setting.max_failure_bps',
         Math.round(values.maxFailurePercent * 100),
       ],
+      [
+        'lucky_checkin_setting.actual_min_failure_bps',
+        Math.round(values.actualMinFailurePercent * 100),
+      ],
+      [
+        'lucky_checkin_setting.actual_max_failure_bps',
+        Math.round(values.actualMaxFailurePercent * 100),
+      ],
     ] as const
     const luckyDefaults = [
       defaultValues.luckyEnabled,
@@ -187,6 +222,8 @@ export function CheckinSettingsSection({
       defaultValues.maxStakeQuota,
       defaultValues.minFailureBps,
       defaultValues.maxFailureBps,
+      defaultValues.actualMinFailureBps,
+      defaultValues.actualMaxFailureBps,
     ]
     luckyUpdates.forEach(([key, value], index) => {
       if (value !== luckyDefaults[index]) {
