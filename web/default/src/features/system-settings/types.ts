@@ -157,6 +157,7 @@ export type ModelSettings = {
   'grok.violation_deduction_amount': number
   ModelPrice: string
   ModelRatio: string
+  ActualModelRatio: string
   CacheRatio: string
   CreateCacheRatio: string
   CompletionRatio: string
@@ -200,6 +201,7 @@ export type BillingSettings = {
   DisplayTokenStatEnabled: boolean
   ModelPrice: string
   ModelRatio: string
+  ActualModelRatio: string
   CacheRatio: string
   CreateCacheRatio: string
   CompletionRatio: string
@@ -271,6 +273,8 @@ export type BillingSettings = {
   'lucky_checkin_setting.max_stake_quota': number
   'lucky_checkin_setting.min_failure_bps': number
   'lucky_checkin_setting.max_failure_bps': number
+  'lucky_checkin_setting.actual_min_failure_bps': number
+  'lucky_checkin_setting.actual_max_failure_bps': number
 }
 
 export type OperationsSettings = {

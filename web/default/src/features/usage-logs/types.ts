@@ -124,6 +124,7 @@ export interface LogOtherData {
   cache_creation_tokens_1h?: number
   claude?: boolean
   model_ratio?: number
+  actual_model_ratio?: number
   completion_ratio?: number
   model_price?: number
   group_ratio?: number

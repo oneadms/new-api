@@ -547,8 +547,9 @@ func settleTestQuota(info *relaycommon.RelayInfo, priceData types.PriceData, usa
 	quota := 0
 	if !priceData.UsePrice {
 		quota = usage.PromptTokens + int(math.Round(float64(usage.CompletionTokens)*priceData.CompletionRatio))
-		quota = int(math.Round(float64(quota) * priceData.ModelRatio))
-		if priceData.ModelRatio != 0 && quota <= 0 {
+		modelRatio := priceData.BillingModelRatio()
+		quota = int(math.Round(float64(quota) * modelRatio))
+		if modelRatio != 0 && quota <= 0 {
 			quota = 1
 		}
 		return quota, nil

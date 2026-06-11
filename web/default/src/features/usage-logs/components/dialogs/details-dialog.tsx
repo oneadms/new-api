@@ -198,6 +198,12 @@ function BillingBreakdown(props: {
         value: `${fmtPrice(baseInputUSD * other.completion_ratio)}/M`,
       })
     }
+    if (isAdmin && other.actual_model_ratio != null) {
+      rows.push({
+        label: t('Actual model ratio'),
+        value: `${formatRatio(other.actual_model_ratio)}x`,
+      })
+    }
   }
 
   const userGR = other.user_group_ratio

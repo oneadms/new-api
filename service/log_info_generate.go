@@ -33,10 +33,21 @@ func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other
 	}
 }
 
+func appendActualModelRatio(relayInfo *relaycommon.RelayInfo, other map[string]interface{}, displayModelRatio float64) {
+	if relayInfo == nil || other == nil || relayInfo.PriceData.UsePrice || !relayInfo.PriceData.UseActualModelRatio {
+		return
+	}
+	actualModelRatio := relayInfo.PriceData.BillingModelRatio()
+	if actualModelRatio != displayModelRatio {
+		other["actual_model_ratio"] = actualModelRatio
+	}
+}
+
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
 	other["model_ratio"] = modelRatio
+	appendActualModelRatio(relayInfo, other, modelRatio)
 	other["group_ratio"] = groupRatio
 	other["completion_ratio"] = completionRatio
 	other["cache_tokens"] = cacheTokens

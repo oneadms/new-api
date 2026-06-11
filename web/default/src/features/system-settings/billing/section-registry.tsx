@@ -28,6 +28,7 @@ import { createSectionRegistry } from '../utils/section-registry'
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
   ModelRatio: settings.ModelRatio,
+  ActualModelRatio: settings.ActualModelRatio,
   CacheRatio: settings.CacheRatio,
   CreateCacheRatio: settings.CreateCacheRatio,
   CompletionRatio: settings.CompletionRatio,
@@ -200,6 +201,10 @@ const BILLING_SECTIONS = [
           maxStakeQuota: settings['lucky_checkin_setting.max_stake_quota'],
           minFailureBps: settings['lucky_checkin_setting.min_failure_bps'],
           maxFailureBps: settings['lucky_checkin_setting.max_failure_bps'],
+          actualMinFailureBps:
+            settings['lucky_checkin_setting.actual_min_failure_bps'],
+          actualMaxFailureBps:
+            settings['lucky_checkin_setting.actual_max_failure_bps'],
         }}
       />
     ),

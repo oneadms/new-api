@@ -2062,6 +2062,8 @@
     "模型价格：{{symbol}}{{price}} * {{ratioType}}：{{ratio}} = {{symbol}}{{total}}": "模型價格：{{symbol}}{{price}} * {{ratioType}}：{{ratio}} = {{symbol}}{{total}}",
     "模型价格：{{symbol}}{{price}} / 次": "模型價格：{{symbol}}{{price}} / 次",
     "模型价格未配置": "模型價格未配置",
+    "实际扣费用的模型倍率，留空则使用展示给用户的模型倍率": "實際扣費用的模型倍率，留空則使用展示給使用者的模型倍率",
+    "实际模型倍率": "實際模型倍率",
     "模型倍率": "模型倍率",
     "模型倍率 {{modelRatio}}": "模型倍率 {{modelRatio}}",
     "模型倍率 {{modelRatio}}，缓存倍率 {{cacheRatio}}，输出倍率 {{completionRatio}}，{{ratioType}} {{ratio}}": "模型倍率 {{modelRatio}}，快取倍率 {{cacheRatio}}，輸出倍率 {{completionRatio}}，{{ratioType}} {{ratio}}",

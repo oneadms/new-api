@@ -491,6 +491,16 @@ export const useLogsData = () => {
             value: content,
           });
         }
+        if (isAdminUser && other?.actual_model_ratio !== undefined && other?.actual_model_ratio !== null) {
+          const actualModelRatio =
+            typeof other.actual_model_ratio === 'number'
+              ? other.actual_model_ratio.toFixed(4)
+              : other.actual_model_ratio;
+          expandDataLocal.push({
+            key: t('实际模型倍率'),
+            value: `${actualModelRatio}x`,
+          });
+        }
         if (other?.reasoning_effort) {
           expandDataLocal.push({
             key: t('Reasoning Effort'),

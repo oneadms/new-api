@@ -42,6 +42,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if info.PriceData.ModelRatio > 0 {
 		other["model_ratio"] = info.PriceData.ModelRatio
 	}
+	if !info.PriceData.UsePrice && info.PriceData.UseActualModelRatio && info.PriceData.BillingModelRatio() != info.PriceData.ModelRatio {
+		other["actual_model_ratio"] = info.PriceData.BillingModelRatio()
+	}
 	other["group_ratio"] = info.PriceData.GroupRatioInfo.GroupRatio
 	if info.PriceData.GroupRatioInfo.HasSpecialRatio {
 		other["user_group_ratio"] = info.PriceData.GroupRatioInfo.GroupSpecialRatio
@@ -123,6 +126,9 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {
 			other["model_ratio"] = bc.ModelRatio
+		}
+		if !bc.PerCallBilling && bc.ActualModelRatio != 0 && bc.ActualModelRatio != bc.ModelRatio {
+			other["actual_model_ratio"] = bc.ActualModelRatio
 		}
 		other["group_ratio"] = bc.GroupRatio
 		if len(bc.OtherRatios) > 0 {
@@ -254,10 +260,14 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 
 	modelName := taskModelName(task)
 
-	// 获取模型价格和倍率
-	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
+	// 获取展示倍率和实际倍率；实际倍率用于扣费，展示倍率用于日志描述。
+	displayModelRatio, hasDisplayRatio, _ := ratio_setting.GetModelRatio(modelName)
+	actualModelRatio, hasRatioSetting, _ := ratio_setting.GetActualModelRatio(modelName)
+	if !hasDisplayRatio {
+		displayModelRatio = actualModelRatio
+	}
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
-	if !hasRatioSetting || modelRatio <= 0 {
+	if !hasRatioSetting || actualModelRatio <= 0 {
 		return
 	}
 
@@ -294,8 +304,8 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	}
 
 	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * otherMultiplier
-	actualQuota := int(float64(totalTokens) * modelRatio * finalGroupRatio * otherMultiplier)
+	actualQuota := int(float64(totalTokens) * actualModelRatio * finalGroupRatio * otherMultiplier)
 
-	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, modelRatio, finalGroupRatio, otherMultiplier)
+	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, displayModelRatio, finalGroupRatio, otherMultiplier)
 	RecalculateTaskQuota(ctx, task, actualQuota, reason)
 }

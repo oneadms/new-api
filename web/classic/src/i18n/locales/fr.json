@@ -2084,6 +2084,8 @@
     "模型价格：{{symbol}}{{price}} * {{ratioType}}：{{ratio}} = {{symbol}}{{total}}": "Prix du modèle : {{symbol}}{{price}} * {{ratioType}} : {{ratio}} = {{symbol}}{{total}}",
     "模型价格：{{symbol}}{{price}} / 次": "Prix du modèle : {{symbol}}{{price}} / requête",
     "模型价格未配置": "Prix du modèle non configuré",
+    "实际扣费用的模型倍率，留空则使用展示给用户的模型倍率": "Ratio du modèle utilisé pour la facturation réelle. Laissez vide pour utiliser le ratio affiché aux utilisateurs.",
+    "实际模型倍率": "Ratio réel du modèle",
     "模型倍率": "Ratio",
     "模型倍率 {{modelRatio}}": "Ratio du modèle {{modelRatio}}",
     "模型倍率 {{modelRatio}}，缓存倍率 {{cacheRatio}}，输出倍率 {{completionRatio}}，{{ratioType}} {{ratio}}": "Ratio du modèle {{modelRatio}}, ratio de cache {{cacheRatio}}, ratio de complétion {{completionRatio}}, {{ratioType}} {{ratio}}",

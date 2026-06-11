@@ -2055,6 +2055,8 @@
     "模型价格：{{symbol}}{{price}} * {{ratioType}}：{{ratio}} = {{symbol}}{{total}}": "モデル料金：{{symbol}}{{price}} * {{ratioType}}：{{ratio}} = {{symbol}}{{total}}",
     "模型价格：{{symbol}}{{price}} / 次": "モデル価格：{{symbol}}{{price}} / リクエスト",
     "模型价格未配置": "モデル価格が未設定",
+    "实际扣费用的模型倍率，留空则使用展示给用户的模型倍率": "実際の請求に使用するモデル倍率。空のままにするとユーザーに表示するモデル倍率を使用します。",
+    "实际模型倍率": "実際のモデル倍率",
     "模型倍率": "モデル倍率",
     "模型倍率 {{modelRatio}}": "Model ratio {{modelRatio}}",
     "模型倍率 {{modelRatio}}，缓存倍率 {{cacheRatio}}，输出倍率 {{completionRatio}}，{{ratioType}} {{ratio}}": "モデル倍率 {{modelRatio}}、キャッシュ倍率 {{cacheRatio}}、補完倍率 {{completionRatio}}、{{ratioType}} {{ratio}}",
