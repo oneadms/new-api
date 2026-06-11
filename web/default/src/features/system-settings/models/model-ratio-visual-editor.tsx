@@ -70,6 +70,7 @@ import { formatPricingNumber } from './pricing-format'
 type ModelRatioVisualEditorProps = {
   modelPrice: string
   modelRatio: string
+  actualModelRatio: string
   cacheRatio: string
   createCacheRatio: string
   completionRatio: string
@@ -85,6 +86,7 @@ type ModelRow = {
   name: string
   price?: string
   ratio?: string
+  actualRatio?: string
   cacheRatio?: string
   createCacheRatio?: string
   completionRatio?: string
@@ -181,6 +183,7 @@ const getPriceDetail = (row: ModelRow, t: (key: string) => string) => {
   if (!inputPrice) return t('No base input price')
 
   const details = [
+    row.actualRatio && `${t('Actual model ratio')} ${row.actualRatio}x`,
     row.completionRatio &&
       `${t('Output')} $${ratioToPrice(row.completionRatio, inputPrice)}`,
     row.cacheRatio &&
@@ -196,6 +199,7 @@ export const ModelRatioVisualEditor = memo(
   function ModelRatioVisualEditor({
     modelPrice,
     modelRatio,
+    actualModelRatio,
     cacheRatio,
     createCacheRatio,
     completionRatio,
@@ -267,6 +271,13 @@ export const ModelRatioVisualEditor = memo(
         fallback: {},
         context: 'model ratios',
       })
+      const actualRatioMap = safeJsonParse<Record<string, number>>(
+        actualModelRatio,
+        {
+          fallback: {},
+          context: 'actual model ratios',
+        }
+      )
       const cacheMap = safeJsonParse<Record<string, number>>(cacheRatio, {
         fallback: {},
         context: 'cache ratios',
@@ -309,6 +320,7 @@ export const ModelRatioVisualEditor = memo(
       const modelNames = new Set([
         ...Object.keys(priceMap),
         ...Object.keys(ratioMap),
+        ...Object.keys(actualRatioMap),
         ...Object.keys(cacheMap),
         ...Object.keys(createCacheMap),
         ...Object.keys(completionMap),
@@ -322,6 +334,7 @@ export const ModelRatioVisualEditor = memo(
       const modelData: ModelRow[] = Array.from(modelNames).map((name) => {
         const price = priceMap[name]?.toString() || ''
         const ratio = ratioMap[name]?.toString() || ''
+        const actualRatio = actualRatioMap[name]?.toString() || ''
         const cache = cacheMap[name]?.toString() || ''
         const createCache = createCacheMap[name]?.toString() || ''
         const completion = completionMap[name]?.toString() || ''
@@ -344,6 +357,7 @@ export const ModelRatioVisualEditor = memo(
             requestRuleExpr,
             price,
             ratio,
+            actualRatio,
             cacheRatio: cache,
             createCacheRatio: createCache,
             completionRatio: completion,
@@ -358,6 +372,7 @@ export const ModelRatioVisualEditor = memo(
           name,
           price,
           ratio,
+          actualRatio,
           cacheRatio: cache,
           createCacheRatio: createCache,
           completionRatio: completion,
@@ -381,6 +396,7 @@ export const ModelRatioVisualEditor = memo(
     }, [
       modelPrice,
       modelRatio,
+      actualModelRatio,
       cacheRatio,
       createCacheRatio,
       completionRatio,
@@ -418,6 +434,7 @@ export const ModelRatioVisualEditor = memo(
           name: model.name,
           price: model.price,
           ratio: model.ratio,
+          actualRatio: model.actualRatio,
           cacheRatio: model.cacheRatio,
           createCacheRatio: model.createCacheRatio,
           completionRatio: model.completionRatio,
@@ -477,6 +494,10 @@ export const ModelRatioVisualEditor = memo(
           fallback: {},
           silent: true,
         })
+        const actualRatioMap = safeJsonParse<Record<string, number>>(
+          actualModelRatio,
+          { fallback: {}, silent: true }
+        )
         const cacheMap = safeJsonParse<Record<string, number>>(cacheRatio, {
           fallback: {},
           silent: true,
@@ -512,6 +533,7 @@ export const ModelRatioVisualEditor = memo(
 
         delete priceMap[name]
         delete ratioMap[name]
+        delete actualRatioMap[name]
         delete cacheMap[name]
         delete createCacheMap[name]
         delete completionMap[name]
@@ -523,6 +545,7 @@ export const ModelRatioVisualEditor = memo(
 
         onChange('ModelPrice', JSON.stringify(priceMap, null, 2))
         onChange('ModelRatio', JSON.stringify(ratioMap, null, 2))
+        onChange('ActualModelRatio', JSON.stringify(actualRatioMap, null, 2))
         onChange('CacheRatio', JSON.stringify(cacheMap, null, 2))
         onChange('CreateCacheRatio', JSON.stringify(createCacheMap, null, 2))
         onChange('CompletionRatio', JSON.stringify(completionMap, null, 2))
@@ -544,6 +567,7 @@ export const ModelRatioVisualEditor = memo(
       [
         modelPrice,
         modelRatio,
+        actualModelRatio,
         cacheRatio,
         createCacheRatio,
         completionRatio,
@@ -712,6 +736,10 @@ export const ModelRatioVisualEditor = memo(
           fallback: {},
           silent: true,
         })
+        const actualRatioMap = safeJsonParse<Record<string, number>>(
+          actualModelRatio,
+          { fallback: {}, silent: true }
+        )
         const cacheMap = safeJsonParse<Record<string, number>>(cacheRatio, {
           fallback: {},
           silent: true,
@@ -758,6 +786,7 @@ export const ModelRatioVisualEditor = memo(
         targetNames.forEach((name) => {
           delete priceMap[name]
           delete ratioMap[name]
+          delete actualRatioMap[name]
           delete cacheMap[name]
           delete createCacheMap[name]
           delete completionMap[name]
@@ -782,6 +811,7 @@ export const ModelRatioVisualEditor = memo(
             // only consulted when billing_setting hasn't propagated yet.
             setIfPresent(priceMap, name, data.price)
             setIfPresent(ratioMap, name, data.ratio)
+            setIfPresent(actualRatioMap, name, data.actualRatio)
             setIfPresent(cacheMap, name, data.cacheRatio)
             setIfPresent(createCacheMap, name, data.createCacheRatio)
             setIfPresent(completionMap, name, data.completionRatio)
@@ -792,6 +822,7 @@ export const ModelRatioVisualEditor = memo(
             setIfPresent(priceMap, name, data.price)
           } else {
             setIfPresent(ratioMap, name, data.ratio)
+            setIfPresent(actualRatioMap, name, data.actualRatio)
             setIfPresent(cacheMap, name, data.cacheRatio)
             setIfPresent(createCacheMap, name, data.createCacheRatio)
             setIfPresent(completionMap, name, data.completionRatio)
@@ -803,6 +834,7 @@ export const ModelRatioVisualEditor = memo(
 
         onChange('ModelPrice', JSON.stringify(priceMap, null, 2))
         onChange('ModelRatio', JSON.stringify(ratioMap, null, 2))
+        onChange('ActualModelRatio', JSON.stringify(actualRatioMap, null, 2))
         onChange('CacheRatio', JSON.stringify(cacheMap, null, 2))
         onChange('CreateCacheRatio', JSON.stringify(createCacheMap, null, 2))
         onChange('CompletionRatio', JSON.stringify(completionMap, null, 2))
@@ -824,6 +856,7 @@ export const ModelRatioVisualEditor = memo(
       [
         modelPrice,
         modelRatio,
+        actualModelRatio,
         cacheRatio,
         createCacheRatio,
         completionRatio,
@@ -1034,6 +1067,7 @@ export const ModelRatioVisualEditor = memo(
     return (
       prevProps.modelPrice === nextProps.modelPrice &&
       prevProps.modelRatio === nextProps.modelRatio &&
+      prevProps.actualModelRatio === nextProps.actualModelRatio &&
       prevProps.cacheRatio === nextProps.cacheRatio &&
       prevProps.createCacheRatio === nextProps.createCacheRatio &&
       prevProps.completionRatio === nextProps.completionRatio &&

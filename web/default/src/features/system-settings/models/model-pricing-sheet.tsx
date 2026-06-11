@@ -78,6 +78,7 @@ const createModelPricingSchema = (t: (key: string) => string) =>
     name: z.string().min(1, t('Model name is required')),
     price: z.string().optional(),
     ratio: z.string().optional(),
+    actualRatio: z.string().optional(),
     cacheRatio: z.string().optional(),
     createCacheRatio: z.string().optional(),
     completionRatio: z.string().optional(),
@@ -103,6 +104,7 @@ export type ModelRatioData = {
   name: string
   price?: string
   ratio?: string
+  actualRatio?: string
   cacheRatio?: string
   createCacheRatio?: string
   completionRatio?: string
@@ -327,6 +329,11 @@ function buildPreviewRows(
       value: promptPrice ? `$${promptPrice}` : t('Empty'),
     },
     {
+      key: 'actualRatio',
+      label: t('Actual model ratio'),
+      value: values.actualRatio || t('Empty'),
+    },
+    {
       key: 'completion',
       label: t('Completion price'),
       value:
@@ -441,6 +448,7 @@ export function ModelPricingEditorPanel({
       name: '',
       price: '',
       ratio: '',
+      actualRatio: '',
       cacheRatio: '',
       createCacheRatio: '',
       completionRatio: '',
@@ -458,6 +466,7 @@ export function ModelPricingEditorPanel({
         name: editData.name,
         price: editData.price || '',
         ratio: editData.ratio || '',
+        actualRatio: editData.actualRatio || '',
         cacheRatio: editData.cacheRatio || '',
         createCacheRatio: editData.createCacheRatio || '',
         completionRatio: editData.completionRatio || '',
@@ -479,6 +488,7 @@ export function ModelPricingEditorPanel({
         name: '',
         price: '',
         ratio: '',
+        actualRatio: '',
         cacheRatio: '',
         createCacheRatio: '',
         completionRatio: '',
@@ -717,6 +727,7 @@ export function ModelPricingEditorPanel({
       billingMode: pricingMode,
       price: values.price || '',
       ratio: values.ratio || '',
+      actualRatio: values.actualRatio || '',
       cacheRatio: values.cacheRatio || '',
       createCacheRatio: values.createCacheRatio || '',
       completionRatio: values.completionRatio || '',
@@ -826,6 +837,35 @@ export function ModelPricingEditorPanel({
                         {t('USD price per 1M input tokens.')}
                       </FieldDescription>
                     </Field>
+
+                    <FormField
+                      control={form.control}
+                      name='actualRatio'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Actual model ratio')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              inputMode='decimal'
+                              placeholder={form.watch('ratio') || '1'}
+                              {...field}
+                              onChange={(event) => {
+                                const value = event.target.value
+                                if (numericDraftRegex.test(value)) {
+                                  field.onChange(value)
+                                }
+                              }}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'JSON map of model → multiplier used for billing. Leave empty to use the displayed model ratio.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
                     <div className='grid gap-3 sm:grid-cols-2'>
                       {laneConfigs.map((lane) => {
