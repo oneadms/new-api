@@ -473,6 +473,16 @@ export default function ModelPricingEditor({
                         placeholder={t('输入 $/1M tokens')}
                         onChange={(value) => handleNumericFieldChange('inputPrice', value)}
                       />
+                      <PriceInput
+                        label={t('实际模型倍率')}
+                        value={selectedModel.actualModelRatio}
+                        placeholder={t('实际扣费用的模型倍率，留空则使用展示给用户的模型倍率')}
+                        suffix='x'
+                        onChange={(value) =>
+                          handleNumericFieldChange('actualModelRatio', value)
+                        }
+                        extraText={t('实际扣费用的模型倍率，留空则使用展示给用户的模型倍率')}
+                      />
                       {selectedModel.completionRatioLocked ? (
                         <Banner
                           type='warning'

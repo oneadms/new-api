@@ -130,6 +130,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
             <ModelRatioVisualEditor
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
+              actualModelRatio={form.watch('ActualModelRatio')}
               cacheRatio={form.watch('CacheRatio')}
               createCacheRatio={form.watch('CreateCacheRatio')}
               completionRatio={form.watch('CompletionRatio')}

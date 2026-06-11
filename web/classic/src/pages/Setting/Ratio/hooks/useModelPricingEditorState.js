@@ -32,6 +32,7 @@ const EMPTY_MODEL = {
   billingMode: 'per-token',
   fixedPrice: '',
   inputPrice: '',
+  actualModelRatio: '',
   completionPrice: '',
   lockedCompletionRatio: '',
   completionRatioLocked: false,
@@ -44,6 +45,7 @@ const EMPTY_MODEL = {
   requestRuleExpr: '',
   rawRatios: {
     modelRatio: '',
+    actualModelRatio: '',
     completionRatio: '',
     cacheRatio: '',
     createCacheRatio: '',
@@ -139,6 +141,7 @@ const buildModelState = (name, sourceMaps) => {
   }
 
   const modelRatio = toNumericString(sourceMaps.ModelRatio[name]);
+  const actualModelRatio = toNumericString(sourceMaps.ActualModelRatio[name]);
   const completionRatio = toNumericString(sourceMaps.CompletionRatio[name]);
   const completionRatioMeta = normalizeCompletionRatioMeta(
     sourceMaps.CompletionRatioMeta?.[name],
@@ -164,6 +167,7 @@ const buildModelState = (name, sourceMaps) => {
     billingMode: hasValue(fixedPrice) ? 'per-request' : 'per-token',
     fixedPrice,
     inputPrice,
+    actualModelRatio,
     completionRatioLocked: completionRatioMeta.locked,
     lockedCompletionRatio: completionRatioMeta.ratio,
     completionPrice:
@@ -202,6 +206,7 @@ const buildModelState = (name, sourceMaps) => {
     requestRuleExpr: '',
     rawRatios: {
       modelRatio,
+      actualModelRatio,
       completionRatio,
       cacheRatio,
       createCacheRatio,
@@ -213,6 +218,7 @@ const buildModelState = (name, sourceMaps) => {
       hasValue(fixedPrice) &&
       [
         modelRatio,
+        actualModelRatio,
         completionRatio,
         cacheRatio,
         createCacheRatio,
@@ -318,7 +324,10 @@ export const buildSummaryText = (model, t) => {
     ].filter(hasValue).length;
     const extraLabel =
       extraCount > 0 ? `，${t('额外价格项')} ${extraCount}` : '';
-    return `${t('输入')} $${model.inputPrice}${extraLabel}${requestRuleSuffix}`;
+    const actualRatioLabel = hasValue(model.actualModelRatio)
+      ? `，${t('实际模型倍率')} ${model.actualModelRatio}`
+      : '';
+    return `${t('输入')} $${model.inputPrice}${actualRatioLabel}${extraLabel}${requestRuleSuffix}`;
   }
 
   return `${t('未设置价格')}${requestRuleSuffix}`;
@@ -338,6 +347,7 @@ const serializeModel = (model, t) => {
   const result = {
     ModelPrice: null,
     ModelRatio: null,
+    ActualModelRatio: null,
     CompletionRatio: null,
     CacheRatio: null,
     CreateCacheRatio: null,
@@ -385,6 +395,11 @@ const serializeModel = (model, t) => {
     if (hasValue(model.rawRatios.modelRatio)) {
       result.ModelRatio = toNormalizedNumber(model.rawRatios.modelRatio);
     }
+    if (hasValue(model.rawRatios.actualModelRatio)) {
+      result.ActualModelRatio = toNormalizedNumber(
+        model.rawRatios.actualModelRatio,
+      );
+    }
     if (hasValue(model.rawRatios.completionRatio)) {
       result.CompletionRatio = toNormalizedNumber(
         model.rawRatios.completionRatio,
@@ -413,6 +428,9 @@ const serializeModel = (model, t) => {
   }
 
   result.ModelRatio = toNormalizedNumber(inputPrice / 2);
+  if (hasValue(model.actualModelRatio)) {
+    result.ActualModelRatio = toNormalizedNumber(model.actualModelRatio);
+  }
 
   if (!model.completionRatioLocked && completionPrice !== null) {
     result.CompletionRatio = toNormalizedNumber(completionPrice / inputPrice);
@@ -509,6 +527,13 @@ export const buildPreviewRows = (model, t) => {
           : t('空'),
       },
       {
+        key: 'ActualModelRatio',
+        label: 'ActualModelRatio',
+        value: hasValue(model.rawRatios.actualModelRatio)
+          ? model.rawRatios.actualModelRatio
+          : t('空'),
+      },
+      {
         key: 'CompletionRatio',
         label: 'CompletionRatio',
         value: hasValue(model.rawRatios.completionRatio)
@@ -566,6 +591,13 @@ export const buildPreviewRows = (model, t) => {
       key: 'ModelRatio',
       label: 'ModelRatio',
       value: formatNumber(inputPrice / 2),
+    },
+    {
+      key: 'ActualModelRatio',
+      label: 'ActualModelRatio',
+      value: hasValue(model.actualModelRatio)
+        ? model.actualModelRatio
+        : t('空'),
     },
     {
       key: 'CompletionRatio',
@@ -639,6 +671,7 @@ export function useModelPricingEditorState({
     const sourceMaps = {
       ModelPrice: parseOptionJSON(options.ModelPrice),
       ModelRatio: parseOptionJSON(options.ModelRatio),
+      ActualModelRatio: parseOptionJSON(options.ActualModelRatio),
       CompletionRatio: parseOptionJSON(options.CompletionRatio),
       CompletionRatioMeta: parseOptionJSON(options.CompletionRatioMeta),
       CacheRatio: parseOptionJSON(options.CacheRatio),
@@ -654,6 +687,7 @@ export function useModelPricingEditorState({
       ...candidateModelNames,
       ...Object.keys(sourceMaps.ModelPrice),
       ...Object.keys(sourceMaps.ModelRatio),
+      ...Object.keys(sourceMaps.ActualModelRatio),
       ...Object.keys(sourceMaps.CompletionRatio),
       ...Object.keys(sourceMaps.CompletionRatioMeta),
       ...Object.keys(sourceMaps.CacheRatio),
@@ -965,6 +999,7 @@ export function useModelPricingEditorState({
           billingMode: selectedModel.billingMode,
           fixedPrice: selectedModel.fixedPrice,
           inputPrice: selectedModel.inputPrice,
+          actualModelRatio: selectedModel.actualModelRatio,
           completionPrice: selectedModel.completionPrice,
           cachePrice: selectedModel.cachePrice,
           createCachePrice: selectedModel.createCachePrice,
@@ -1026,6 +1061,7 @@ export function useModelPricingEditorState({
       const output = {
         ModelPrice: {},
         ModelRatio: {},
+        ActualModelRatio: {},
         CompletionRatio: {},
         CacheRatio: {},
         CreateCacheRatio: {},
