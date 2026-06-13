@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
+  Minimize01Icon,
   MusicNote02Icon,
   NextIcon,
   PauseIcon,
@@ -151,6 +152,7 @@ export function MusicPlayer() {
   const [volume, setVolume] = useState(80)
   const [muted, setMuted] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [minimized, setMinimized] = useState(false)
 
   const currentTrack = enabled ? tracks[trackIndex] : undefined
   const lyrics = useMemo(
@@ -355,7 +357,12 @@ export function MusicPlayer() {
 
   return (
     <TooltipProvider delay={150}>
-      <div className='fixed bottom-4 left-4 z-40 w-[min(calc(100vw-2rem),22rem)]'>
+      <div
+        className={cn(
+          'fixed bottom-4 left-4 z-40',
+          minimized ? 'w-auto' : 'w-[min(calc(100vw-2rem),22rem)]'
+        )}
+      >
         <audio
           ref={audioRef}
           src={currentTrack.url}
@@ -373,6 +380,48 @@ export function MusicPlayer() {
           onError={handleAudioError}
         />
 
+        {minimized ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type='button'
+                  variant='secondary'
+                  size='icon'
+                  aria-label={t('Open player')}
+                  onClick={() => setMinimized(false)}
+                  className='border-border bg-popover/95 text-popover-foreground ring-foreground/10 supports-[backdrop-filter]:bg-popover/85 relative size-12 overflow-hidden rounded-full border shadow-lg ring-1 backdrop-blur'
+                >
+                  {currentTrack.cover ? (
+                    <img
+                      src={currentTrack.cover}
+                      alt=''
+                      className='absolute inset-0 size-full object-cover'
+                    />
+                  ) : (
+                    <HugeiconsIcon
+                      data-icon='inline-start'
+                      icon={MusicNote02Icon}
+                      strokeWidth={2}
+                    />
+                  )}
+                  {currentTrack.cover ? (
+                    <span className='absolute inset-0 bg-black/20' />
+                  ) : null}
+                  {isPlaying ? (
+                    <span className='bg-primary ring-popover absolute right-1.5 bottom-1.5 size-2.5 rounded-full ring-2' />
+                  ) : null}
+                </Button>
+              }
+            ></TooltipTrigger>
+            <TooltipContent side='top' align='start'>
+              <p>{t('Open player')}</p>
+              <p className='text-muted-foreground max-w-48 truncate text-xs'>
+                {displayTitle}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
         <div className='border-border bg-popover/95 text-popover-foreground ring-foreground/10 supports-[backdrop-filter]:bg-popover/85 flex min-w-0 flex-col gap-3 rounded-lg border p-3 shadow-lg ring-1 backdrop-blur'>
           <div className='flex min-w-0 items-center gap-3'>
             <div className='bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg'>
@@ -404,12 +453,19 @@ export function MusicPlayer() {
               ) : null}
             </div>
 
-            <PlayerIconButton
-              label={expanded ? t('Collapse player') : t('Expand player')}
-              icon={expanded ? ArrowDown01Icon : ArrowUp01Icon}
-              onClick={() => setExpanded((value) => !value)}
-              pressed={expanded}
-            />
+            <div className='flex shrink-0 items-center gap-1'>
+              <PlayerIconButton
+                label={t('Minimize player')}
+                icon={Minimize01Icon}
+                onClick={() => setMinimized(true)}
+              />
+              <PlayerIconButton
+                label={expanded ? t('Collapse player') : t('Expand player')}
+                icon={expanded ? ArrowDown01Icon : ArrowUp01Icon}
+                onClick={() => setExpanded((value) => !value)}
+                pressed={expanded}
+              />
+            </div>
           </div>
 
           <div className='flex items-center gap-2'>
@@ -508,6 +564,7 @@ export function MusicPlayer() {
             </div>
           ) : null}
         </div>
+        )}
       </div>
     </TooltipProvider>
   )
