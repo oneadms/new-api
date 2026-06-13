@@ -29,6 +29,8 @@ const defaultSiteSettings: SiteSettings = {
   Notice: '',
   SystemName: 'New API',
   Logo: '',
+  BackgroundImage: '',
+  ContentOpacity: 100,
   Footer: '',
   About: '',
   HomePageContent: '',

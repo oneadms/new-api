@@ -61,6 +61,8 @@ export type SiteSettings = {
   Notice: string
   SystemName: string
   Logo: string
+  BackgroundImage: string
+  ContentOpacity: number
   Footer: string
   About: string
   HomePageContent: string
