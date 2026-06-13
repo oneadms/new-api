@@ -138,6 +138,8 @@ export function MusicPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null)
   const pendingPlayRef = useRef(false)
+  const autoplayCompletedRef = useRef(false)
+  const userPausedRef = useRef(false)
   const lastErrorUrlRef = useRef('')
   const musicPlayer = useSystemConfigStore((state) => state.config.musicPlayer)
   const tracks = musicPlayer?.playlist ?? []
@@ -180,9 +182,12 @@ export function MusicPlayer() {
     }
   }, [t])
 
-  const pauseAudio = useCallback(() => {
+  const pauseAudio = useCallback((options?: { userInitiated?: boolean }) => {
     const audio = audioRef.current
     if (!audio) return
+    if (options?.userInitiated) {
+      userPausedRef.current = true
+    }
     audio.pause()
     setIsPlaying(false)
   }, [])
@@ -215,6 +220,8 @@ export function MusicPlayer() {
 
   useEffect(() => {
     if (!enabled) {
+      autoplayCompletedRef.current = false
+      userPausedRef.current = false
       pauseAudio()
     }
   }, [enabled, pauseAudio])
@@ -235,7 +242,14 @@ export function MusicPlayer() {
   }, [currentTrack?.url, playAudio])
 
   useEffect(() => {
-    if (!enabled || !musicPlayer?.autoplay || !currentTrack?.url || isPlaying) {
+    if (
+      !enabled ||
+      !musicPlayer?.autoplay ||
+      !currentTrack?.url ||
+      isPlaying ||
+      userPausedRef.current ||
+      autoplayCompletedRef.current
+    ) {
       return
     }
 
@@ -264,7 +278,10 @@ export function MusicPlayer() {
       starting = true
       void playAudio({ silent: true }).then((started) => {
         starting = false
-        if (started) cleanupAutoplayListeners()
+        if (started) {
+          autoplayCompletedRef.current = true
+          cleanupAutoplayListeners()
+        }
       })
     }
 
@@ -292,8 +309,9 @@ export function MusicPlayer() {
 
   const togglePlayback = () => {
     if (isPlaying) {
-      pauseAudio()
+      pauseAudio({ userInitiated: true })
     } else {
+      userPausedRef.current = false
       void playAudio()
     }
   }
