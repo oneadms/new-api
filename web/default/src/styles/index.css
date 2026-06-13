@@ -118,45 +118,87 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-html[data-system-background='true'] .bg-background {
-  background-color: color-mix(
-    in oklch,
-    var(--background) var(--app-content-bg-percent),
-    transparent
-  );
-}
-
-html[data-system-background='true'] .bg-card {
-  background-color: color-mix(
-    in oklch,
-    var(--card) var(--app-content-bg-percent),
-    transparent
-  );
-}
-
-html[data-system-background='true'] .bg-popover {
-  background-color: color-mix(
-    in oklch,
-    var(--popover) var(--app-content-bg-percent),
-    transparent
-  );
-}
-
-html[data-system-background='true'] .bg-sidebar {
+html[data-system-background='true'] [data-slot='sidebar-wrapper'] {
   background-color: color-mix(
     in oklch,
     var(--sidebar) var(--app-content-bg-percent),
     transparent
-  );
+  ) !important;
 }
 
-html[data-system-background='true'] .bg-muted,
-html[data-system-background='true'] .bg-input {
+html[data-system-background='true'] [data-slot='sidebar-inset'],
+html[data-system-background='true'] :is(.bg-background),
+html[data-system-background='true'] [class^='bg-background/'],
+html[data-system-background='true'] [class*=' bg-background/'] {
+  background-color: color-mix(
+    in oklch,
+    var(--background) var(--app-content-bg-percent),
+    transparent
+  ) !important;
+}
+
+html[data-system-background='true'] :is(.bg-card),
+html[data-system-background='true'] [class^='bg-card/'],
+html[data-system-background='true'] [class*=' bg-card/'] {
+  background-color: color-mix(
+    in oklch,
+    var(--card) var(--app-content-bg-percent),
+    transparent
+  ) !important;
+}
+
+html[data-system-background='true'] :is(.bg-popover),
+html[data-system-background='true'] [class^='bg-popover/'],
+html[data-system-background='true'] [class*=' bg-popover/'] {
+  background-color: color-mix(
+    in oklch,
+    var(--popover) var(--app-content-bg-percent),
+    transparent
+  ) !important;
+}
+
+html[data-system-background='true'] [data-slot='sidebar-inner'],
+html[data-system-background='true'] [data-sidebar='sidebar'],
+html[data-system-background='true'] :is(.bg-sidebar),
+html[data-system-background='true'] [class^='bg-sidebar/'],
+html[data-system-background='true'] [class*=' bg-sidebar/'] {
+  background-color: color-mix(
+    in oklch,
+    var(--sidebar) var(--app-content-bg-percent),
+    transparent
+  ) !important;
+}
+
+html[data-system-background='true'] :is(.bg-muted, .bg-input),
+html[data-system-background='true'] [class^='bg-muted/'],
+html[data-system-background='true'] [class*=' bg-muted/'],
+html[data-system-background='true'] [class^='bg-input/'],
+html[data-system-background='true'] [class*=' bg-input/'] {
   background-color: color-mix(
     in oklch,
     var(--muted) var(--app-content-bg-percent),
     transparent
-  );
+  ) !important;
+}
+
+html[data-system-background='true'] :is(.bg-accent),
+html[data-system-background='true'] [class^='bg-accent/'],
+html[data-system-background='true'] [class*=' bg-accent/'] {
+  background-color: color-mix(
+    in oklch,
+    var(--accent) var(--app-content-bg-percent),
+    transparent
+  ) !important;
+}
+
+html[data-system-background='true'] :is(.bg-secondary),
+html[data-system-background='true'] [class^='bg-secondary/'],
+html[data-system-background='true'] [class*=' bg-secondary/'] {
+  background-color: color-mix(
+    in oklch,
+    var(--secondary) var(--app-content-bg-percent),
+    transparent
+  ) !important;
 }
 
 /* Vercel Geist-style skeleton shimmer */
