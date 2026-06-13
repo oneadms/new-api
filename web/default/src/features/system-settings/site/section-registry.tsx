@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { MusicPlayerSection } from '../general/music-player-section'
 import { SystemInfoSection } from '../general/system-info-section'
 import {
   parseHeaderNavModules,
@@ -60,6 +61,20 @@ const SITE_SECTIONS = [
     titleKey: 'System Notice',
     build: (settings: SiteSettings) => (
       <NoticeSection defaultValue={settings.Notice ?? ''} />
+    ),
+  },
+  {
+    id: 'music-player',
+    titleKey: 'Music Player',
+    build: (settings: SiteSettings) => (
+      <MusicPlayerSection
+        defaultValues={{
+          MusicPlayerEnabled: settings.MusicPlayerEnabled,
+          MusicPlayerPlaylist: settings.MusicPlayerPlaylist,
+          MusicPlayerAutoplay: settings.MusicPlayerAutoplay,
+          MusicPlayerShowLyrics: settings.MusicPlayerShowLyrics,
+        }}
+      />
     ),
   },
   {

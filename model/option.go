@@ -72,6 +72,10 @@ func InitOptionMap() {
 	common.OptionMap["Logo"] = common.Logo
 	common.OptionMap["BackgroundImage"] = common.BackgroundImage
 	common.OptionMap["ContentOpacity"] = strconv.Itoa(common.ContentOpacity)
+	common.OptionMap["MusicPlayerEnabled"] = strconv.FormatBool(common.MusicPlayerEnabled)
+	common.OptionMap["MusicPlayerPlaylist"] = common.MusicPlayerPlaylist
+	common.OptionMap["MusicPlayerAutoplay"] = strconv.FormatBool(common.MusicPlayerAutoplay)
+	common.OptionMap["MusicPlayerShowLyrics"] = strconv.FormatBool(common.MusicPlayerShowLyrics)
 	common.OptionMap["ServerAddress"] = ""
 	common.OptionMap["WorkerUrl"] = system_setting.WorkerUrl
 	common.OptionMap["WorkerValidKey"] = system_setting.WorkerValidKey
@@ -278,7 +282,13 @@ func updateOptionMap(key string, value string) (err error) {
 			common.ImageDownloadPermission = intValue
 		}
 	}
-	if strings.HasSuffix(key, "Enabled") || key == "DefaultCollapseSidebar" || key == "DefaultUseAutoGroup" || key == "SMTPForceAuthLogin" {
+	isBooleanOption := strings.HasSuffix(key, "Enabled") ||
+		key == "DefaultCollapseSidebar" ||
+		key == "DefaultUseAutoGroup" ||
+		key == "SMTPForceAuthLogin" ||
+		key == "MusicPlayerAutoplay" ||
+		key == "MusicPlayerShowLyrics"
+	if isBooleanOption {
 		boolValue := value == "true"
 		switch key {
 		case "PasswordRegisterEnabled":
@@ -361,6 +371,12 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.DefaultUseAutoGroup = boolValue
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
+		case "MusicPlayerEnabled":
+			common.MusicPlayerEnabled = boolValue
+		case "MusicPlayerAutoplay":
+			common.MusicPlayerAutoplay = boolValue
+		case "MusicPlayerShowLyrics":
+			common.MusicPlayerShowLyrics = boolValue
 		}
 	}
 	switch key {
@@ -487,6 +503,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.BackgroundImage = value
 	case "ContentOpacity":
 		common.ContentOpacity, _ = strconv.Atoi(value)
+	case "MusicPlayerPlaylist":
+		common.MusicPlayerPlaylist = value
 	case "WeChatServerAddress":
 		common.WeChatServerAddress = value
 	case "WeChatServerToken":

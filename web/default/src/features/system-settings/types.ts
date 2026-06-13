@@ -63,6 +63,10 @@ export type SiteSettings = {
   Logo: string
   BackgroundImage: string
   ContentOpacity: number
+  MusicPlayerEnabled: boolean
+  MusicPlayerPlaylist: string
+  MusicPlayerAutoplay: boolean
+  MusicPlayerShowLyrics: boolean
   Footer: string
   About: string
   HomePageContent: string

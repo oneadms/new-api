@@ -21,8 +21,10 @@ import {
   useSystemConfigStore,
   type CurrencyConfig,
   type CurrencyDisplayType,
+  type MusicPlayerTrack,
   type SystemConfig,
   DEFAULT_CURRENCY_CONFIG,
+  DEFAULT_MUSIC_PLAYER_CONFIG,
 } from '@/stores/system-config-store'
 import { DEFAULT_SYSTEM_NAME, DEFAULT_LOGO } from '@/lib/constants'
 import { applyFaviconToDom } from '@/lib/dom-utils'
@@ -48,6 +50,10 @@ interface StatusApiResponse {
     usd_exchange_rate?: number
     custom_currency_symbol?: string
     custom_currency_exchange_rate?: number
+    music_player_enabled?: boolean | string
+    music_player_playlist?: string | unknown[]
+    music_player_autoplay?: boolean | string
+    music_player_show_lyrics?: boolean | string
   }
 }
 
@@ -58,6 +64,58 @@ function toNumber(value: unknown, fallback: number): number {
     if (!Number.isNaN(parsed)) return parsed
   }
   return fallback
+}
+
+function toBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1') return true
+    if (normalized === 'false' || normalized === '0') return false
+  }
+  return fallback
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
+function normalizeMusicPlayerTrack(value: unknown): MusicPlayerTrack | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+
+  const record = value as Record<string, unknown>
+  const url = toOptionalString(record.url)
+  if (!url) return null
+
+  return {
+    url,
+    title: toOptionalString(record.title),
+    artist: toOptionalString(record.artist),
+    cover: toOptionalString(record.cover),
+    lyrics: toOptionalString(record.lyrics),
+  }
+}
+
+function parseMusicPlayerPlaylist(value: unknown): MusicPlayerTrack[] {
+  try {
+    const parsed =
+      typeof value === 'string'
+        ? value.trim()
+          ? JSON.parse(value)
+          : []
+        : value
+
+    if (!Array.isArray(parsed)) return []
+
+    return parsed
+      .map((item) => normalizeMusicPlayerTrack(item))
+      .filter((item): item is MusicPlayerTrack => item !== null)
+      .slice(0, 50)
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -93,6 +151,22 @@ export function mapStatusDataToConfig(
     ),
   }
 
+  const musicPlayer = {
+    enabled: toBoolean(
+      data.music_player_enabled,
+      DEFAULT_MUSIC_PLAYER_CONFIG.enabled
+    ),
+    playlist: parseMusicPlayerPlaylist(data.music_player_playlist),
+    autoplay: toBoolean(
+      data.music_player_autoplay,
+      DEFAULT_MUSIC_PLAYER_CONFIG.autoplay
+    ),
+    showLyrics: toBoolean(
+      data.music_player_show_lyrics,
+      DEFAULT_MUSIC_PLAYER_CONFIG.showLyrics
+    ),
+  }
+
   return {
     systemName: data.system_name || DEFAULT_SYSTEM_NAME,
     logo: data.logo || DEFAULT_LOGO,
@@ -102,6 +176,7 @@ export function mapStatusDataToConfig(
     demoSiteEnabled: data.demo_site_enabled,
     displayTokenStatEnabled: data.display_token_stat_enabled,
     currency,
+    musicPlayer,
   }
 }
 

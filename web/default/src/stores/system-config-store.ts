@@ -37,6 +37,21 @@ export interface CurrencyConfig {
   customCurrencyExchangeRate: number
 }
 
+export interface MusicPlayerTrack {
+  title?: string
+  artist?: string
+  url: string
+  cover?: string
+  lyrics?: string
+}
+
+export interface MusicPlayerConfig {
+  enabled: boolean
+  playlist: MusicPlayerTrack[]
+  autoplay: boolean
+  showLyrics: boolean
+}
+
 export interface SystemConfig {
   systemName: string
   logo: string
@@ -46,6 +61,7 @@ export interface SystemConfig {
   demoSiteEnabled?: boolean
   displayTokenStatEnabled?: boolean
   currency: CurrencyConfig
+  musicPlayer: MusicPlayerConfig
 }
 
 export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
@@ -55,6 +71,13 @@ export const DEFAULT_CURRENCY_CONFIG: CurrencyConfig = {
   usdExchangeRate: 1,
   customCurrencySymbol: '¤',
   customCurrencyExchangeRate: 1,
+}
+
+export const DEFAULT_MUSIC_PLAYER_CONFIG: MusicPlayerConfig = {
+  enabled: false,
+  playlist: [],
+  autoplay: false,
+  showLyrics: true,
 }
 
 interface SystemConfigState {
@@ -79,6 +102,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         backgroundImage: '',
         contentOpacity: 100,
         currency: { ...DEFAULT_CURRENCY_CONFIG },
+        musicPlayer: { ...DEFAULT_MUSIC_PLAYER_CONFIG },
       },
       loading: true,
       loadedLogoUrl: DEFAULT_LOGO,
@@ -88,8 +112,12 @@ export const useSystemConfigStore = create<SystemConfigState>()(
             ...state.config,
             ...newConfig,
             currency: {
-              ...state.config.currency,
+              ...(state.config.currency ?? DEFAULT_CURRENCY_CONFIG),
               ...(newConfig.currency ?? {}),
+            },
+            musicPlayer: {
+              ...(state.config.musicPlayer ?? DEFAULT_MUSIC_PLAYER_CONFIG),
+              ...(newConfig.musicPlayer ?? {}),
             },
           },
         })),

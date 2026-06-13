@@ -19,6 +19,10 @@ var Footer = ""
 var Logo = ""
 var BackgroundImage = ""
 var ContentOpacity = 100
+var MusicPlayerEnabled = false
+var MusicPlayerPlaylist = "[]"
+var MusicPlayerAutoplay = false
+var MusicPlayerShowLyrics = true
 var TopUpLink = ""
 
 var themeValue atomic.Value // stores string; safe for concurrent read/write

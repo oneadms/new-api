@@ -70,6 +70,64 @@ func validateContentOpacity(value string) error {
 	return nil
 }
 
+type musicPlayerTrackOption struct {
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+	URL    string `json:"url"`
+	Cover  string `json:"cover"`
+	Lyrics string `json:"lyrics"`
+}
+
+func validateRequiredHTTPURL(value string, fieldName string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("%s 不能为空", fieldName)
+	}
+	parsed, err := url.ParseRequestURI(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s 必须是有效的 URL", fieldName)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s 仅支持 http 或 https", fieldName)
+	}
+	return nil
+}
+
+func validateMusicPlayerPlaylist(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+
+	var tracks []musicPlayerTrackOption
+	if err := common.UnmarshalJsonStr(trimmed, &tracks); err != nil {
+		return fmt.Errorf("音乐播放器播放列表必须是有效的 JSON 数组")
+	}
+	if len(tracks) > 50 {
+		return fmt.Errorf("音乐播放器最多支持 50 首曲目")
+	}
+
+	for index, track := range tracks {
+		prefix := fmt.Sprintf("第 %d 首曲目", index+1)
+		if err := validateRequiredHTTPURL(track.URL, prefix+"的音频 URL"); err != nil {
+			return err
+		}
+		if err := validateOptionalHTTPURL(track.Cover); err != nil {
+			return fmt.Errorf("%s 的封面 URL 无效: %w", prefix, err)
+		}
+		if len(track.Title) > 200 {
+			return fmt.Errorf("%s 的标题不能超过 200 个字符", prefix)
+		}
+		if len(track.Artist) > 200 {
+			return fmt.Errorf("%s 的艺术家不能超过 200 个字符", prefix)
+		}
+		if len(track.Lyrics) > 100*1024 {
+			return fmt.Errorf("%s 的歌词不能超过 100KB", prefix)
+		}
+	}
+	return nil
+}
+
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -262,6 +320,15 @@ func UpdateOption(c *gin.Context) {
 		}
 	case "ContentOpacity":
 		err = validateContentOpacity(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	case "MusicPlayerPlaylist":
+		err = validateMusicPlayerPlaylist(option.Value.(string))
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
