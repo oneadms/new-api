@@ -163,16 +163,20 @@ export function MusicPlayer() {
   const displayArtist = currentTrack?.artist || t('Unknown artist')
   const canSkip = tracks.length > 1
 
-  const playAudio = useCallback(async () => {
+  const playAudio = useCallback(async (options?: { silent?: boolean }) => {
     const audio = audioRef.current
-    if (!audio) return
+    if (!audio) return false
 
     try {
       await audio.play()
       setIsPlaying(true)
+      return true
     } catch {
       setIsPlaying(false)
-      toast.error(t('Audio playback failed'))
+      if (!options?.silent) {
+        toast.error(t('Audio playback failed'))
+      }
+      return false
     }
   }, [t])
 
@@ -231,20 +235,53 @@ export function MusicPlayer() {
   }, [currentTrack?.url, playAudio])
 
   useEffect(() => {
-    if (!enabled || !musicPlayer?.autoplay || !currentTrack?.url) return
-
-    const start = () => {
-      void playAudio()
+    if (!enabled || !musicPlayer?.autoplay || !currentTrack?.url || isPlaying) {
+      return
     }
 
-    window.addEventListener('pointerdown', start, { once: true })
-    window.addEventListener('keydown', start, { once: true })
+    let disposed = false
+    let starting = false
+    const autoplayEvents = [
+      'pointerdown',
+      'mousedown',
+      'touchstart',
+      'click',
+      'keydown',
+    ] as const
+    const listenerOptions = { capture: true, passive: true }
 
-    return () => {
-      window.removeEventListener('pointerdown', start)
-      window.removeEventListener('keydown', start)
+    const cleanupAutoplayListeners = () => {
+      disposed = true
+      for (const eventName of autoplayEvents) {
+        window.removeEventListener(eventName, tryStart, listenerOptions)
+      }
     }
-  }, [currentTrack?.url, enabled, musicPlayer?.autoplay, playAudio])
+
+    const tryStart = () => {
+      const audio = audioRef.current
+      if (disposed || starting || !audio || !audio.paused) return
+
+      starting = true
+      void playAudio({ silent: true }).then((started) => {
+        starting = false
+        if (started) cleanupAutoplayListeners()
+      })
+    }
+
+    for (const eventName of autoplayEvents) {
+      window.addEventListener(eventName, tryStart, listenerOptions)
+    }
+
+    tryStart()
+
+    return cleanupAutoplayListeners
+  }, [
+    currentTrack?.url,
+    enabled,
+    isPlaying,
+    musicPlayer?.autoplay,
+    playAudio,
+  ])
 
   useEffect(() => {
     if (!expanded || activeLyricIndex < 0) return
@@ -304,7 +341,8 @@ export function MusicPlayer() {
         <audio
           ref={audioRef}
           src={currentTrack.url}
-          preload='metadata'
+          preload={musicPlayer.autoplay ? 'auto' : 'metadata'}
+          playsInline
           onLoadedMetadata={(event) => {
             setDuration(event.currentTarget.duration || 0)
           }}
