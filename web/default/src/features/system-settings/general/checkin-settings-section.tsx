@@ -51,8 +51,8 @@ const createSchema = (t: (key: string) => string) =>
   z
     .object({
       enabled: z.boolean(),
-      minQuota: z.coerce.number().int().min(0),
-      maxQuota: z.coerce.number().int().min(0),
+      minAmount: z.coerce.number().min(0),
+      maxAmount: z.coerce.number().min(0),
       luckyEnabled: z.boolean(),
       minStakeAmount: z.coerce.number().positive(),
       maxStakeAmount: z.coerce.number().positive(),
@@ -62,10 +62,10 @@ const createSchema = (t: (key: string) => string) =>
       actualMaxFailurePercent: z.coerce.number().min(0).max(100),
     })
     .superRefine((values, context) => {
-      if (values.maxQuota < values.minQuota) {
+      if (values.maxAmount < values.minAmount) {
         context.addIssue({
           code: 'custom',
-          path: ['maxQuota'],
+          path: ['maxAmount'],
           message: t('Maximum must not be lower than minimum'),
         })
       }
@@ -167,8 +167,14 @@ export function CheckinSettingsSection({
     resolver: zodResolver(schema) as unknown as Resolver<Values>,
     defaultValues: {
       enabled: defaultValues.enabled,
-      minQuota: defaultValues.minQuota,
-      maxQuota: defaultValues.maxQuota,
+      minAmount: quotaToCurrencyAmount(
+        defaultValues.minQuota,
+        defaultValues.currencyConfig
+      ),
+      maxAmount: quotaToCurrencyAmount(
+        defaultValues.maxQuota,
+        defaultValues.currencyConfig
+      ),
       luckyEnabled: defaultValues.luckyEnabled,
       minStakeAmount: quotaToCurrencyAmount(
         defaultValues.minStakeQuota,
@@ -191,6 +197,18 @@ export function CheckinSettingsSection({
 
   async function onSubmit(values: Values) {
     const updates: Array<{ key: string; value: string }> = []
+    const minQuota = Math.max(
+      0,
+      Math.round(
+        currencyAmountToQuota(values.minAmount, defaultValues.currencyConfig)
+      )
+    )
+    const maxQuota = Math.max(
+      minQuota,
+      Math.round(
+        currencyAmountToQuota(values.maxAmount, defaultValues.currencyConfig)
+      )
+    )
     const minStakeQuota = Math.max(
       1,
       Math.round(
@@ -217,17 +235,17 @@ export function CheckinSettingsSection({
       })
     }
 
-    if (values.minQuota !== defaultValues.minQuota) {
+    if (minQuota !== defaultValues.minQuota) {
       updates.push({
         key: 'checkin_setting.min_quota',
-        value: String(values.minQuota),
+        value: String(minQuota),
       })
     }
 
-    if (values.maxQuota !== defaultValues.maxQuota) {
+    if (maxQuota !== defaultValues.maxQuota) {
       updates.push({
         key: 'checkin_setting.max_quota',
-        value: String(values.maxQuota),
+        value: String(maxQuota),
       })
     }
 
@@ -298,7 +316,7 @@ export function CheckinSettingsSection({
                   <FormLabel>{t('Enable check-in feature')}</FormLabel>
                   <FormDescription>
                     {t(
-                      'Allow users to check in daily for random quota rewards'
+                      'Allow users to check in daily for random balance rewards'
                     )}
                   </FormDescription>
                 </SettingsSwitchContent>
@@ -317,20 +335,18 @@ export function CheckinSettingsSection({
             <div className='grid gap-6 border-b pb-6 sm:grid-cols-2'>
               <FormField
                 control={form.control}
-                name='minQuota'
+                name='minAmount'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Minimum check-in quota')}</FormLabel>
+                    <FormLabel>
+                      {t('Minimum check-in reward amount')} (
+                      {currencyAmountLabel})
+                    </FormLabel>
                     <FormControl>
-                      <Input
-                        type='number'
-                        min={0}
-                        placeholder={t('1000')}
-                        {...field}
-                      />
+                      <Input type='number' min={0} step='any' {...field} />
                     </FormControl>
                     <FormDescription>
-                      {t('Minimum quota amount awarded for check-in')}
+                      {t('Minimum amount awarded for check-in')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -339,20 +355,18 @@ export function CheckinSettingsSection({
 
               <FormField
                 control={form.control}
-                name='maxQuota'
+                name='maxAmount'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Maximum check-in quota')}</FormLabel>
+                    <FormLabel>
+                      {t('Maximum check-in reward amount')} (
+                      {currencyAmountLabel})
+                    </FormLabel>
                     <FormControl>
-                      <Input
-                        type='number'
-                        min={0}
-                        placeholder={t('10000')}
-                        {...field}
-                      />
+                      <Input type='number' min={0} step='any' {...field} />
                     </FormControl>
                     <FormDescription>
-                      {t('Maximum quota amount awarded for check-in')}
+                      {t('Maximum amount awarded for check-in')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
