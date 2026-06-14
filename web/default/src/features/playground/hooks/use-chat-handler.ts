@@ -16,12 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import { sendChatCompletion } from '../api'
+import {
+  sendChatCompletion,
+  sendImageGeneration as sendImageGenerationRequest,
+} from '../api'
 import { MESSAGE_STATUS, ERROR_MESSAGES } from '../constants'
 import {
   buildChatCompletionPayload,
+  buildImageGenerationPayload,
   updateAssistantMessageWithError,
   updateLastAssistantMessage,
   processStreamingContent,
@@ -45,6 +49,7 @@ export function useChatHandler({
   onMessageUpdate,
 }: UseChatHandlerOptions) {
   const { sendStreamRequest, stopStream, isStreaming } = useStreamRequest()
+  const [isRequesting, setIsRequesting] = useState(false)
 
   // Handle stream update
   const handleStreamUpdate = useCallback(
@@ -134,6 +139,7 @@ export function useChatHandler({
         parameterEnabled
       )
 
+      setIsRequesting(true)
       try {
         const response = await sendChatCompletion(payload)
         const choice = response.choices?.[0]
@@ -169,9 +175,63 @@ export function useChatHandler({
             ERROR_MESSAGES.API_REQUEST_ERROR,
           err?.response?.data?.error?.code || undefined
         )
+      } finally {
+        setIsRequesting(false)
       }
     },
     [config, parameterEnabled, onMessageUpdate, handleStreamError]
+  )
+
+  const sendImageGeneration = useCallback(
+    async (prompt: string, imageReferenceUrls: string[] = []) => {
+      const payload = buildImageGenerationPayload(
+        prompt,
+        imageReferenceUrls,
+        config
+      )
+
+      setIsRequesting(true)
+      try {
+        const response = await sendImageGenerationRequest(payload)
+        const images = response.data || []
+        const revisedPrompt = images
+          .map((image) => image.revised_prompt)
+          .filter(Boolean)
+          .join('\n\n')
+
+        onMessageUpdate((prev) =>
+          updateLastAssistantMessage(prev, (message) => ({
+            ...message,
+            versions: [
+              {
+                ...message.versions[0],
+                content: revisedPrompt,
+              },
+            ],
+            images,
+            status: MESSAGE_STATUS.COMPLETE,
+            isReasoningStreaming: false,
+            isContentComplete: true,
+          }))
+        )
+      } catch (error: unknown) {
+        const err = error as {
+          response?: {
+            data?: { message?: string; error?: { code?: string } }
+          }
+          message?: string
+        }
+        handleStreamError(
+          err?.response?.data?.message ||
+            err?.message ||
+            ERROR_MESSAGES.API_REQUEST_ERROR,
+          err?.response?.data?.error?.code || undefined
+        )
+      } finally {
+        setIsRequesting(false)
+      }
+    },
+    [config, onMessageUpdate, handleStreamError]
   )
 
   // Send chat request (stream or non-stream based on config)
@@ -201,7 +261,8 @@ export function useChatHandler({
 
   return {
     sendChat,
+    sendImageGeneration,
     stopGeneration,
-    isGenerating: isStreaming,
+    isGenerating: isStreaming || isRequesting,
   }
 }

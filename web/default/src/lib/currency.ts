@@ -460,6 +460,73 @@ export function formatQuotaWithCurrency(
   return formatCurrencyFromUSD(amountUSD, options)
 }
 
+function resolveCurrencyConfig(
+  config?: Partial<CurrencyConfig>
+): CurrencyConfig {
+  const base = config ? { ...DEFAULT_CURRENCY_CONFIG, ...config } : getConfig()
+  return {
+    ...DEFAULT_CURRENCY_CONFIG,
+    ...base,
+    quotaPerUnit:
+      base.quotaPerUnit && base.quotaPerUnit > 0
+        ? base.quotaPerUnit
+        : DEFAULT_CURRENCY_CONFIG.quotaPerUnit,
+    usdExchangeRate:
+      base.usdExchangeRate && base.usdExchangeRate > 0
+        ? base.usdExchangeRate
+        : DEFAULT_CURRENCY_CONFIG.usdExchangeRate,
+    customCurrencyExchangeRate:
+      base.customCurrencyExchangeRate && base.customCurrencyExchangeRate > 0
+        ? base.customCurrencyExchangeRate
+        : DEFAULT_CURRENCY_CONFIG.customCurrencyExchangeRate,
+    customCurrencySymbol:
+      base.customCurrencySymbol?.trim() ||
+      DEFAULT_CURRENCY_CONFIG.customCurrencySymbol,
+  }
+}
+
+export function quotaToCurrencyAmount(
+  quota: number | null | undefined,
+  config?: Partial<CurrencyConfig>
+): number {
+  if (quota == null || Number.isNaN(quota)) return 0
+
+  const resolvedConfig = resolveCurrencyConfig(config)
+  const meta = getBillingDisplayMeta(resolvedConfig)
+  const amountUSD = quota / resolvedConfig.quotaPerUnit
+
+  if (meta.kind === 'currency' || meta.kind === 'custom') {
+    return amountUSD * meta.exchangeRate
+  }
+
+  return amountUSD
+}
+
+export function currencyAmountToQuota(
+  amount: number | null | undefined,
+  config?: Partial<CurrencyConfig>
+): number {
+  if (amount == null || Number.isNaN(amount)) return 0
+
+  const resolvedConfig = resolveCurrencyConfig(config)
+  const meta = getBillingDisplayMeta(resolvedConfig)
+  const exchangeRate =
+    meta.kind === 'currency' || meta.kind === 'custom' ? meta.exchangeRate : 1
+
+  return (amount / exchangeRate) * resolvedConfig.quotaPerUnit
+}
+
+export function getCurrencyAmountLabel(
+  config?: Partial<CurrencyConfig>
+): string {
+  const resolvedConfig = resolveCurrencyConfig(config)
+  const meta = getBillingDisplayMeta(resolvedConfig)
+
+  if (meta.kind === 'currency') return meta.currencyCode
+  if (meta.kind === 'custom') return meta.symbol
+  return 'USD'
+}
+
 /**
  * Get the current currency label for UI display.
  *

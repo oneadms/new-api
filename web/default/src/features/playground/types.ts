@@ -30,6 +30,9 @@ export interface Message {
   key: string
   from: MessageRole
   versions: MessageVersion[]
+  mode?: PlaygroundMode
+  images?: GeneratedImage[]
+  imageReferenceUrls?: string[]
   sources?: { href: string; title: string }[]
   reasoning?: {
     content: string
@@ -106,8 +109,43 @@ export interface ChatCompletionResponse {
   }
 }
 
+export type PlaygroundMode = 'chat' | 'image'
+
+export type ImageResponseFormat = 'auto' | 'url' | 'b64_json'
+
+export interface GeneratedImage {
+  url?: string
+  b64_json?: string
+  revised_prompt?: string
+}
+
+export interface ImageGenerationRequest {
+  model: string
+  group?: string
+  prompt: string
+  n?: number
+  size?: string
+  quality?: string
+  response_format?: Exclude<ImageResponseFormat, 'auto'>
+  image?: string
+  image2?: string
+  image3?: string
+}
+
+export interface ImageGenerationResponse {
+  created: number
+  data: GeneratedImage[]
+  metadata?: unknown
+}
+
+export interface PlaygroundSubmitInput {
+  text: string
+  imageReferenceUrls?: string[]
+}
+
 // Configuration types
 export interface PlaygroundConfig {
+  mode: PlaygroundMode
   model: string
   group: string
   temperature: number
@@ -117,6 +155,10 @@ export interface PlaygroundConfig {
   presence_penalty: number
   seed: number | null
   stream: boolean
+  image_size: string
+  image_quality: string
+  image_response_format: ImageResponseFormat
+  image_n: number
 }
 
 export interface ParameterEnabled {

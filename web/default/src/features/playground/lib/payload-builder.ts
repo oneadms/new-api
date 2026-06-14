@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type {
   ChatCompletionRequest,
+  ImageGenerationRequest,
   Message,
   PlaygroundConfig,
   ParameterEnabled,
@@ -62,6 +63,47 @@ export function buildChatCompletionPayload(
       }
     }
   })
+
+  return payload
+}
+
+/**
+ * Build image generation payload from prompt, reference images, and config
+ */
+export function buildImageGenerationPayload(
+  prompt: string,
+  imageReferenceUrls: string[],
+  config: PlaygroundConfig
+): ImageGenerationRequest {
+  const payload: ImageGenerationRequest = {
+    model: config.model,
+    group: config.group,
+    prompt,
+  }
+
+  if (config.image_n > 0) {
+    payload.n = config.image_n
+  }
+
+  if (config.image_size) {
+    payload.size = config.image_size
+  }
+
+  if (config.image_quality && config.image_quality !== 'auto') {
+    payload.quality = config.image_quality
+  }
+
+  if (config.image_response_format !== 'auto') {
+    payload.response_format = config.image_response_format
+  }
+
+  const [image, image2, image3] = imageReferenceUrls
+    .slice(0, 3)
+    .map((url) => url.trim())
+
+  if (image) payload.image = image
+  if (image2) payload.image2 = image2
+  if (image3) payload.image3 = image3
 
   return payload
 }

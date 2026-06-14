@@ -49,6 +49,9 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 
 	sfRequest.Model = request.Model
 	sfRequest.Prompt = request.Prompt
+	if sfRequest.Image == "" && len(request.Image) > 0 {
+		_ = common.Unmarshal(request.Image, &sfRequest.Image)
+	}
 	// 优先使用image_size/batch_size，否则使用OpenAI标准的size/n
 	if sfRequest.ImageSize == "" {
 		sfRequest.ImageSize = request.Size

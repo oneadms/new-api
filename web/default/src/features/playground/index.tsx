@@ -25,7 +25,7 @@ import { PlaygroundChat } from './components/playground-chat'
 import { PlaygroundInput } from './components/playground-input'
 import { usePlaygroundState, useChatHandler } from './hooks'
 import { createUserMessage, createLoadingAssistantMessage } from './lib'
-import type { Message as MessageType } from './types'
+import type { Message as MessageType, PlaygroundSubmitInput } from './types'
 
 export function Playground() {
   const { t } = useTranslation()
@@ -41,11 +41,12 @@ export function Playground() {
     updateConfig,
   } = usePlaygroundState()
 
-  const { sendChat, stopGeneration, isGenerating } = useChatHandler({
-    config,
-    parameterEnabled,
-    onMessageUpdate: updateMessages,
-  })
+  const { sendChat, sendImageGeneration, stopGeneration, isGenerating } =
+    useChatHandler({
+      config,
+      parameterEnabled,
+      onMessageUpdate: updateMessages,
+    })
 
   // Edit dialog state
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
@@ -114,15 +115,25 @@ export function Playground() {
     }
   }, [groupsData, setGroups, config.group, updateConfig])
 
-  const handleSendMessage = (text: string) => {
-    const userMessage = createUserMessage(text)
-    const assistantMessage = createLoadingAssistantMessage()
+  const handleSendMessage = (input: PlaygroundSubmitInput) => {
+    const imageReferenceUrls = input.imageReferenceUrls || []
+    const userMessage = createUserMessage(input.text, {
+      mode: config.mode,
+      imageReferenceUrls:
+        config.mode === 'image' ? imageReferenceUrls : undefined,
+    })
+    const assistantMessage = createLoadingAssistantMessage({
+      mode: config.mode,
+    })
 
     const newMessages = [...messages, userMessage, assistantMessage]
     updateMessages(newMessages)
 
-    // Send chat request
-    sendChat(newMessages)
+    if (config.mode === 'image') {
+      sendImageGeneration(input.text, imageReferenceUrls)
+    } else {
+      sendChat(newMessages)
+    }
   }
 
   const handleCopyMessage = (message: MessageType) => {
@@ -138,11 +149,23 @@ export function Playground() {
 
     // Remove messages after this one and regenerate
     const messagesUpToHere = messages.slice(0, messageIndex)
-    const loadingMessage = createLoadingAssistantMessage()
+    const loadingMessage = createLoadingAssistantMessage({
+      mode: message.mode,
+    })
     const newMessages = [...messagesUpToHere, loadingMessage]
 
     updateMessages(newMessages)
-    sendChat(newMessages)
+    if (message.mode === 'image') {
+      const lastUserMessage = [...messagesUpToHere]
+        .reverse()
+        .find((m) => m.from === 'user' && m.mode === 'image')
+      sendImageGeneration(
+        lastUserMessage?.versions[0]?.content || '',
+        lastUserMessage?.imageReferenceUrls || []
+      )
+    } else {
+      sendChat(newMessages)
+    }
   }
 
   const handleEditMessage = useCallback((message: MessageType) => {
@@ -173,14 +196,19 @@ export function Playground() {
         return
       }
 
+      const mode = updated[index].mode || 'chat'
       const toSubmit = [
         ...updated.slice(0, index + 1),
-        createLoadingAssistantMessage(),
+        createLoadingAssistantMessage({ mode }),
       ]
       updateMessages(toSubmit)
-      sendChat(toSubmit)
+      if (mode === 'image') {
+        sendImageGeneration(newContent, updated[index].imageReferenceUrls || [])
+      } else {
+        sendChat(toSubmit)
+      }
     },
-    [editingMessageKey, messages, updateMessages, sendChat]
+    [editingMessageKey, messages, updateMessages, sendChat, sendImageGeneration]
   )
 
   const handleDeleteMessage = (message: MessageType) => {
@@ -212,11 +240,23 @@ export function Playground() {
           disabled={isGenerating}
           groups={groups}
           groupValue={config.group}
+          imageCount={config.image_n}
+          imageQuality={config.image_quality}
+          imageResponseFormat={config.image_response_format}
+          imageSize={config.image_size}
           isGenerating={isGenerating}
           isModelLoading={isLoadingModels}
+          mode={config.mode}
           modelValue={config.model}
           models={models}
           onGroupChange={(value) => updateConfig('group', value)}
+          onImageCountChange={(value) => updateConfig('image_n', value)}
+          onImageQualityChange={(value) => updateConfig('image_quality', value)}
+          onImageResponseFormatChange={(value) =>
+            updateConfig('image_response_format', value)
+          }
+          onImageSizeChange={(value) => updateConfig('image_size', value)}
+          onModeChange={(value) => updateConfig('mode', value)}
           onModelChange={(value) => updateConfig('model', value)}
           onStop={stopGeneration}
           onSubmit={handleSendMessage}

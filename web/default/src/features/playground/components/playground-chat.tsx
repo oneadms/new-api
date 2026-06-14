@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -68,6 +69,13 @@ interface PlaygroundChatProps {
   onSaveEditAndSubmit?: (newContent: string) => void
 }
 
+function getGeneratedImageSrc(image: { url?: string; b64_json?: string }) {
+  if (image.url) return image.url
+  if (!image.b64_json) return ''
+  if (image.b64_json.startsWith('data:')) return image.b64_json
+  return `data:image/png;base64,${image.b64_json}`
+}
+
 export function PlaygroundChat({
   messages,
   onCopyMessage,
@@ -80,6 +88,7 @@ export function PlaygroundChat({
   onCancelEdit,
   onSaveEditAndSubmit,
 }: PlaygroundChatProps) {
+  const { t } = useTranslation()
   const [editText, setEditText] = useState('')
   const [originalText, setOriginalText] = useState('')
 
@@ -120,7 +129,7 @@ export function PlaygroundChat({
                     >
                       <div className='w-full min-w-0 flex-1 basis-full py-1'>
                         {isEditing(message.key) ? (
-                          <div className='space-y-2'>
+                          <div className='flex flex-col gap-2'>
                             <Textarea
                               value={editText}
                               onChange={(e) => setEditText(e.target.value)}
@@ -137,7 +146,7 @@ export function PlaygroundChat({
                                   }
                                   disabled={isEmpty || !isChanged}
                                 >
-                                  Save & Submit
+                                  {t('Save & Submit')}
                                 </Button>
                               )}
                               <Button
@@ -145,14 +154,14 @@ export function PlaygroundChat({
                                 onClick={() => onSaveEdit?.(editText)}
                                 disabled={isEmpty || !isChanged}
                               >
-                                Save
+                                {t('Save')}
                               </Button>
                               <Button
                                 size='sm'
                                 variant='outline'
                                 onClick={() => onCancelEdit?.(false)}
                               >
-                                Cancel
+                                {t('Cancel')}
                               </Button>
                             </div>
                           </div>
@@ -164,6 +173,8 @@ export function PlaygroundChat({
                               const hasSources = !!message.sources?.length
                               const showReasoning =
                                 isAssistant && !!message.reasoning?.content
+                              const hasGeneratedImages =
+                                isAssistant && !!message.images?.length
                               const showLoader =
                                 isAssistant &&
                                 !message.isReasoningStreaming &&
@@ -171,9 +182,10 @@ export function PlaygroundChat({
                                   (message.status === 'streaming' &&
                                     !version.content))
                               const showMessageContent =
-                                (message.from === MESSAGE_ROLES.USER ||
+                                ((message.from === MESSAGE_ROLES.USER ||
                                   !message.isReasoningStreaming) &&
-                                !!version.content
+                                  !!version.content) ||
+                                hasGeneratedImages
 
                               // Extract visible content (remove <think> tags for assistant messages)
                               const displayContent = isAssistant
@@ -233,7 +245,9 @@ export function PlaygroundChat({
                                     <div className='flex items-center gap-2 py-2'>
                                       <Loader />
                                       <Shimmer className='text-sm' duration={1}>
-                                        Responding...
+                                        {message.mode === 'image'
+                                          ? t('Generating image...')
+                                          : t('Responding...')}
                                       </Shimmer>
                                     </div>
                                   )}
@@ -250,14 +264,37 @@ export function PlaygroundChat({
                                   ) : (
                                     showMessageContent && (
                                       <>
-                                        <MessageContent
-                                          variant='flat'
-                                          className={cn(
-                                            getMessageContentStyles()
-                                          )}
-                                        >
-                                          <Response>{displayContent}</Response>
-                                        </MessageContent>
+                                        {!!displayContent && (
+                                          <MessageContent
+                                            variant='flat'
+                                            className={cn(
+                                              getMessageContentStyles()
+                                            )}
+                                          >
+                                            <Response>
+                                              {displayContent}
+                                            </Response>
+                                          </MessageContent>
+                                        )}
+                                        {hasGeneratedImages && (
+                                          <div className='mt-2 grid gap-3 sm:grid-cols-2'>
+                                            {message.images!.map(
+                                              (image, imageIndex) => {
+                                                const src =
+                                                  getGeneratedImageSrc(image)
+                                                if (!src) return null
+                                                return (
+                                                  <img
+                                                    alt={t('Generated image')}
+                                                    className='border-border bg-muted aspect-square w-full rounded-lg border object-contain'
+                                                    key={`${message.key}-image-${imageIndex}`}
+                                                    src={src}
+                                                  />
+                                                )
+                                              }
+                                            )}
+                                          </div>
+                                        )}
                                         {actions}
                                       </>
                                     )

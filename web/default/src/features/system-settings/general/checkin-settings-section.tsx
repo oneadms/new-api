@@ -21,6 +21,12 @@ import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import type { CurrencyConfig } from '@/stores/system-config-store'
+import {
+  currencyAmountToQuota,
+  getCurrencyAmountLabel,
+  quotaToCurrencyAmount,
+} from '@/lib/currency'
 import {
   Form,
   FormControl,
@@ -48,8 +54,8 @@ const createSchema = (t: (key: string) => string) =>
       minQuota: z.coerce.number().int().min(0),
       maxQuota: z.coerce.number().int().min(0),
       luckyEnabled: z.boolean(),
-      minStakeQuota: z.coerce.number().int().positive(),
-      maxStakeQuota: z.coerce.number().int().positive(),
+      minStakeAmount: z.coerce.number().positive(),
+      maxStakeAmount: z.coerce.number().positive(),
       minFailurePercent: z.coerce.number().min(0).max(100),
       maxFailurePercent: z.coerce.number().min(0).max(100),
       actualMinFailurePercent: z.coerce.number().min(0).max(100),
@@ -63,10 +69,10 @@ const createSchema = (t: (key: string) => string) =>
           message: t('Maximum must not be lower than minimum'),
         })
       }
-      if (values.maxStakeQuota < values.minStakeQuota) {
+      if (values.maxStakeAmount < values.minStakeAmount) {
         context.addIssue({
           code: 'custom',
-          path: ['maxStakeQuota'],
+          path: ['maxStakeAmount'],
           message: t('Maximum must not be lower than minimum'),
         })
       }
@@ -90,16 +96,18 @@ type Values = z.infer<ReturnType<typeof createSchema>>
 
 const luckyNumberFields = [
   {
-    name: 'minStakeQuota',
-    label: 'Minimum lucky check-in stake',
-    min: 1,
-    step: 1,
+    name: 'minStakeAmount',
+    label: 'Minimum lucky check-in stake amount',
+    min: 0,
+    step: 'any',
+    showCurrencyLabel: true,
   },
   {
-    name: 'maxStakeQuota',
-    label: 'Maximum lucky check-in stake',
-    min: 1,
-    step: 1,
+    name: 'maxStakeAmount',
+    label: 'Maximum lucky check-in stake amount',
+    min: 0,
+    step: 'any',
+    showCurrencyLabel: true,
   },
   {
     name: 'minFailurePercent',
@@ -145,11 +153,15 @@ export function CheckinSettingsSection({
     maxFailureBps: number
     actualMinFailureBps: number
     actualMaxFailureBps: number
+    currencyConfig: CurrencyConfig
   }
 }) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const schema = createSchema(t)
+  const currencyAmountLabel = getCurrencyAmountLabel(
+    defaultValues.currencyConfig
+  )
 
   const form = useForm<Values>({
     resolver: zodResolver(schema) as unknown as Resolver<Values>,
@@ -158,8 +170,14 @@ export function CheckinSettingsSection({
       minQuota: defaultValues.minQuota,
       maxQuota: defaultValues.maxQuota,
       luckyEnabled: defaultValues.luckyEnabled,
-      minStakeQuota: defaultValues.minStakeQuota,
-      maxStakeQuota: defaultValues.maxStakeQuota,
+      minStakeAmount: quotaToCurrencyAmount(
+        defaultValues.minStakeQuota,
+        defaultValues.currencyConfig
+      ),
+      maxStakeAmount: quotaToCurrencyAmount(
+        defaultValues.maxStakeQuota,
+        defaultValues.currencyConfig
+      ),
       minFailurePercent: defaultValues.minFailureBps / 100,
       maxFailurePercent: defaultValues.maxFailureBps / 100,
       actualMinFailurePercent: defaultValues.actualMinFailureBps / 100,
@@ -173,6 +191,24 @@ export function CheckinSettingsSection({
 
   async function onSubmit(values: Values) {
     const updates: Array<{ key: string; value: string }> = []
+    const minStakeQuota = Math.max(
+      1,
+      Math.round(
+        currencyAmountToQuota(
+          values.minStakeAmount,
+          defaultValues.currencyConfig
+        )
+      )
+    )
+    const maxStakeQuota = Math.max(
+      minStakeQuota,
+      Math.round(
+        currencyAmountToQuota(
+          values.maxStakeAmount,
+          defaultValues.currencyConfig
+        )
+      )
+    )
 
     if (values.enabled !== defaultValues.enabled) {
       updates.push({
@@ -197,8 +233,8 @@ export function CheckinSettingsSection({
 
     const luckyUpdates = [
       ['lucky_checkin_setting.enabled', values.luckyEnabled],
-      ['lucky_checkin_setting.min_stake_quota', values.minStakeQuota],
-      ['lucky_checkin_setting.max_stake_quota', values.maxStakeQuota],
+      ['lucky_checkin_setting.min_stake_quota', minStakeQuota],
+      ['lucky_checkin_setting.max_stake_quota', maxStakeQuota],
       [
         'lucky_checkin_setting.min_failure_bps',
         Math.round(values.minFailurePercent * 100),
@@ -354,14 +390,26 @@ export function CheckinSettingsSection({
               {luckyEnabled && (
                 <div className='grid gap-6 sm:grid-cols-2'>
                   {luckyNumberFields.map(
-                    ({ name, label, min, step, ...fieldProps }) => (
+                    ({
+                      name,
+                      label,
+                      min,
+                      step,
+                      showCurrencyLabel,
+                      ...fieldProps
+                    }) => (
                       <FormField
                         key={name}
                         control={form.control}
                         name={name}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{t(label)}</FormLabel>
+                            <FormLabel>
+                              {t(label)}
+                              {showCurrencyLabel
+                                ? ` (${currencyAmountLabel})`
+                                : ''}
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 type='number'

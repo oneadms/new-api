@@ -29,7 +29,12 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatQuotaWithCurrency } from '@/lib/currency'
+import {
+  currencyAmountToQuota,
+  formatQuotaWithCurrency,
+  getCurrencyAmountLabel,
+  quotaToCurrencyAmount,
+} from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -75,7 +80,7 @@ export function CheckinCalendarCard({
   const [initialLoaded, setInitialLoaded] = useState(false)
   const [collapsed, setCollapsed] = useState<boolean>(false)
   const [luckyDialogVisible, setLuckyDialogVisible] = useState(false)
-  const [luckyStake, setLuckyStake] = useState<number | ''>('')
+  const [luckyStakeAmount, setLuckyStakeAmount] = useState<number | ''>('')
   const [pendingStake, setPendingStake] = useState<number | undefined>()
 
   const currentMonthStr = useMemo(() => {
@@ -129,15 +134,31 @@ export function CheckinCalendarCard({
   const checkedToday = checkinData?.stats?.checked_in_today === true
   const todayAward = checkinRecordsMap[todayString]
   const lucky = checkinData?.lucky
+  const minLuckyStakeAmount = lucky
+    ? quotaToCurrencyAmount(lucky.min_stake_quota)
+    : 0
+  const maxLuckyStakeAmount = lucky
+    ? quotaToCurrencyAmount(lucky.max_stake_quota)
+    : 0
+  const luckyStakeQuota =
+    luckyStakeAmount === ''
+      ? undefined
+      : Math.max(1, Math.round(currencyAmountToQuota(luckyStakeAmount)))
+  const luckyStakeOutOfRange =
+    !lucky ||
+    luckyStakeQuota === undefined ||
+    luckyStakeQuota < lucky.min_stake_quota ||
+    luckyStakeQuota > lucky.max_stake_quota
+  const currencyAmountLabel = getCurrencyAmountLabel()
 
   const luckyFailurePercent = useMemo(() => {
-    if (!lucky || luckyStake === '') return null
+    if (!lucky || luckyStakeQuota === undefined) return null
     if (lucky.max_stake_quota === lucky.min_stake_quota) {
       return lucky.min_failure_bps / 100
     }
     const boundedStake = Math.min(
       lucky.max_stake_quota,
-      Math.max(lucky.min_stake_quota, luckyStake)
+      Math.max(lucky.min_stake_quota, luckyStakeQuota)
     )
     const bps =
       lucky.min_failure_bps +
@@ -145,7 +166,7 @@ export function CheckinCalendarCard({
         (lucky.max_failure_bps - lucky.min_failure_bps)) /
         (lucky.max_stake_quota - lucky.min_stake_quota)
     return bps / 100
-  }, [lucky, luckyStake])
+  }, [lucky, luckyStakeQuota])
 
   const formatDelta = useCallback(
     (quota: number) =>
@@ -326,22 +347,34 @@ export function CheckinCalendarCard({
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-3'>
-            <Input
-              type='number'
-              min={lucky?.min_stake_quota}
-              max={lucky?.max_stake_quota}
-              value={luckyStake}
-              onChange={(event) =>
-                setLuckyStake(
-                  event.target.value === '' ? '' : Number(event.target.value)
-                )
-              }
-              placeholder={
-                lucky
-                  ? `${lucky.min_stake_quota} - ${lucky.max_stake_quota}`
-                  : undefined
-              }
-            />
+            <div className='space-y-1.5'>
+              <label className='text-sm font-medium'>
+                {t('Stake amount')} ({currencyAmountLabel})
+              </label>
+              <Input
+                type='number'
+                min={minLuckyStakeAmount}
+                max={maxLuckyStakeAmount}
+                step='any'
+                value={luckyStakeAmount}
+                onChange={(event) =>
+                  setLuckyStakeAmount(
+                    event.target.value === '' ? '' : Number(event.target.value)
+                  )
+                }
+                placeholder={
+                  lucky
+                    ? `${minLuckyStakeAmount} - ${maxLuckyStakeAmount}`
+                    : undefined
+                }
+              />
+              {lucky && (
+                <p className='text-muted-foreground text-xs'>
+                  {formatQuotaWithCurrency(lucky.min_stake_quota)} -{' '}
+                  {formatQuotaWithCurrency(lucky.max_stake_quota)}
+                </p>
+              )}
+            </div>
             {luckyFailurePercent !== null && (
               <p className='text-muted-foreground text-sm'>
                 {t('Failure probability')}: {luckyFailurePercent.toFixed(2)}%
@@ -359,14 +392,13 @@ export function CheckinCalendarCard({
             <Button
               type='button'
               onClick={() =>
-                luckyStake !== '' && doCheckin(undefined, luckyStake)
+                luckyStakeQuota !== undefined &&
+                doCheckin(undefined, luckyStakeQuota)
               }
               disabled={
                 checkinLoading ||
-                luckyStake === '' ||
-                !lucky ||
-                luckyStake < lucky.min_stake_quota ||
-                luckyStake > lucky.max_stake_quota
+                luckyStakeAmount === '' ||
+                luckyStakeOutOfRange
               }
             >
               <Dices />
@@ -427,7 +459,9 @@ export function CheckinCalendarCard({
                   className='flex-1 sm:flex-none'
                   disabled={checkinLoading || checkedToday}
                   onClick={() => {
-                    setLuckyStake(lucky.min_stake_quota)
+                    setLuckyStakeAmount(
+                      quotaToCurrencyAmount(lucky.min_stake_quota)
+                    )
                     setLuckyDialogVisible(true)
                   }}
                 >

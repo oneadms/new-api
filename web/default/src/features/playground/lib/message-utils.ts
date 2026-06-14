@@ -23,6 +23,7 @@ import type {
   MessageVersion,
   ChatCompletionMessage,
   ContentPart,
+  PlaygroundMode,
 } from '../types'
 
 /**
@@ -59,10 +60,18 @@ export function updateCurrentVersionContent(
 /**
  * Create a user message
  */
-export function createUserMessage(content: string): Message {
+export function createUserMessage(
+  content: string,
+  options: {
+    mode?: PlaygroundMode
+    imageReferenceUrls?: string[]
+  } = {}
+): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.USER,
+    mode: options.mode,
+    imageReferenceUrls: options.imageReferenceUrls,
     versions: [createMessageVersion(content)],
   }
 }
@@ -70,10 +79,15 @@ export function createUserMessage(content: string): Message {
 /**
  * Create a loading assistant message
  */
-export function createLoadingAssistantMessage(): Message {
+export function createLoadingAssistantMessage(
+  options: {
+    mode?: PlaygroundMode
+  } = {}
+): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.ASSISTANT,
+    mode: options.mode,
     versions: [createMessageVersion('')],
     reasoning: undefined,
     isReasoningComplete: false,
@@ -143,6 +157,8 @@ export function formatMessageForAPI(message: Message): ChatCompletionMessage {
  */
 export function isValidMessage(message: Message): boolean {
   if (!message || !message.from || !message.versions.length) return false
+
+  if (message.mode === 'image') return false
 
   const content = message.versions[0]?.content
   if (content === undefined) return false
@@ -332,9 +348,10 @@ export function sanitizeMessagesOnLoad(messages: Message[]): Message[] {
   const finalized = finalizeMessage(messages[targetIndex])
   const hasContent = finalized.versions?.[0]?.content?.trim()
   const hasReasoning = finalized.reasoning?.content?.trim()
+  const hasImages = finalized.images?.length
 
   const sanitized: Message =
-    hasContent || hasReasoning
+    hasContent || hasReasoning || hasImages
       ? {
           ...finalized,
           status: MESSAGE_STATUS.COMPLETE,
