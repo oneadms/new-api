@@ -28,10 +28,11 @@ export type CanvasMetrics = {
 
 const PLAYER_RADIUS = 18
 const DROP_RADIUS = 9
+const MAX_DEVICE_PIXEL_RATIO = 2
 
 export function resizeCanvas(canvas: HTMLCanvasElement): void {
   const rect = canvas.getBoundingClientRect()
-  const dpr = window.devicePixelRatio || 1
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO)
   const width = Math.max(320, Math.floor(rect.width * dpr))
   const height = Math.max(240, Math.floor(rect.height * dpr))
   if (canvas.width !== width || canvas.height !== height) {

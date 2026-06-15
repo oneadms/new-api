@@ -40,6 +40,8 @@ import type {
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'closed'
 const defaultRoomId = 'lobby'
+const hudUpdateIntervalMs = 150
+const inputSendIntervalMs = 50
 
 function createEmptyInput(): BattleInput {
   return {
@@ -197,6 +199,8 @@ export function Battle() {
   const wsRef = useRef<WebSocket | null>(null)
   const inputRef = useRef<BattleInput>(createEmptyInput())
   const snapshotRef = useRef<BattleSnapshot | null>(null)
+  const hudUpdateAtRef = useRef(0)
+  const hudUpdateTimerRef = useRef<number | null>(null)
   const [roomId, setRoomId] = useState('')
   const [connectionState, setConnectionState] =
     useState<ConnectionState>('idle')
@@ -223,11 +227,49 @@ export function Battle() {
     })
   }, [snapshot])
 
+  const clearHudUpdateTimer = useCallback(() => {
+    if (hudUpdateTimerRef.current !== null) {
+      window.clearTimeout(hudUpdateTimerRef.current)
+      hudUpdateTimerRef.current = null
+    }
+  }, [])
+
+  const publishSnapshot = useCallback(
+    (nextSnapshot: BattleSnapshot) => {
+      snapshotRef.current = nextSnapshot
+
+      const now = window.performance?.now() ?? Date.now()
+      const elapsed = now - hudUpdateAtRef.current
+      if (elapsed >= hudUpdateIntervalMs) {
+        clearHudUpdateTimer()
+        hudUpdateAtRef.current = now
+        setSnapshot(nextSnapshot)
+        return
+      }
+
+      if (hudUpdateTimerRef.current !== null) return
+
+      hudUpdateTimerRef.current = window.setTimeout(() => {
+        hudUpdateTimerRef.current = null
+        hudUpdateAtRef.current = window.performance?.now() ?? Date.now()
+        setSnapshot(snapshotRef.current)
+      }, hudUpdateIntervalMs - elapsed)
+    },
+    [clearHudUpdateTimer]
+  )
+
+  const sendInput = useCallback(() => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'input', input: inputRef.current }))
+  }, [])
+
   const disconnect = useCallback(() => {
     wsRef.current?.close()
     wsRef.current = null
+    clearHudUpdateTimer()
     setConnectionState('closed')
-  }, [])
+  }, [clearHudUpdateTimer])
 
   const connect = useCallback(() => {
     const statusData = battleStatus.data
@@ -245,6 +287,10 @@ export function Battle() {
     )
 
     wsRef.current = ws
+    snapshotRef.current = null
+    setSnapshot(null)
+    clearHudUpdateTimer()
+    hudUpdateAtRef.current = 0
     setLastError(null)
     setConnectionState('connecting')
 
@@ -259,8 +305,7 @@ export function Battle() {
         return
       }
       if (message.type === 'snapshot') {
-        snapshotRef.current = message
-        setSnapshot(message)
+        publishSnapshot(message)
         return
       }
       if (message.type === 'joined') {
@@ -284,22 +329,21 @@ export function Battle() {
         current === 'connected' || current === 'connecting' ? 'closed' : current
       )
     }
-  }, [battleStatus.data, roomId, t])
+  }, [battleStatus.data, clearHudUpdateTimer, publishSnapshot, roomId, t])
 
   useEffect(() => {
     return () => {
       wsRef.current?.close()
+      clearHudUpdateTimer()
     }
-  }, [])
+  }, [clearHudUpdateTimer])
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      ws.send(JSON.stringify({ type: 'input', input: inputRef.current }))
-    }, 33)
+      sendInput()
+    }, inputSendIntervalMs)
     return () => window.clearInterval(interval)
-  }, [])
+  }, [sendInput])
 
   useEffect(() => {
     let frame = 0
@@ -323,30 +367,37 @@ export function Battle() {
         return
       }
       const input = inputRef.current
+      let changed = false
+      const setFlag = (key: 'up' | 'down' | 'left' | 'right' | 'shoot') => {
+        if (input[key] === pressed) return
+        input[key] = pressed
+        changed = true
+      }
       switch (event.code) {
         case 'KeyW':
         case 'ArrowUp':
-          input.up = pressed
+          setFlag('up')
           break
         case 'KeyS':
         case 'ArrowDown':
-          input.down = pressed
+          setFlag('down')
           break
         case 'KeyA':
         case 'ArrowLeft':
-          input.left = pressed
+          setFlag('left')
           break
         case 'KeyD':
         case 'ArrowRight':
-          input.right = pressed
+          setFlag('right')
           break
         case 'Space':
-          input.shoot = pressed
+          setFlag('shoot')
           event.preventDefault()
           break
         default:
           break
       }
+      if (changed) sendInput()
     }
     const keydown = (event: KeyboardEvent) => handleKey(event, true)
     const keyup = (event: KeyboardEvent) => handleKey(event, false)
@@ -356,7 +407,7 @@ export function Battle() {
       window.removeEventListener('keydown', keydown)
       window.removeEventListener('keyup', keyup)
     }
-  }, [])
+  }, [sendInput])
 
   const updateAimFromPointer = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -474,14 +525,19 @@ export function Battle() {
             onPointerDown={(event) => {
               inputRef.current.shoot = true
               updateAimFromPointer(event)
+              sendInput()
               event.currentTarget.setPointerCapture(event.pointerId)
             }}
             onPointerUp={(event) => {
               inputRef.current.shoot = false
+              sendInput()
               event.currentTarget.releasePointerCapture(event.pointerId)
             }}
             onPointerLeave={() => {
-              inputRef.current.shoot = false
+              if (inputRef.current.shoot) {
+                inputRef.current.shoot = false
+                sendInput()
+              }
             }}
           />
           <div className='absolute top-3 left-3 flex items-center gap-2 rounded-md border border-white/10 bg-slate-950/80 px-3 py-2 text-xs text-slate-100 backdrop-blur'>
