@@ -111,7 +111,10 @@ const OPERATIONS_SECTIONS = [
           maxDailyGainQuota: settings['battle_setting.max_daily_gain_quota'],
           maxPlayersPerRoom: settings['battle_setting.max_players_per_room'],
           tickRate: settings['battle_setting.tick_rate'],
+          playerSpeed: settings['battle_setting.player_speed'],
+          bulletSpeed: settings['battle_setting.bullet_speed'],
           bulletDamage: settings['battle_setting.bullet_damage'],
+          fireCooldownMs: settings['battle_setting.fire_cooldown_ms'],
           respawnSeconds: settings['battle_setting.respawn_seconds'],
           dropExpireSeconds: settings['battle_setting.drop_expire_seconds'],
         }}

@@ -73,7 +73,10 @@ const defaultOperationsSettings: OperationsSettings = {
   'battle_setting.max_daily_gain_quota': 20000,
   'battle_setting.max_players_per_room': 8,
   'battle_setting.tick_rate': 30,
+  'battle_setting.player_speed': 260,
+  'battle_setting.bullet_speed': 780,
   'battle_setting.bullet_damage': 34,
+  'battle_setting.fire_cooldown_ms': 220,
   'battle_setting.respawn_seconds': 3,
   'battle_setting.drop_expire_seconds': 18,
 }

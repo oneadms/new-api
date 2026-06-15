@@ -330,7 +330,10 @@ export type OperationsSettings = {
   'battle_setting.max_daily_gain_quota': number
   'battle_setting.max_players_per_room': number
   'battle_setting.tick_rate': number
+  'battle_setting.player_speed': number
+  'battle_setting.bullet_speed': number
   'battle_setting.bullet_damage': number
+  'battle_setting.fire_cooldown_ms': number
   'battle_setting.respawn_seconds': number
   'battle_setting.drop_expire_seconds': number
 }
