@@ -36,9 +36,11 @@ export type BattleInputFrame = {
 }
 
 const playerRadius = 18
-const maxPredictionMs = 250
+const maxPredictionMs = 110
 const maxInputHistoryMs = 2000
 const maxInputHistoryItems = 120
+const correctionSnapDistance = 360
+const correctionSmoothingMs = 55
 
 export function cloneBattleInput(input: BattleInput): BattleInput {
   return {
@@ -157,6 +159,31 @@ export function mergeLocalPlayer(
     players: snapshot.players.map((item) =>
       item.user_id === player.user_id ? player : item
     ),
+  }
+}
+
+export function smoothLocalPlayer(
+  previous: BattlePlayer | null,
+  target: BattlePlayer | null,
+  dtMs: number
+): BattlePlayer | null {
+  if (!target) return null
+  if (
+    !previous ||
+    previous.user_id !== target.user_id ||
+    previous.alive !== target.alive
+  ) {
+    return target
+  }
+
+  const distance = Math.hypot(target.x - previous.x, target.y - previous.y)
+  if (distance > correctionSnapDistance) return target
+
+  const progress = clamp(1 - Math.exp(-dtMs / correctionSmoothingMs), 0.12, 0.5)
+  return {
+    ...target,
+    x: lerp(previous.x, target.x, progress),
+    y: lerp(previous.y, target.y, progress),
   }
 }
 

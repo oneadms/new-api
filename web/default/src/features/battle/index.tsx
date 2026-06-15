@@ -33,6 +33,7 @@ import {
   interpolateBattleSnapshot,
   mergeLocalPlayer,
   predictLocalPlayer,
+  smoothLocalPlayer,
   trimBattleInputHistory,
   type BattleInputFrame,
   type BattleSnapshotFrame,
@@ -218,6 +219,7 @@ export function Battle() {
   const snapshotFrameRef = useRef<BattleSnapshotFrame | null>(null)
   const snapshotBufferRef = useRef<BattleSnapshotFrame[]>([])
   const predictedPlayerRef = useRef<BattlePlayer | null>(null)
+  const renderAtRef = useRef<number | null>(null)
   const hudUpdateAtRef = useRef(0)
   const hudUpdateTimerRef = useRef<number | null>(null)
   const [roomId, setRoomId] = useState('')
@@ -312,6 +314,7 @@ export function Battle() {
     snapshotFrameRef.current = null
     snapshotBufferRef.current = []
     predictedPlayerRef.current = null
+    renderAtRef.current = null
     clearHudUpdateTimer()
     setConnectionState('closed')
   }, [clearHudUpdateTimer])
@@ -339,6 +342,7 @@ export function Battle() {
     snapshotFrameRef.current = null
     snapshotBufferRef.current = []
     predictedPlayerRef.current = null
+    renderAtRef.current = null
     setSnapshot(null)
     clearHudUpdateTimer()
     hudUpdateAtRef.current = 0
@@ -390,6 +394,7 @@ export function Battle() {
       snapshotFrameRef.current = null
       snapshotBufferRef.current = []
       predictedPlayerRef.current = null
+      renderAtRef.current = null
       clearHudUpdateTimer()
     }
   }, [clearHudUpdateTimer])
@@ -411,12 +416,20 @@ export function Battle() {
           snapshotBufferRef.current,
           now - snapshotInterpolationDelayMs
         )
-        const predictedPlayer = predictLocalPlayer(
+        const targetPlayer = predictLocalPlayer(
           snapshotFrameRef.current,
           inputHistoryRef.current,
           inputRef.current,
           now,
           snapshotFrameRef.current?.snapshot.player_speed ?? playerSpeed
+        )
+        const dtMs =
+          renderAtRef.current === null ? 16 : now - renderAtRef.current
+        renderAtRef.current = now
+        const predictedPlayer = smoothLocalPlayer(
+          predictedPlayerRef.current,
+          targetPlayer,
+          dtMs
         )
         predictedPlayerRef.current = predictedPlayer
         drawBattleCanvas(
