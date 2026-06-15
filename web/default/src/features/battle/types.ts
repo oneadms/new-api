@@ -31,6 +31,7 @@ export type BattleStatus = {
   max_players: number
   map_width: number
   map_height: number
+  player_speed: number
   respawn_seconds: number
   drop_expire_seconds: number
 }
@@ -86,9 +87,11 @@ export type BattleSnapshot = {
   type: 'snapshot'
   room_id: string
   me: number
+  ack_seq: number
   server_time: number
   map_width: number
   map_height: number
+  player_speed: number
   players: BattlePlayer[]
   bullets: BattleBullet[]
   drops: BattleDrop[]

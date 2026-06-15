@@ -28,6 +28,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getBattleStatus } from './api'
 import { drawBattleCanvas, getCanvasMetrics, screenToWorld } from './lib/canvas'
+import {
+  cloneBattleInput,
+  interpolateBattleSnapshot,
+  mergeLocalPlayer,
+  predictLocalPlayer,
+  trimBattleInputHistory,
+  type BattleInputFrame,
+  type BattleSnapshotFrame,
+} from './lib/prediction'
 import type {
   BattleBullet,
   BattleDrop,
@@ -42,6 +51,9 @@ type ConnectionState = 'idle' | 'connecting' | 'connected' | 'closed'
 const defaultRoomId = 'lobby'
 const hudUpdateIntervalMs = 150
 const inputSendIntervalMs = 50
+const snapshotInterpolationDelayMs = 120
+const snapshotBufferLimit = 16
+const defaultPlayerSpeed = 260
 
 function createEmptyInput(): BattleInput {
   return {
@@ -160,9 +172,11 @@ function normalizeSnapshot(value: Record<string, unknown>): BattleSnapshot {
     type: 'snapshot',
     room_id: stringValue(value.room_id, 'lobby') || 'lobby',
     me: finiteNumber(value.me, 0),
+    ack_seq: finiteNumber(value.ack_seq, 0),
     server_time: finiteNumber(value.server_time, Date.now()),
     map_width: positiveNumber(value.map_width, 1600),
     map_height: positiveNumber(value.map_height, 900),
+    player_speed: positiveNumber(value.player_speed, defaultPlayerSpeed),
     players: normalizeArray(value.players, normalizePlayer),
     bullets: normalizeArray(value.bullets, normalizeBullet),
     drops: normalizeArray(value.drops, normalizeDrop),
@@ -198,7 +212,12 @@ export function Battle() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const inputRef = useRef<BattleInput>(createEmptyInput())
+  const inputSeqRef = useRef(0)
+  const inputHistoryRef = useRef<BattleInputFrame[]>([])
   const snapshotRef = useRef<BattleSnapshot | null>(null)
+  const snapshotFrameRef = useRef<BattleSnapshotFrame | null>(null)
+  const snapshotBufferRef = useRef<BattleSnapshotFrame[]>([])
+  const predictedPlayerRef = useRef<BattlePlayer | null>(null)
   const hudUpdateAtRef = useRef(0)
   const hudUpdateTimerRef = useRef<number | null>(null)
   const [roomId, setRoomId] = useState('')
@@ -212,6 +231,7 @@ export function Battle() {
     queryFn: getBattleStatus,
     refetchInterval: 15000,
   })
+  const playerSpeed = battleStatus.data?.player_speed ?? defaultPlayerSpeed
 
   const me = useMemo(() => {
     if (!snapshot) return null
@@ -236,9 +256,19 @@ export function Battle() {
 
   const publishSnapshot = useCallback(
     (nextSnapshot: BattleSnapshot) => {
-      snapshotRef.current = nextSnapshot
-
       const now = window.performance?.now() ?? Date.now()
+      const frame = { at: now, snapshot: nextSnapshot }
+      snapshotRef.current = nextSnapshot
+      snapshotFrameRef.current = frame
+      snapshotBufferRef.current = [...snapshotBufferRef.current, frame].slice(
+        -snapshotBufferLimit
+      )
+      inputHistoryRef.current = trimBattleInputHistory(
+        inputHistoryRef.current,
+        now,
+        nextSnapshot.ack_seq
+      )
+
       const elapsed = now - hudUpdateAtRef.current
       if (elapsed >= hudUpdateIntervalMs) {
         clearHudUpdateTimer()
@@ -261,12 +291,27 @@ export function Battle() {
   const sendInput = useCallback(() => {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: 'input', input: inputRef.current }))
+    const now = window.performance?.now() ?? Date.now()
+    const seq = inputSeqRef.current + 1
+    const input = cloneBattleInput(inputRef.current)
+    inputSeqRef.current = seq
+    inputHistoryRef.current = trimBattleInputHistory(
+      [...inputHistoryRef.current, { seq, input, sentAt: now }],
+      now,
+      snapshotRef.current?.ack_seq ?? 0
+    )
+    ws.send(JSON.stringify({ type: 'input', seq, input }))
   }, [])
 
   const disconnect = useCallback(() => {
     wsRef.current?.close()
     wsRef.current = null
+    inputRef.current = createEmptyInput()
+    inputSeqRef.current = 0
+    inputHistoryRef.current = []
+    snapshotFrameRef.current = null
+    snapshotBufferRef.current = []
+    predictedPlayerRef.current = null
     clearHudUpdateTimer()
     setConnectionState('closed')
   }, [clearHudUpdateTimer])
@@ -287,7 +332,13 @@ export function Battle() {
     )
 
     wsRef.current = ws
+    inputRef.current = createEmptyInput()
+    inputSeqRef.current = 0
+    inputHistoryRef.current = []
     snapshotRef.current = null
+    snapshotFrameRef.current = null
+    snapshotBufferRef.current = []
+    predictedPlayerRef.current = null
     setSnapshot(null)
     clearHudUpdateTimer()
     hudUpdateAtRef.current = 0
@@ -334,6 +385,11 @@ export function Battle() {
   useEffect(() => {
     return () => {
       wsRef.current?.close()
+      inputRef.current = createEmptyInput()
+      inputHistoryRef.current = []
+      snapshotFrameRef.current = null
+      snapshotBufferRef.current = []
+      predictedPlayerRef.current = null
       clearHudUpdateTimer()
     }
   }, [clearHudUpdateTimer])
@@ -350,13 +406,33 @@ export function Battle() {
     const draw = () => {
       const canvas = canvasRef.current
       if (canvas) {
-        drawBattleCanvas(canvas, snapshotRef.current, t('Battle arena'))
+        const now = window.performance?.now() ?? Date.now()
+        const interpolatedSnapshot = interpolateBattleSnapshot(
+          snapshotBufferRef.current,
+          now - snapshotInterpolationDelayMs
+        )
+        const predictedPlayer = predictLocalPlayer(
+          snapshotFrameRef.current,
+          inputHistoryRef.current,
+          inputRef.current,
+          now,
+          snapshotFrameRef.current?.snapshot.player_speed ?? playerSpeed
+        )
+        predictedPlayerRef.current = predictedPlayer
+        drawBattleCanvas(
+          canvas,
+          mergeLocalPlayer(
+            interpolatedSnapshot ?? snapshotRef.current,
+            predictedPlayer
+          ),
+          t('Battle arena')
+        )
       }
       frame = window.requestAnimationFrame(draw)
     }
     draw()
     return () => window.cancelAnimationFrame(frame)
-  }, [t])
+  }, [playerSpeed, t])
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent, pressed: boolean) => {
@@ -414,9 +490,13 @@ export function Battle() {
       const canvas = canvasRef.current
       const currentSnapshot = snapshotRef.current
       if (!canvas || !currentSnapshot) return
-      const currentPlayer = currentSnapshot.players.find(
-        (player) => player.user_id === currentSnapshot.me
-      )
+      const predictedPlayer = predictedPlayerRef.current
+      const currentPlayer =
+        predictedPlayer?.user_id === currentSnapshot.me
+          ? predictedPlayer
+          : currentSnapshot.players.find(
+              (player) => player.user_id === currentSnapshot.me
+            )
       if (!currentPlayer) return
 
       const rect = canvas.getBoundingClientRect()

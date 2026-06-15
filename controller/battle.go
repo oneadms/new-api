@@ -64,6 +64,7 @@ func GetBattleStatus(c *gin.Context) {
 			"max_players":         setting.MaxPlayersPerRoom,
 			"map_width":           setting.MapWidth,
 			"map_height":          setting.MapHeight,
+			"player_speed":        setting.PlayerSpeed,
 			"respawn_seconds":     setting.RespawnSeconds,
 			"drop_expire_seconds": setting.DropExpireSeconds,
 		},

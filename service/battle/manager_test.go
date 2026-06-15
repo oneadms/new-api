@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,6 +88,33 @@ func TestUpdatePlayerUsesServerMovementAndBulletRules(t *testing.T) {
 	assert.Len(t, room.bullets, 1)
 	room.updatePlayer(player, 0.01, now.Add(250*time.Millisecond), settings)
 	assert.Len(t, room.bullets, 2)
+}
+
+func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	player := &player{
+		UserId:   1,
+		Username: "player",
+		X:        50,
+		Y:        50,
+		HP:       100,
+		Alive:    true,
+		InputSeq: 42,
+	}
+	room.players[player.UserId] = player
+	room.clients[player.UserId] = &Client{
+		userId: player.UserId,
+		send:   make(chan []byte, 1),
+		room:   room,
+	}
+
+	room.broadcastSnapshot(time.Now(), settings)
+
+	data := <-room.clients[player.UserId].send
+	var snapshot Snapshot
+	require.NoError(t, common.Unmarshal(data, &snapshot))
+	assert.Equal(t, int64(42), snapshot.AckSeq)
 }
 
 func TestUpdateBulletsAppliesServerHitAndKnockout(t *testing.T) {

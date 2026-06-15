@@ -132,6 +132,7 @@ type Client struct {
 
 type ClientMessage struct {
 	Type  string      `json:"type"`
+	Seq   int64       `json:"seq,omitempty"`
 	Input PlayerInput `json:"input"`
 }
 
@@ -173,7 +174,11 @@ func (c *Client) readPump() {
 			continue
 		}
 		select {
-		case c.room.inputs <- clientInput{userId: c.userId, input: sanitizeInput(message.Input)}:
+		case c.room.inputs <- clientInput{
+			userId: c.userId,
+			seq:    message.Seq,
+			input:  sanitizeInput(message.Input),
+		}:
 		default:
 		}
 	}
@@ -236,6 +241,7 @@ type Room struct {
 
 type clientInput struct {
 	userId int
+	seq    int64
 	input  PlayerInput
 }
 
@@ -251,6 +257,7 @@ type player struct {
 	LastAimX  float64
 	LastAimY  float64
 	Input     PlayerInput
+	InputSeq  int64
 	Score     int
 	Deaths    int
 	RoundLoss int
@@ -287,12 +294,14 @@ type BattleEvent struct {
 }
 
 type Snapshot struct {
-	Type       string           `json:"type"`
-	RoomId     string           `json:"room_id"`
-	Me         int              `json:"me"`
-	ServerTime int64            `json:"server_time"`
-	MapWidth   int              `json:"map_width"`
-	MapHeight  int              `json:"map_height"`
+	Type        string           `json:"type"`
+	RoomId      string           `json:"room_id"`
+	Me          int              `json:"me"`
+	AckSeq      int64            `json:"ack_seq"`
+	ServerTime  int64            `json:"server_time"`
+	MapWidth    int              `json:"map_width"`
+	MapHeight   int              `json:"map_height"`
+	PlayerSpeed int              `json:"player_speed"`
 	Players    []PlayerSnapshot `json:"players"`
 	Bullets    []BulletSnapshot `json:"bullets"`
 	Drops      []DropSnapshot   `json:"drops"`
@@ -361,6 +370,12 @@ func (r *Room) run() {
 			r.handleUnregister(client)
 		case input := <-r.inputs:
 			if p := r.players[input.userId]; p != nil {
+				if input.seq > 0 {
+					if input.seq < p.InputSeq {
+						continue
+					}
+					p.InputSeq = input.seq
+				}
 				p.Input = input.input
 			}
 		case now := <-ticker.C:
@@ -419,6 +434,8 @@ func (r *Room) handleRegister(client *Client) {
 	} else {
 		p.Username = client.username
 	}
+	p.Input = PlayerInput{AimX: 1, AimY: 0}
+	p.InputSeq = 0
 	client.sendJSON(map[string]any{"type": messageTypeJoined, "room_id": r.id})
 }
 
@@ -697,15 +714,16 @@ func (r *Room) placePlayer(p *player, settings operation_setting.BattleSetting) 
 
 func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.BattleSetting) {
 	base := Snapshot{
-		Type:       messageTypeSnapshot,
-		RoomId:     r.id,
-		ServerTime: now.UnixMilli(),
-		MapWidth:   settings.MapWidth,
-		MapHeight:  settings.MapHeight,
-		Players:    make([]PlayerSnapshot, 0, len(r.players)),
-		Bullets:    make([]BulletSnapshot, 0, len(r.bullets)),
-		Drops:      make([]DropSnapshot, 0, len(r.drops)),
-		Events:     append(make([]BattleEvent, 0, len(r.events)), r.events...),
+		Type:        messageTypeSnapshot,
+		RoomId:      r.id,
+		ServerTime:  now.UnixMilli(),
+		MapWidth:    settings.MapWidth,
+		MapHeight:   settings.MapHeight,
+		PlayerSpeed: settings.PlayerSpeed,
+		Players:     make([]PlayerSnapshot, 0, len(r.players)),
+		Bullets:     make([]BulletSnapshot, 0, len(r.bullets)),
+		Drops:       make([]DropSnapshot, 0, len(r.drops)),
+		Events:      append(make([]BattleEvent, 0, len(r.events)), r.events...),
 	}
 	for _, p := range r.players {
 		base.Players = append(base.Players, PlayerSnapshot{
@@ -742,6 +760,9 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 	for userId, client := range r.clients {
 		snapshot := base
 		snapshot.Me = userId
+		if p := r.players[userId]; p != nil {
+			snapshot.AckSeq = p.InputSeq
+		}
 		client.sendJSON(snapshot)
 	}
 }
