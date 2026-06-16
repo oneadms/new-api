@@ -26,6 +26,12 @@ const (
 	eventTypeHit              = "hit"
 	eventTypeCapSettlement    = "cap_settlement"
 	eventTypeSettlementFailed = "settlement_failed"
+	eventTypePowerupPickup    = "powerup_pickup"
+	eventTypeCapStormHit      = "cap_storm_hit"
+
+	bulletKindCap       = "cap"
+	bulletKindCapStorm  = "cap_storm"
+	powerupTypeCapStorm = "cap_storm"
 
 	playerWidth  = 46.0
 	playerHeight = 70.0
@@ -33,12 +39,21 @@ const (
 	capHeight    = 28.0
 
 	gravity              = 1800.0
-	jumpVelocity         = -760.0
-	maxFallSpeed         = 980.0
+	jumpVelocity         = -900.0
+	maxFallSpeed         = 1080.0
 	fastFallAcceleration = 900.0
 	capThrowUpVelocity   = -430.0
 	capGravity           = 1450.0
 	capStackSpacing      = 12.0
+	powerupRadius        = 22.0
+
+	maxPowerupsPerRoom       = 2
+	capStormDuration         = 9 * time.Second
+	capStormThrowCooldown    = 650 * time.Millisecond
+	capStormProjectileTTL    = 1800 * time.Millisecond
+	capStormMaxProjectiles   = 80
+	powerupMinSpawnDelaySecs = 8
+	powerupSpawnJitterSecs   = 8
 )
 
 var ErrBattleDisabled = errors.New("battle is disabled")
@@ -234,21 +249,23 @@ func (c *Client) sendJSON(payload any) {
 }
 
 type Room struct {
-	id          string
-	manager     *Manager
-	register    chan *Client
-	unregister  chan *Client
-	inputs      chan clientInput
-	clients     map[int]*Client
-	players     map[int]*player
-	bullets     map[string]*bullet
-	roundLosses map[int]int
-	roundGains  map[int]int
-	events      []BattleEvent
-	rng         *rand.Rand
-	nextId      int64
-	idleSince   time.Time
-	done        chan struct{}
+	id            string
+	manager       *Manager
+	register      chan *Client
+	unregister    chan *Client
+	inputs        chan clientInput
+	clients       map[int]*Client
+	players       map[int]*player
+	bullets       map[string]*bullet
+	powerups      map[string]*powerup
+	roundLosses   map[int]int
+	roundGains    map[int]int
+	events        []BattleEvent
+	rng           *rand.Rand
+	nextId        int64
+	nextPowerupAt time.Time
+	idleSince     time.Time
+	done          chan struct{}
 }
 
 type clientInput struct {
@@ -258,35 +275,47 @@ type clientInput struct {
 }
 
 type player struct {
-	UserId     int
-	Username   string
-	X          float64
-	Y          float64
-	VX         float64
-	VY         float64
-	Alive      bool
-	LastShot   time.Time
-	LastJump   bool
-	LastShoot  bool
-	LastAimX   float64
-	LastAimY   float64
-	Direction  int
-	OnGround   bool
-	Input      PlayerInput
-	InputSeq   int64
-	RoundLoss  int
-	RoundGain  int
-	CapStack   int
-	CapSources map[int]int
+	UserId         int
+	Username       string
+	X              float64
+	Y              float64
+	VX             float64
+	VY             float64
+	Alive          bool
+	LastShot       time.Time
+	LastJump       bool
+	LastShoot      bool
+	LastAimX       float64
+	LastAimY       float64
+	Direction      int
+	OnGround       bool
+	Input          PlayerInput
+	InputSeq       int64
+	RoundLoss      int
+	RoundGain      int
+	CapStack       int
+	CapSources     map[int]int
+	CapStormUntil  time.Time
+	LastStormThrow time.Time
 }
 
 type bullet struct {
 	Id        string
+	Kind      string
 	OwnerId   int
+	AttemptId string
 	X         float64
 	Y         float64
 	VX        float64
 	VY        float64
+	ExpiresAt time.Time
+}
+
+type powerup struct {
+	Id        string
+	Type      string
+	X         float64
+	Y         float64
 	ExpiresAt time.Time
 }
 
@@ -305,6 +334,7 @@ type BattleEvent struct {
 	UserId       int    `json:"user_id,omitempty"`
 	TargetUserId int    `json:"target_user_id,omitempty"`
 	Quota        int    `json:"quota,omitempty"`
+	CapCount     int    `json:"cap_count,omitempty"`
 	CreatedAt    int64  `json:"created_at"`
 }
 
@@ -320,31 +350,41 @@ type Snapshot struct {
 	Players     []PlayerSnapshot   `json:"players"`
 	Bullets     []BulletSnapshot   `json:"bullets"`
 	Platforms   []PlatformSnapshot `json:"platforms"`
+	Powerups    []PowerupSnapshot  `json:"powerups"`
 	Events      []BattleEvent      `json:"events"`
 }
 
 type PlayerSnapshot struct {
-	UserId    int     `json:"user_id"`
-	Username  string  `json:"username"`
-	X         float64 `json:"x"`
-	Y         float64 `json:"y"`
-	VX        float64 `json:"vx"`
-	VY        float64 `json:"vy"`
-	Alive     bool    `json:"alive"`
-	Direction int     `json:"direction"`
-	OnGround  bool    `json:"on_ground"`
-	RoundLoss int     `json:"round_loss"`
-	RoundGain int     `json:"round_gain"`
-	CapStack  int     `json:"cap_stack"`
+	UserId        int     `json:"user_id"`
+	Username      string  `json:"username"`
+	X             float64 `json:"x"`
+	Y             float64 `json:"y"`
+	VX            float64 `json:"vx"`
+	VY            float64 `json:"vy"`
+	Alive         bool    `json:"alive"`
+	Direction     int     `json:"direction"`
+	OnGround      bool    `json:"on_ground"`
+	RoundLoss     int     `json:"round_loss"`
+	RoundGain     int     `json:"round_gain"`
+	CapStack      int     `json:"cap_stack"`
+	CapStormUntil int64   `json:"cap_storm_until,omitempty"`
 }
 
 type BulletSnapshot struct {
 	Id      string  `json:"id"`
+	Kind    string  `json:"kind,omitempty"`
 	OwnerId int     `json:"owner_id"`
 	X       float64 `json:"x"`
 	Y       float64 `json:"y"`
 	VX      float64 `json:"vx"`
 	VY      float64 `json:"vy"`
+}
+
+type PowerupSnapshot struct {
+	Id   string  `json:"id"`
+	Type string  `json:"type"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
 }
 
 type PlatformSnapshot struct {
@@ -373,6 +413,7 @@ func newRoom(id string, manager *Manager) *Room {
 		clients:     make(map[int]*Client),
 		players:     make(map[int]*player),
 		bullets:     make(map[string]*bullet),
+		powerups:    make(map[string]*powerup),
 		roundLosses: make(map[int]int),
 		roundGains:  make(map[int]int),
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -498,6 +539,7 @@ func (r *Room) closeAll(messageType string, message string) {
 	}
 	r.players = make(map[int]*player)
 	r.bullets = make(map[string]*bullet)
+	r.powerups = make(map[string]*powerup)
 }
 
 func (r *Room) step(dt float64, now time.Time, settings operation_setting.BattleSetting) {
@@ -505,14 +547,20 @@ func (r *Room) step(dt float64, now time.Time, settings operation_setting.Battle
 		dt = 1.0 / float64(settings.TickRate)
 	}
 
+	r.updatePowerups(now, settings)
 	for _, p := range r.players {
 		r.updatePlayer(p, dt, now, settings)
 	}
+	r.updatePowerupPickups(now, settings)
 	r.updateCaps(now, dt, settings)
 	r.broadcastSnapshot(now, settings)
 }
 
 func (r *Room) updatePlayer(p *player, dt float64, now time.Time, settings operation_setting.BattleSetting) {
+	if !p.CapStormUntil.IsZero() && !p.capStormActive(now) {
+		p.CapStormUntil = time.Time{}
+	}
+
 	moveX := boolToFloat(p.Input.Right) - boolToFloat(p.Input.Left)
 	if moveX < 0 {
 		p.Direction = -1
@@ -553,9 +601,15 @@ func (r *Room) updatePlayer(p *player, dt float64, now time.Time, settings opera
 	p.Y += p.VY * dt
 	r.resolvePlayerVertical(p, oldY, settings)
 
-	if p.Input.Shoot && !p.LastShoot && now.Sub(p.LastShot) >= time.Duration(settings.FireCooldownMs)*time.Millisecond {
-		p.LastShot = now
-		r.spawnBullet(p, now, settings)
+	if p.Input.Shoot && !p.LastShoot {
+		if p.capStormActive(now) && p.CapStack > 0 {
+			if r.trySpawnCapStorm(p, now, settings) {
+				p.LastShot = now
+			}
+		} else if now.Sub(p.LastShot) >= time.Duration(settings.FireCooldownMs)*time.Millisecond {
+			p.LastShot = now
+			r.spawnBullet(p, now, settings)
+		}
 	}
 	p.LastShoot = p.Input.Shoot
 }
@@ -646,8 +700,12 @@ func (r *Room) updateCaps(now time.Time, dt float64, settings operation_setting.
 			if !capHitsHead(b, target) {
 				continue
 			}
-			delete(r.bullets, id)
-			r.handleHit(b, target)
+			if b.Kind == bulletKindCapStorm {
+				r.handleCapStormHit(b, target)
+			} else {
+				delete(r.bullets, id)
+				r.handleHit(b, target)
+			}
 			break
 		}
 	}
@@ -662,6 +720,42 @@ func (r *Room) handleHit(b *bullet, target *player) {
 	r.addEvent(eventTypeHit, b.OwnerId, target.UserId, 0)
 }
 
+func (r *Room) handleCapStormHit(b *bullet, target *player) {
+	owner := r.players[b.OwnerId]
+	if owner == nil || owner.CapStack <= 0 {
+		r.deleteCapStormAttempt(b)
+		return
+	}
+	capCount := owner.CapStack
+	r.deleteCapStormAttempt(b)
+	clearPlayerCaps(owner)
+	owner.CapStormUntil = time.Time{}
+	if capCount <= 0 {
+		return
+	}
+	if target.CapSources == nil {
+		target.CapSources = make(map[int]int)
+	}
+	target.CapSources[owner.UserId] += capCount
+	target.CapStack += capCount
+	r.addEvent(eventTypeCapStormHit, owner.UserId, target.UserId, 0, capCount)
+}
+
+func (r *Room) deleteCapStormAttempt(b *bullet) {
+	if b == nil {
+		return
+	}
+	if b.AttemptId == "" {
+		delete(r.bullets, b.Id)
+		return
+	}
+	for id, candidate := range r.bullets {
+		if candidate.AttemptId == b.AttemptId {
+			delete(r.bullets, id)
+		}
+	}
+}
+
 func (r *Room) spawnBullet(p *player, now time.Time, settings operation_setting.BattleSetting) {
 	id := newBattleObjectId("bullet")
 	direction := p.Direction
@@ -671,6 +765,7 @@ func (r *Room) spawnBullet(p *player, now time.Time, settings operation_setting.
 	vx := float64(direction * settings.BulletSpeed)
 	r.bullets[id] = &bullet{
 		Id:        id,
+		Kind:      bulletKindCap,
 		OwnerId:   p.UserId,
 		X:         p.X + float64(direction)*(playerWidth/2+capWidth/2),
 		Y:         p.Y - playerHeight*0.34,
@@ -678,6 +773,127 @@ func (r *Room) spawnBullet(p *player, now time.Time, settings operation_setting.
 		VY:        capThrowUpVelocity,
 		ExpiresAt: now.Add(2300 * time.Millisecond),
 	}
+}
+
+func (r *Room) trySpawnCapStorm(p *player, now time.Time, settings operation_setting.BattleSetting) bool {
+	if p == nil || !p.capStormActive(now) || p.CapStack <= 0 {
+		return false
+	}
+	if !p.LastStormThrow.IsZero() && now.Sub(p.LastStormThrow) < capStormThrowCooldown {
+		return false
+	}
+	r.spawnCapStorm(p, now, settings)
+	p.LastStormThrow = now
+	return true
+}
+
+func (r *Room) spawnCapStorm(p *player, now time.Time, settings operation_setting.BattleSetting) {
+	capCount := p.CapStack
+	if capCount <= 0 {
+		return
+	}
+	projectileCount := capCount
+	if projectileCount > capStormMaxProjectiles {
+		projectileCount = capStormMaxProjectiles
+	}
+	direction := p.Direction
+	if direction == 0 {
+		direction = 1
+	}
+	attemptId := newBattleObjectId("cap-storm")
+	baseVX := float64(direction * settings.BulletSpeed)
+	for index := 0; index < projectileCount; index++ {
+		id := newBattleObjectId("bullet")
+		stackLift := math.Min(float64(index), 18) * capStackSpacing * 0.5
+		lane := float64(index%9) - 4
+		speedScale := 1 + float64(index%6)*0.025
+		r.bullets[id] = &bullet{
+			Id:        id,
+			Kind:      bulletKindCapStorm,
+			OwnerId:   p.UserId,
+			AttemptId: attemptId,
+			X:         p.X + float64(direction)*(playerWidth/2+capWidth/2),
+			Y:         p.Y - playerHeight*0.52 - stackLift,
+			VX:        baseVX * speedScale,
+			VY:        capThrowUpVelocity*0.45 + lane*30,
+			ExpiresAt: now.Add(capStormProjectileTTL),
+		}
+	}
+}
+
+func (r *Room) updatePowerups(now time.Time, settings operation_setting.BattleSetting) {
+	for id, item := range r.powerups {
+		if item == nil || now.After(item.ExpiresAt) {
+			delete(r.powerups, id)
+		}
+	}
+	if len(r.players) == 0 {
+		r.nextPowerupAt = time.Time{}
+		return
+	}
+	if r.nextPowerupAt.IsZero() {
+		r.scheduleNextPowerup(now)
+		return
+	}
+	if len(r.powerups) >= maxPowerupsPerRoom {
+		r.scheduleNextPowerup(now)
+		return
+	}
+	if now.Before(r.nextPowerupAt) {
+		return
+	}
+	r.spawnPowerup(now, settings)
+	r.scheduleNextPowerup(now)
+}
+
+func (r *Room) updatePowerupPickups(now time.Time, settings operation_setting.BattleSetting) {
+	if len(r.powerups) == 0 {
+		return
+	}
+	pickupRadius := float64(settings.DropPickupRadius) + powerupRadius
+	for id, item := range r.powerups {
+		if item == nil {
+			delete(r.powerups, id)
+			continue
+		}
+		for _, p := range r.players {
+			if p == nil || !p.Alive {
+				continue
+			}
+			if math.Hypot(p.X-item.X, p.Y-playerHeight*0.18-item.Y) > pickupRadius {
+				continue
+			}
+			p.CapStormUntil = now.Add(capStormDuration)
+			p.LastStormThrow = time.Time{}
+			delete(r.powerups, id)
+			r.addEvent(eventTypePowerupPickup, p.UserId, 0, 0)
+			break
+		}
+	}
+}
+
+func (r *Room) spawnPowerup(now time.Time, settings operation_setting.BattleSetting) {
+	surfaces := spawnSurfaces(settings)
+	surface := surfaces[r.rng.Intn(len(surfaces))]
+	id := newBattleObjectId("powerup")
+	spawnWidth := math.Max(1, surface.W-powerupRadius*2)
+	x := clampFloat(surface.X+powerupRadius+r.rng.Float64()*spawnWidth, powerupRadius, float64(settings.MapWidth)-powerupRadius)
+	y := clampFloat(surface.Y-powerupRadius-8, powerupRadius, float64(settings.MapHeight)-powerupRadius)
+	r.powerups[id] = &powerup{
+		Id:        id,
+		Type:      powerupTypeCapStorm,
+		X:         x,
+		Y:         y,
+		ExpiresAt: now.Add(time.Duration(settings.DropExpireSeconds) * time.Second),
+	}
+}
+
+func (r *Room) scheduleNextPowerup(now time.Time) {
+	delay := powerupMinSpawnDelaySecs
+	if powerupSpawnJitterSecs > 0 {
+		delay += r.rng.Intn(powerupSpawnJitterSecs + 1)
+	}
+	r.nextPowerupAt = now.Add(time.Duration(delay) * time.Second)
 }
 
 func (r *Room) placePlayer(p *player, settings operation_setting.BattleSetting) {
@@ -844,6 +1060,10 @@ func clearPlayerCaps(p *player) {
 	p.CapSources = make(map[int]int)
 }
 
+func (p *player) capStormActive(now time.Time) bool {
+	return p != nil && !p.CapStormUntil.IsZero() && now.Before(p.CapStormUntil)
+}
+
 func battlePlatforms(settings operation_setting.BattleSetting) []platform {
 	scaleX := float64(settings.MapWidth) / 1600
 	scaleY := float64(settings.MapHeight) / 900
@@ -919,6 +1139,25 @@ func platformSnapshots(settings operation_setting.BattleSetting) []PlatformSnaps
 	return snapshots
 }
 
+func (r *Room) powerupSnapshots() []PowerupSnapshot {
+	snapshots := make([]PowerupSnapshot, 0, len(r.powerups))
+	for _, item := range r.powerups {
+		if item == nil {
+			continue
+		}
+		snapshots = append(snapshots, PowerupSnapshot{
+			Id:   item.Id,
+			Type: item.Type,
+			X:    item.X,
+			Y:    item.Y,
+		})
+	}
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].Id < snapshots[j].Id
+	})
+	return snapshots
+}
+
 func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.BattleSetting) {
 	base := Snapshot{
 		Type:        messageTypeSnapshot,
@@ -930,10 +1169,11 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 		Players:     make([]PlayerSnapshot, 0, len(r.players)),
 		Bullets:     make([]BulletSnapshot, 0, len(r.bullets)),
 		Platforms:   platformSnapshots(settings),
+		Powerups:    r.powerupSnapshots(),
 		Events:      append(make([]BattleEvent, 0, len(r.events)), r.events...),
 	}
 	for _, p := range r.players {
-		base.Players = append(base.Players, PlayerSnapshot{
+		playerSnapshot := PlayerSnapshot{
 			UserId:    p.UserId,
 			Username:  p.Username,
 			X:         p.X,
@@ -946,11 +1186,16 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 			RoundLoss: r.roundLosses[p.UserId] + p.CapStack*settings.CapQuota,
 			RoundGain: r.roundGains[p.UserId] + r.pendingCapGain(p.UserId, settings),
 			CapStack:  p.CapStack,
-		})
+		}
+		if p.capStormActive(now) {
+			playerSnapshot.CapStormUntil = p.CapStormUntil.UnixMilli()
+		}
+		base.Players = append(base.Players, playerSnapshot)
 	}
 	for _, b := range r.bullets {
 		base.Bullets = append(base.Bullets, BulletSnapshot{
 			Id:      b.Id,
+			Kind:    b.Kind,
 			OwnerId: b.OwnerId,
 			X:       b.X,
 			Y:       b.Y,
@@ -982,7 +1227,7 @@ func (r *Room) pendingCapGain(userId int, settings operation_setting.BattleSetti
 	return totalCaps * settings.CapQuota
 }
 
-func (r *Room) addEvent(eventType string, userId int, targetUserId int, quota int) {
+func (r *Room) addEvent(eventType string, userId int, targetUserId int, quota int, capCount ...int) {
 	r.nextId++
 	event := BattleEvent{
 		Id:           fmt.Sprintf("%s-event-%d", r.id, r.nextId),
@@ -991,6 +1236,9 @@ func (r *Room) addEvent(eventType string, userId int, targetUserId int, quota in
 		TargetUserId: targetUserId,
 		Quota:        quota,
 		CreatedAt:    time.Now().UnixMilli(),
+	}
+	if len(capCount) > 0 {
+		event.CapCount = capCount[0]
 	}
 	r.events = append(r.events, event)
 	if len(r.events) > 16 {

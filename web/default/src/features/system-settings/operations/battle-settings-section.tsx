@@ -23,6 +23,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
+import {
   Form,
   FormControl,
   FormDescription,
@@ -83,6 +87,11 @@ const optionKeys: Record<keyof Values, string> = {
 export function BattleSettingsSection(props: BattleSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const quotaPerUnit = useSystemConfigStore(
+    (state) =>
+      state.config.currency?.quotaPerUnit ||
+      DEFAULT_CURRENCY_CONFIG.quotaPerUnit
+  )
   const savedValuesRef = useRef<Values>(props.defaultValues)
   const schema = useMemo(() => createSchema(), [])
 
@@ -123,36 +132,42 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
     description: string
     min: number
     max?: number
+    unit?: 'usd'
   }> = [
     {
       name: 'capQuota',
       label: t('Quota per cap'),
       description: t('Quota transferred for each green cap on a player.'),
       min: 0,
+      unit: 'usd',
     },
     {
       name: 'maxRoundLossQuota',
       label: t('Round loss cap'),
       description: t('Maximum quota one player can lose in one room session.'),
       min: 0,
+      unit: 'usd',
     },
     {
       name: 'maxRoundGainQuota',
       label: t('Round win cap'),
       description: t('Maximum quota one player can gain in one room session.'),
       min: 0,
+      unit: 'usd',
     },
     {
       name: 'maxDailyLossQuota',
       label: t('Daily loss cap'),
       description: t('Maximum quota one player can lose per day.'),
       min: 0,
+      unit: 'usd',
     },
     {
       name: 'maxDailyGainQuota',
       label: t('Daily win cap'),
       description: t('Maximum quota one player can gain per day.'),
       min: 0,
+      unit: 'usd',
     },
     {
       name: 'maxPlayersPerRoom',
@@ -261,14 +276,39 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
                   name={item.name}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{item.label}</FormLabel>
+                      <FormLabel>
+                        {item.label}
+                        {item.unit === 'usd' ? ' (USD)' : ''}
+                      </FormLabel>
                       <FormControl>
-                        <Input
-                          type='number'
-                          min={item.min}
-                          max={item.max}
-                          {...field}
-                        />
+                        {item.unit === 'usd' ? (
+                          <Input
+                            type='number'
+                            min={quotaToUsd(item.min, quotaPerUnit)}
+                            max={
+                              item.max === undefined
+                                ? undefined
+                                : quotaToUsd(item.max, quotaPerUnit)
+                            }
+                            step='0.0001'
+                            name={field.name}
+                            ref={field.ref}
+                            value={quotaToUsd(field.value, quotaPerUnit)}
+                            onBlur={field.onBlur}
+                            onChange={(event) =>
+                              field.onChange(
+                                usdToQuota(event.target.value, quotaPerUnit)
+                              )
+                            }
+                          />
+                        ) : (
+                          <Input
+                            type='number'
+                            min={item.min}
+                            max={item.max}
+                            {...field}
+                          />
+                        )}
                       </FormControl>
                       <FormDescription>{item.description}</FormDescription>
                       <FormMessage />
@@ -282,4 +322,19 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
       </Form>
     </SettingsSection>
   )
+}
+
+function quotaToUsd(quota: number, quotaPerUnit: number): number {
+  return Number((quota / safeQuotaPerUnit(quotaPerUnit)).toFixed(6))
+}
+
+function usdToQuota(value: string, quotaPerUnit: number): number {
+  if (value.trim() === '') return 0
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount <= 0) return 0
+  return Math.round(amount * safeQuotaPerUnit(quotaPerUnit))
+}
+
+function safeQuotaPerUnit(quotaPerUnit: number): number {
+  return quotaPerUnit > 0 ? quotaPerUnit : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
 }

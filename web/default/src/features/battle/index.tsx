@@ -19,13 +19,37 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
-import { Gamepad2, LogOut, RefreshCw, Wifi, WifiOff } from 'lucide-react'
+import {
+  CircleHelp,
+  Gamepad2,
+  LogOut,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { getBattleStatus } from './api'
 import { drawBattleCanvas } from './lib/canvas'
 import {
@@ -44,11 +68,17 @@ import type {
   BattleInput,
   BattlePlatform,
   BattlePlayer,
+  BattlePowerup,
   BattleServerMessage,
   BattleSnapshot,
 } from './types'
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'closed'
+type RuleControl = {
+  keys: string[]
+  label: string
+}
+
 const defaultRoomId = 'lobby'
 const hudUpdateIntervalMs = 150
 const inputSendIntervalMs = 50
@@ -73,6 +103,8 @@ const battleEventTypes = new Set<BattleEvent['type']>([
   'hit',
   'cap_settlement',
   'settlement_failed',
+  'powerup_pickup',
+  'cap_storm_hit',
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -127,6 +159,7 @@ function normalizePlayer(value: unknown): BattlePlayer | null {
     round_loss: finiteNumber(value.round_loss, 0),
     round_gain: finiteNumber(value.round_gain, 0),
     cap_stack: finiteNumber(value.cap_stack, 0),
+    cap_storm_until: optionalPositiveNumber(value.cap_storm_until),
   }
 }
 
@@ -134,6 +167,7 @@ function normalizeBullet(value: unknown): BattleBullet | null {
   if (!isRecord(value)) return null
   return {
     id: stringValue(value.id, ''),
+    kind: stringValue(value.kind) || undefined,
     owner_id: finiteNumber(value.owner_id, 0),
     x: finiteNumber(value.x, 0),
     y: finiteNumber(value.y, 0),
@@ -156,6 +190,18 @@ function normalizePlatform(value: unknown): BattlePlatform | null {
   }
 }
 
+function normalizePowerup(value: unknown): BattlePowerup | null {
+  if (!isRecord(value)) return null
+  const id = stringValue(value.id)
+  if (!id) return null
+  return {
+    id,
+    type: stringValue(value.type, 'cap_storm'),
+    x: finiteNumber(value.x, 0),
+    y: finiteNumber(value.y, 0),
+  }
+}
+
 function isBattleEventType(value: string): value is BattleEvent['type'] {
   return battleEventTypes.has(value as BattleEvent['type'])
 }
@@ -171,6 +217,7 @@ function normalizeEvent(value: unknown): BattleEvent | null {
     user_id: optionalPositiveNumber(value.user_id),
     target_user_id: optionalPositiveNumber(value.target_user_id),
     quota: optionalPositiveNumber(value.quota),
+    cap_count: optionalPositiveNumber(value.cap_count),
     created_at: createdAt,
   }
 }
@@ -188,6 +235,7 @@ function normalizeSnapshot(value: Record<string, unknown>): BattleSnapshot {
     players: normalizeArray(value.players, normalizePlayer),
     bullets: normalizeArray(value.bullets, normalizeBullet),
     platforms: normalizeArray(value.platforms, normalizePlatform),
+    powerups: normalizeArray(value.powerups, normalizePowerup),
     events: normalizeArray(value.events, normalizeEvent),
   }
 }
@@ -234,6 +282,7 @@ export function Battle() {
     useState<ConnectionState>('idle')
   const [snapshot, setSnapshot] = useState<BattleSnapshot | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
+  const [rulesOpen, setRulesOpen] = useState(false)
 
   const battleStatus = useQuery({
     queryKey: ['battle-status'],
@@ -510,7 +559,49 @@ export function Battle() {
   const status = battleStatus.data
   const events = snapshot?.events ?? []
   const connected = connectionState === 'connected'
+  const showPreJoinRules = !connected
   const hideRoomInput = Boolean(status?.hide_room_input)
+  const capQuotaText = formatQuota(status?.cap_quota ?? 0)
+  const capStormSeconds = Math.max(
+    0,
+    Math.ceil(
+      ((me?.cap_storm_until ?? 0) - (snapshot?.server_time ?? 0)) / 1000
+    )
+  )
+  const capStormLabel =
+    capStormSeconds > 0
+      ? t('Cap Storm {{seconds}}s', { seconds: capStormSeconds })
+      : t('No power-up')
+  const ruleControls = useMemo<RuleControl[]>(
+    () => [
+      { keys: ['A'], label: t('Move left') },
+      { keys: ['D'], label: t('Move right') },
+      { keys: ['S'], label: t('Drop down or fast fall') },
+      { keys: ['J'], label: t('Throw a green cap') },
+      { keys: ['K'], label: t('Jump') },
+    ],
+    [t]
+  )
+  const ruleNotes = useMemo(
+    () => [
+      t(
+        'Jump across the brick platforms and throw green caps onto other players.'
+      ),
+      t('Every cap that lands on a player stacks visibly on their head.'),
+      t('Random Cap Storm power-ups appear on the map.'),
+      t(
+        'Pick one up to fling every cap on your own head with J for a limited time.'
+      ),
+      t(
+        'A Cap Storm hit moves the whole stack onto the target; missed throws can be retried until the timer ends.'
+      ),
+      t('Each cap is currently worth {{quota}}.', { quota: capQuotaText }),
+      t(
+        'When a player leaves or the room ends, players lose quota for caps on their own head and the throwers receive that quota.'
+      ),
+    ],
+    [capQuotaText, t]
+  )
   const connectionLabel = {
     idle: t('Idle'),
     connecting: t('Connecting'),
@@ -557,6 +648,15 @@ export function Battle() {
             />
           )}
           <Button
+            type='button'
+            variant='outline'
+            onClick={() => setRulesOpen(true)}
+            className='h-9'
+          >
+            <CircleHelp data-icon='inline-start' />
+            {t('Game rules')}
+          </Button>
+          <Button
             onClick={connected ? disconnect : connect}
             disabled={
               battleStatus.isLoading ||
@@ -566,9 +666,9 @@ export function Battle() {
             className='h-9'
           >
             {connected ? (
-              <LogOut className='size-4' />
+              <LogOut data-icon='inline-start' />
             ) : (
-              <Gamepad2 className='size-4' />
+              <Gamepad2 data-icon='inline-start' />
             )}
             {connected ? t('Leave') : t('Join')}
           </Button>
@@ -580,7 +680,7 @@ export function Battle() {
             disabled={battleStatus.isFetching}
             aria-label={t('Refresh')}
           >
-            <RefreshCw className='size-4' />
+            <RefreshCw />
           </Button>
         </div>
       </div>
@@ -599,6 +699,21 @@ export function Battle() {
             )}
             <span>{connectionLabel}</span>
           </div>
+          {showPreJoinRules && (
+            <div className='bg-background/88 absolute inset-0 flex items-center justify-center p-4 backdrop-blur-sm'>
+              <BattleRulesEmptyState
+                controls={ruleControls}
+                notes={ruleNotes}
+                disabled={
+                  battleStatus.isLoading ||
+                  !status?.enabled ||
+                  connectionState === 'connecting'
+                }
+                onJoin={connect}
+                onOpenRules={() => setRulesOpen(true)}
+              />
+            </div>
+          )}
         </div>
 
         <aside className='flex min-h-0 flex-col gap-4 lg:overflow-y-auto lg:pr-1'>
@@ -617,6 +732,7 @@ export function Battle() {
                 label={t('Caps on head')}
                 value={String(me?.cap_stack ?? 0)}
               />
+              <Stat label={t('Power-up')} value={capStormLabel} />
               <Stat
                 label={t('Movement')}
                 value={
@@ -697,7 +813,127 @@ export function Battle() {
           </section>
         </aside>
       </div>
+      <BattleRulesDialog
+        open={rulesOpen}
+        onOpenChange={setRulesOpen}
+        controls={ruleControls}
+        notes={ruleNotes}
+      />
     </div>
+  )
+}
+
+function BattleRulesEmptyState(props: {
+  controls: RuleControl[]
+  notes: string[]
+  disabled: boolean
+  onJoin: () => void
+  onOpenRules: () => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <Empty className='bg-background/95 max-w-3xl border shadow-sm'>
+      <EmptyHeader>
+        <EmptyMedia variant='icon'>
+          <Gamepad2 />
+        </EmptyMedia>
+        <EmptyTitle>{t('Ready to stack green caps?')}</EmptyTitle>
+        <EmptyDescription>
+          {t('Read the rules, then join the room when you are ready.')}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent className='max-w-2xl'>
+        <BattleControlList controls={props.controls} compact />
+        <RuleNotes notes={props.notes.slice(0, 3)} />
+        <div className='flex w-full flex-col gap-2 sm:flex-row sm:justify-center'>
+          <Button
+            type='button'
+            onClick={props.onJoin}
+            disabled={props.disabled}
+          >
+            <Gamepad2 data-icon='inline-start' />
+            {t('Join')}
+          </Button>
+          <Button type='button' variant='outline' onClick={props.onOpenRules}>
+            <CircleHelp data-icon='inline-start' />
+            {t('Game rules')}
+          </Button>
+        </div>
+      </EmptyContent>
+    </Empty>
+  )
+}
+
+function BattleRulesDialog(props: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  controls: RuleControl[]
+  notes: string[]
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className='max-h-[90vh] overflow-hidden sm:max-w-2xl'>
+        <DialogHeader>
+          <DialogTitle>{t('Game rules')}</DialogTitle>
+          <DialogDescription>
+            {t('Controls, cap stacking, and quota settlement.')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className='flex max-h-[60vh] flex-col gap-5 overflow-y-auto pr-1'>
+          <section className='flex flex-col gap-3'>
+            <h3 className='text-sm font-medium'>{t('Controls')}</h3>
+            <BattleControlList controls={props.controls} />
+          </section>
+          <section className='flex flex-col gap-3'>
+            <h3 className='text-sm font-medium'>{t('Settlement rules')}</h3>
+            <RuleNotes notes={props.notes} />
+          </section>
+        </div>
+        <DialogFooter>
+          <Button variant='outline' onClick={() => props.onOpenChange(false)}>
+            {t('Got it')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BattleControlList(props: {
+  controls: RuleControl[]
+  compact?: boolean
+}) {
+  return (
+    <dl className='grid w-full gap-2 text-sm sm:grid-cols-2'>
+      {props.controls.map((control) => (
+        <div
+          key={control.label}
+          className='bg-background/70 flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-left'
+        >
+          <dt>
+            <KbdGroup>
+              {control.keys.map((key) => (
+                <Kbd key={key}>{key}</Kbd>
+              ))}
+            </KbdGroup>
+          </dt>
+          <dd className='text-muted-foreground'>{control.label}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function RuleNotes(props: { notes: string[] }) {
+  return (
+    <ul className='text-muted-foreground flex w-full flex-col gap-2 text-left text-sm leading-relaxed'>
+      {props.notes.map((note) => (
+        <li key={note}>{note}</li>
+      ))}
+    </ul>
   )
 }
 
@@ -747,6 +983,16 @@ function battleEventText(
   const target = playerName(snapshot, event.target_user_id)
   if (event.type === 'hit') {
     return t('{{user}} put a green cap on {{target}}', { user, target })
+  }
+  if (event.type === 'powerup_pickup') {
+    return t('{{user}} picked up Cap Storm', { user })
+  }
+  if (event.type === 'cap_storm_hit') {
+    return t('{{user}} stormed {{count}} caps onto {{target}}', {
+      user,
+      target,
+      count: event.cap_count ?? 0,
+    })
   }
   if (event.type === 'cap_settlement') {
     return t('{{user}} settled {{quota}} from {{target}}', {

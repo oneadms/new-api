@@ -43,8 +43,8 @@ const correctionSmoothingMs = 55
 const playerWidth = 46
 const playerHeight = 70
 const gravity = 1800
-const jumpVelocity = -760
-const maxFallSpeed = 980
+const jumpVelocity = -900
+const maxFallSpeed = 1080
 const fastFallAcceleration = 900
 
 export function cloneBattleInput(input: BattleInput): BattleInput {
@@ -273,7 +273,11 @@ function movePlayer(
   if (moveX < 0) player.direction = -1
   if (moveX > 0) player.direction = 1
   player.vx = moveX * playerSpeed
-  player.x = clamp(player.x + player.vx * dt, playerWidth / 2, mapWidth - playerWidth / 2)
+  player.x = clamp(
+    player.x + player.vx * dt,
+    playerWidth / 2,
+    mapWidth - playerWidth / 2
+  )
   resolveHorizontal(player, platforms, mapWidth)
 
   if (input.jump && player.on_ground) {
@@ -339,7 +343,10 @@ function resolveVertical(
   player.on_ground = false
 
   for (const platform of platforms) {
-    if (playerRight(player) <= platform.x || playerLeft(player) >= platform.x + platform.w) {
+    if (
+      playerRight(player) <= platform.x ||
+      playerLeft(player) >= platform.x + platform.w
+    ) {
       continue
     }
     if (player.vy >= 0) {
@@ -352,7 +359,10 @@ function resolveVertical(
       continue
     }
     if (platform.one_way) continue
-    if (oldTop >= platform.y + platform.h && newTop <= platform.y + platform.h) {
+    if (
+      oldTop >= platform.y + platform.h &&
+      newTop <= platform.y + platform.h
+    ) {
       player.y = platform.y + platform.h + playerHeight / 2
       player.vy = 0
       break

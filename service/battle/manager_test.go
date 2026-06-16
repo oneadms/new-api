@@ -23,6 +23,8 @@ func battleSimulationSettings() operation_setting.BattleSetting {
 		MaxRoundGainQuota: 5000,
 		MaxDailyLossQuota: 20000,
 		MaxDailyGainQuota: 20000,
+		DropPickupRadius:  38,
+		DropExpireSeconds: 18,
 	}
 }
 
@@ -96,23 +98,39 @@ func TestUpdatePlayerUsesPlatformMovementJumpAndCapThrow(t *testing.T) {
 func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
 	room := newRoom("test", NewManager())
 	settings := battleSimulationSettings()
+	now := time.Now()
 	player := &player{
-		UserId:   1,
-		Username: "player",
-		X:        50,
-		Y:        50,
-		Alive:    true,
-		InputSeq: 42,
-		CapStack: 7,
+		UserId:        1,
+		Username:      "player",
+		X:             50,
+		Y:             50,
+		Alive:         true,
+		InputSeq:      42,
+		CapStack:      7,
+		CapStormUntil: now.Add(time.Second),
 	}
 	room.players[player.UserId] = player
+	room.bullets["storm-cap"] = &bullet{
+		Id:      "storm-cap",
+		Kind:    bulletKindCapStorm,
+		OwnerId: player.UserId,
+		X:       120,
+		Y:       80,
+	}
+	room.powerups["storm"] = &powerup{
+		Id:        "storm",
+		Type:      powerupTypeCapStorm,
+		X:         240,
+		Y:         300,
+		ExpiresAt: now.Add(time.Second),
+	}
 	room.clients[player.UserId] = &Client{
 		userId: player.UserId,
 		send:   make(chan []byte, 1),
 		room:   room,
 	}
 
-	room.broadcastSnapshot(time.Now(), settings)
+	room.broadcastSnapshot(now, settings)
 
 	data := <-room.clients[player.UserId].send
 	var snapshot Snapshot
@@ -121,6 +139,11 @@ func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
 	require.NotEmpty(t, snapshot.Platforms)
 	require.Len(t, snapshot.Players, 1)
 	assert.Equal(t, 7, snapshot.Players[0].CapStack)
+	assert.Equal(t, player.CapStormUntil.UnixMilli(), snapshot.Players[0].CapStormUntil)
+	require.Len(t, snapshot.Bullets, 1)
+	assert.Equal(t, bulletKindCapStorm, snapshot.Bullets[0].Kind)
+	require.Len(t, snapshot.Powerups, 1)
+	assert.Equal(t, powerupTypeCapStorm, snapshot.Powerups[0].Type)
 }
 
 func TestUpdateCapsStacksCapsOnTargetHead(t *testing.T) {
@@ -147,4 +170,125 @@ func TestUpdateCapsStacksCapsOnTargetHead(t *testing.T) {
 	assert.Empty(t, room.bullets)
 	require.Len(t, room.events, 1)
 	assert.Equal(t, eventTypeHit, room.events[0].Type)
+}
+
+func TestUpdatePowerupPickupsActivatesCapStorm(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	now := time.Now()
+	player := &player{
+		UserId: 1,
+		X:      200,
+		Y:      300,
+		Alive:  true,
+	}
+	room.players[player.UserId] = player
+	room.powerups["storm"] = &powerup{
+		Id:        "storm",
+		Type:      powerupTypeCapStorm,
+		X:         player.X,
+		Y:         player.Y - playerHeight*0.18,
+		ExpiresAt: now.Add(time.Second),
+	}
+
+	room.updatePowerupPickups(now, settings)
+
+	assert.Empty(t, room.powerups)
+	assert.True(t, player.capStormActive(now))
+	assert.Equal(t, now.Add(capStormDuration), player.CapStormUntil)
+	require.Len(t, room.events, 1)
+	assert.Equal(t, eventTypePowerupPickup, room.events[0].Type)
+	assert.Equal(t, player.UserId, room.events[0].UserId)
+}
+
+func TestTrySpawnCapStormLaunchesOneProjectilePerHeadCap(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	now := time.Now()
+	player := &player{
+		UserId:        1,
+		X:             400,
+		Y:             500,
+		Alive:         true,
+		Direction:     1,
+		CapStack:      4,
+		CapStormUntil: now.Add(capStormDuration),
+	}
+
+	spawned := room.trySpawnCapStorm(player, now, settings)
+
+	require.True(t, spawned)
+	require.Len(t, room.bullets, player.CapStack)
+	assert.Equal(t, 4, player.CapStack)
+	assert.Equal(t, now, player.LastStormThrow)
+	var attemptId string
+	for _, bullet := range room.bullets {
+		assert.Equal(t, bulletKindCapStorm, bullet.Kind)
+		assert.Equal(t, player.UserId, bullet.OwnerId)
+		assert.NotEmpty(t, bullet.AttemptId)
+		if attemptId == "" {
+			attemptId = bullet.AttemptId
+		}
+		assert.Equal(t, attemptId, bullet.AttemptId)
+	}
+
+	assert.False(t, room.trySpawnCapStorm(player, now.Add(100*time.Millisecond), settings))
+	assert.Len(t, room.bullets, player.CapStack)
+}
+
+func TestCapStormHitTransfersWholeStackToTarget(t *testing.T) {
+	room := newRoom("test", NewManager())
+	now := time.Now()
+	owner := &player{
+		UserId:        1,
+		X:             400,
+		Y:             500,
+		Alive:         true,
+		CapStack:      5,
+		CapSources:    map[int]int{2: 5},
+		CapStormUntil: now.Add(capStormDuration),
+	}
+	target := &player{
+		UserId:     3,
+		X:          560,
+		Y:          500,
+		Alive:      true,
+		CapStack:   1,
+		CapSources: map[int]int{4: 1},
+	}
+	room.players[owner.UserId] = owner
+	room.players[target.UserId] = target
+	room.bullets["storm-1"] = &bullet{
+		Id:        "storm-1",
+		Kind:      bulletKindCapStorm,
+		OwnerId:   owner.UserId,
+		AttemptId: "attempt",
+		X:         target.X,
+		Y:         target.Y - playerHeight/2 + 8,
+		ExpiresAt: now.Add(time.Second),
+	}
+	room.bullets["storm-2"] = &bullet{
+		Id:        "storm-2",
+		Kind:      bulletKindCapStorm,
+		OwnerId:   owner.UserId,
+		AttemptId: "attempt",
+		X:         target.X,
+		Y:         target.Y - playerHeight/2 + 8,
+		ExpiresAt: now.Add(time.Second),
+	}
+
+	room.handleCapStormHit(room.bullets["storm-1"], target)
+
+	assert.Zero(t, owner.CapStack)
+	assert.Empty(t, owner.CapSources)
+	assert.True(t, owner.CapStormUntil.IsZero())
+	assert.Equal(t, 6, target.CapStack)
+	assert.Equal(t, 5, target.CapSources[owner.UserId])
+	assert.Equal(t, 1, target.CapSources[4])
+	assert.Empty(t, room.bullets)
+	require.Len(t, room.events, 1)
+	assert.Equal(t, eventTypeCapStormHit, room.events[0].Type)
+	assert.Equal(t, owner.UserId, room.events[0].UserId)
+	assert.Equal(t, target.UserId, room.events[0].TargetUserId)
+	assert.Equal(t, 5, room.events[0].CapCount)
 }

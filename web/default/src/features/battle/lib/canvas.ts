@@ -28,6 +28,7 @@ import type {
   BattleBullet,
   BattlePlayer,
   BattlePlatform,
+  BattlePowerup,
   BattleSnapshot,
 } from '../types'
 
@@ -182,29 +183,21 @@ export function drawBattleCanvas(
 
   const bullets = Array.isArray(snapshot.bullets) ? snapshot.bullets : []
   const players = Array.isArray(snapshot.players) ? snapshot.players : []
+  const powerups = Array.isArray(snapshot.powerups) ? snapshot.powerups : []
 
+  powerups.forEach((powerup) => drawPowerup(ctx, powerup, metrics))
   bullets.forEach((bullet) => drawFlyingCap(ctx, bullet, metrics))
 
-  const me = players.find((player) => player.user_id === snapshot.me)
   const throwingPlayerIds = new Set(bullets.map((bullet) => bullet.owner_id))
   players.forEach((player) => {
     drawPlayer(
       ctx,
       player,
       metrics,
-      player.user_id === snapshot.me,
-      throwingPlayerIds.has(player.user_id)
+      throwingPlayerIds.has(player.user_id),
+      (player.cap_storm_until ?? 0) > snapshot.server_time
     )
   })
-
-  if (me?.alive) {
-    const point = toScreen(me.x, me.y, metrics)
-    ctx.beginPath()
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.22)'
-    ctx.lineWidth = 2
-    ctx.arc(point.x, point.y, 58 * metrics.scale, 0, Math.PI * 2)
-    ctx.stroke()
-  }
 }
 
 function drawArena(
@@ -340,17 +333,74 @@ function drawFlyingCap(
   metrics: CanvasMetrics
 ): void {
   const point = toScreen(bullet.x, bullet.y, metrics)
+  const isStormCap = bullet.kind === 'cap_storm'
   const spin =
     ((typeof performance !== 'undefined' ? performance.now() : Date.now()) /
-      95 +
+      (isStormCap ? 58 : 95) +
       hashString(bullet.id)) %
     (Math.PI * 2)
   const arcTilt = Math.atan2(bullet.vy || 0, bullet.vx || 1) * 0.2
 
   ctx.save()
-  ctx.shadowColor = 'rgba(34, 197, 94, 0.65)'
-  ctx.shadowBlur = 16 * metrics.scale
-  drawCapSprite(ctx, point.x, point.y, 54 * metrics.scale, spin + arcTilt, 1)
+  ctx.shadowColor = isStormCap
+    ? 'rgba(250, 204, 21, 0.82)'
+    : 'rgba(34, 197, 94, 0.65)'
+  ctx.shadowBlur = (isStormCap ? 24 : 16) * metrics.scale
+  drawCapSprite(
+    ctx,
+    point.x,
+    point.y,
+    (isStormCap ? 64 : 54) * metrics.scale,
+    spin + arcTilt,
+    1
+  )
+  if (isStormCap) {
+    ctx.strokeStyle = 'rgba(187, 247, 208, 0.5)'
+    ctx.lineWidth = Math.max(1, 2 * metrics.scale)
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, 24 * metrics.scale, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function drawPowerup(
+  ctx: CanvasRenderingContext2D,
+  powerup: BattlePowerup,
+  metrics: CanvasMetrics
+): void {
+  const point = toScreen(powerup.x, powerup.y, metrics)
+  const now =
+    typeof performance !== 'undefined' ? performance.now() : Date.now()
+  const pulse = 0.5 + Math.sin(now / 220 + hashString(powerup.id)) * 0.5
+  const radius = (28 + pulse * 5) * metrics.scale
+
+  ctx.save()
+  ctx.shadowColor = 'rgba(250, 204, 21, 0.72)'
+  ctx.shadowBlur = 24 * metrics.scale
+  ctx.fillStyle = 'rgba(20, 83, 45, 0.72)'
+  ctx.beginPath()
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(250, 204, 21, 0.86)'
+  ctx.lineWidth = Math.max(2, 3 * metrics.scale)
+  ctx.stroke()
+  drawCapSprite(
+    ctx,
+    point.x,
+    point.y - 2 * metrics.scale,
+    56 * metrics.scale,
+    Math.sin(now / 260) * 0.18,
+    1
+  )
+  ctx.strokeStyle = 'rgba(240, 253, 244, 0.88)'
+  ctx.lineWidth = Math.max(1, 2 * metrics.scale)
+  ctx.beginPath()
+  ctx.moveTo(point.x - 8 * metrics.scale, point.y + 17 * metrics.scale)
+  ctx.lineTo(point.x + 2 * metrics.scale, point.y + 2 * metrics.scale)
+  ctx.lineTo(point.x - 1 * metrics.scale, point.y + 2 * metrics.scale)
+  ctx.lineTo(point.x + 9 * metrics.scale, point.y - 15 * metrics.scale)
+  ctx.stroke()
   ctx.restore()
 }
 
@@ -358,8 +408,8 @@ function drawPlayer(
   ctx: CanvasRenderingContext2D,
   player: BattlePlayer,
   metrics: CanvasMetrics,
-  isMe: boolean,
-  isThrowing: boolean
+  isThrowing: boolean,
+  hasCapStorm: boolean
 ): void {
   const point = toScreen(player.x, player.y, metrics)
   const radius = PLAYER_RADIUS * metrics.scale
@@ -385,10 +435,10 @@ function drawPlayer(
   )
   ctx.fill()
 
-  ctx.shadowColor = isMe
-    ? 'rgba(34, 211, 238, 0.45)'
+  ctx.shadowColor = hasCapStorm
+    ? 'rgba(250, 204, 21, 0.42)'
     : 'rgba(34, 197, 94, 0.24)'
-  ctx.shadowBlur = player.alive ? 16 : 0
+  ctx.shadowBlur = player.alive ? (hasCapStorm ? 24 : 16) : 0
   drawPlayerSprite(
     ctx,
     point.x,
@@ -400,14 +450,6 @@ function drawPlayer(
     player.direction
   )
   ctx.shadowBlur = 0
-
-  if (isMe && player.alive) {
-    ctx.beginPath()
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.58)'
-    ctx.lineWidth = Math.max(2, 2.5 * metrics.scale)
-    ctx.arc(point.x, point.y + radius * 0.18, radius * 1.35, 0, Math.PI * 2)
-    ctx.stroke()
-  }
 
   drawCapStack(ctx, point.x, spriteTop + spriteHeight * 0.16, capCount, metrics)
 
@@ -476,7 +518,8 @@ function drawCapStack(
   if (capCount <= 0) return
   const capWidth = PLAYER_SPRITE_WIDTH * 0.72 * metrics.scale
   const gap = CAP_STACK_GAP * metrics.scale
-  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  const now =
+    typeof performance !== 'undefined' ? performance.now() : Date.now()
   for (let index = 0; index < capCount; index += 1) {
     const y = headY - index * gap
     const sway = Math.sin((now + index * 137) / 280) * 1.5 * metrics.scale

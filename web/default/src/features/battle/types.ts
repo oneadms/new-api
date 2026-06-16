@@ -57,10 +57,12 @@ export type BattlePlayer = {
   round_loss: number
   round_gain: number
   cap_stack: number
+  cap_storm_until?: number
 }
 
 export type BattleBullet = {
   id: string
+  kind?: 'cap' | 'cap_storm' | string
   owner_id: number
   x: number
   y: number
@@ -70,10 +72,16 @@ export type BattleBullet = {
 
 export type BattleEvent = {
   id: string
-  type: 'hit' | 'cap_settlement' | 'settlement_failed'
+  type:
+    | 'hit'
+    | 'cap_settlement'
+    | 'settlement_failed'
+    | 'powerup_pickup'
+    | 'cap_storm_hit'
   user_id?: number
   target_user_id?: number
   quota?: number
+  cap_count?: number
   created_at: number
 }
 
@@ -84,6 +92,13 @@ export type BattlePlatform = {
   w: number
   h: number
   one_way: boolean
+}
+
+export type BattlePowerup = {
+  id: string
+  type: 'cap_storm' | string
+  x: number
+  y: number
 }
 
 export type BattleSnapshot = {
@@ -98,6 +113,7 @@ export type BattleSnapshot = {
   players: BattlePlayer[]
   bullets: BattleBullet[]
   platforms: BattlePlatform[]
+  powerups: BattlePowerup[]
   events: BattleEvent[]
 }
 
