@@ -97,7 +97,7 @@ const OPERATIONS_SECTIONS = [
   },
   {
     id: 'battle',
-    titleKey: 'Battle Arena',
+    titleKey: 'Forgive Cap Battle',
     build: (settings: OperationsSettings) => (
       <BattleSettingsSection
         defaultValues={{

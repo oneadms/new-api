@@ -438,7 +438,7 @@ export function Battle() {
             interpolatedSnapshot ?? snapshotRef.current,
             predictedPlayer
           ),
-          t('Battle arena')
+          t('Forgive Cap Battle')
         )
       }
       frame = window.requestAnimationFrame(draw)
@@ -547,7 +547,7 @@ export function Battle() {
       <div className='flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-center lg:justify-between'>
         <div>
           <h1 className='text-2xl font-semibold tracking-normal'>
-            {t('Battle Arena')}
+            {t('Forgive Cap Battle')}
           </h1>
           <div className='text-muted-foreground mt-2 flex flex-wrap items-center gap-2 text-sm'>
             <Badge variant={status?.enabled ? 'default' : 'secondary'}>
@@ -664,7 +664,7 @@ export function Battle() {
             <h2 className='text-base font-medium'>{t('Limits')}</h2>
             <div className='text-muted-foreground mt-3 space-y-2 text-sm'>
               <LimitRow
-                label={t('Drop')}
+                label={t('Cap reward')}
                 value={`${formatQuota(status?.min_drop_quota ?? 0)} - ${formatQuota(
                   status?.max_drop_quota ?? 0
                 )}`}
@@ -778,19 +778,19 @@ function battleEventText(
   const user = playerName(snapshot, event.user_id)
   const target = playerName(snapshot, event.target_user_id)
   if (event.type === 'hit') {
-    return t('{{user}} hit {{target}}', { user, target })
+    return t('{{user}} put a green cap on {{target}}', { user, target })
   }
   if (event.type === 'knockout') {
-    return t('{{user}} knocked out {{target}}', { user, target })
+    return t('{{user}} buried {{target}} in green caps', { user, target })
   }
   if (event.type === 'quota_pickup') {
-    return t('{{user}} picked up {{quota}} from {{target}}', {
+    return t('{{user}} collected {{quota}} from {{target}}', {
       user,
       target,
       quota: formatQuota(event.quota ?? 0),
     })
   }
-  return t('Quota pickup failed')
+  return t('Cap reward pickup failed')
 }
 
 function playerName(

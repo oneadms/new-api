@@ -106,7 +106,7 @@ func DebitBattleQuota(params BattleQuotaMutationParams) (*BattleRecord, error) {
 			common.SysLog("failed to decrease battle user quota cache: " + err.Error())
 		}
 	})
-	RecordLog(params.UserId, LogTypeSystem, fmt.Sprintf("多人枪战掉落额度 %s", logger.LogQuota(params.Quota)))
+	RecordLog(params.UserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战掉落额度 %s", logger.LogQuota(params.Quota)))
 	return record, nil
 }
 
@@ -163,7 +163,7 @@ func CreditBattleQuota(params BattleQuotaMutationParams) (*BattleRecord, error) 
 			common.SysLog("failed to increase battle user quota cache: " + err.Error())
 		}
 	})
-	RecordLog(params.UserId, LogTypeSystem, fmt.Sprintf("多人枪战拾取额度 %s", logger.LogQuota(params.Quota)))
+	RecordLog(params.UserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战拾取额度 %s", logger.LogQuota(params.Quota)))
 	return record, nil
 }
 

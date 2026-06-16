@@ -107,7 +107,7 @@ export function useSidebarData(): SidebarData {
             icon: Wallet,
           },
           {
-            title: t('Battle Arena'),
+            title: t('Forgive Cap Battle'),
             url: '/battle',
             icon: Gamepad2,
           },

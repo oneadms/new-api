@@ -115,6 +115,7 @@ const luckyNumberFields = [
     min: 0,
     max: 100,
     step: 0.01,
+    showCurrencyLabel: false,
   },
   {
     name: 'maxFailurePercent',
@@ -122,6 +123,7 @@ const luckyNumberFields = [
     min: 0,
     max: 100,
     step: 0.01,
+    showCurrencyLabel: false,
   },
   {
     name: 'actualMinFailurePercent',
@@ -129,6 +131,7 @@ const luckyNumberFields = [
     min: 0,
     max: 100,
     step: 0.01,
+    showCurrencyLabel: false,
   },
   {
     name: 'actualMaxFailurePercent',
@@ -136,6 +139,7 @@ const luckyNumberFields = [
     min: 0,
     max: 100,
     step: 0.01,
+    showCurrencyLabel: false,
   },
 ] as const
 

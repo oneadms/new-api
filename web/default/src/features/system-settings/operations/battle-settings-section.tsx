@@ -65,7 +65,9 @@ const createSchema = (t: TFunction) =>
     })
     .refine((values) => values.maxDropQuota >= values.minDropQuota, {
       path: ['maxDropQuota'],
-      message: t('Maximum drop quota must be greater than minimum drop quota'),
+      message: t(
+        'Maximum cap reward quota must be greater than minimum cap reward quota'
+      ),
     })
 
 type Values = z.infer<ReturnType<typeof createSchema>>
@@ -140,14 +142,16 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
   }> = [
     {
       name: 'minDropQuota',
-      label: t('Minimum drop quota'),
-      description: t('Smallest quota amount created when a player is hit.'),
+      label: t('Minimum cap reward quota'),
+      description: t(
+        'Smallest quota amount dropped when a player gets capped.'
+      ),
       min: 0,
     },
     {
       name: 'maxDropQuota',
-      label: t('Maximum drop quota'),
-      description: t('Largest quota amount created when a player is hit.'),
+      label: t('Maximum cap reward quota'),
+      description: t('Largest quota amount dropped when a player gets capped.'),
       min: 0,
     },
     {
@@ -197,43 +201,43 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
     },
     {
       name: 'bulletSpeed',
-      label: t('Bullet speed'),
-      description: t('Bullet movement speed in map units per second.'),
+      label: t('Flying cap speed'),
+      description: t('Flying cap movement speed in map units per second.'),
       min: 100,
       max: 1800,
     },
     {
       name: 'bulletDamage',
-      label: t('Bullet damage'),
-      description: t('Health removed by each server-confirmed hit.'),
+      label: t('Cap hit damage'),
+      description: t('Health removed by each server-confirmed cap hit.'),
       min: 1,
       max: 100,
     },
     {
       name: 'fireCooldownMs',
-      label: t('Fire cooldown'),
-      description: t('Minimum milliseconds between two shots.'),
+      label: t('Throw cooldown'),
+      description: t('Minimum milliseconds between two cap throws.'),
       min: 80,
       max: 2000,
     },
     {
       name: 'respawnSeconds',
       label: t('Respawn seconds'),
-      description: t('Delay before a knocked-out player returns.'),
+      description: t('Delay before a capped-out player returns.'),
       min: 1,
       max: 30,
     },
     {
       name: 'dropExpireSeconds',
-      label: t('Drop lifetime'),
-      description: t('Seconds before an unclaimed quota drop disappears.'),
+      label: t('Cap reward lifetime'),
+      description: t('Seconds before an unclaimed cap reward disappears.'),
       min: 3,
       max: 120,
     },
   ]
 
   return (
-    <SettingsSection title={t('Battle Arena')}>
+    <SettingsSection title={t('Forgive Cap Battle')}>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)} autoComplete='off'>
           <SettingsPageFormActions
@@ -249,10 +253,10 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
             render={({ field }) => (
               <SettingsSwitchItem>
                 <SettingsSwitchContent>
-                  <FormLabel>{t('Enable battle arena')}</FormLabel>
+                  <FormLabel>{t('Enable Forgive Cap Battle')}</FormLabel>
                   <FormDescription>
                     {t(
-                      'Allow authenticated users to join WebSocket rooms and settle real quota pickups.'
+                      'Allow authenticated users to join cap battle rooms and settle real quota rewards.'
                     )}
                   </FormDescription>
                 </SettingsSwitchContent>
