@@ -95,6 +95,51 @@ func TestUpdatePlayerUsesPlatformMovementJumpAndCapThrow(t *testing.T) {
 	assert.Len(t, room.bullets, 1)
 }
 
+func TestUpdatePlayerDownDoesNotDropThroughSolidFloor(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	now := time.Now()
+	floor := battleTestPlatform(t, settings, "floor")
+	player := &player{
+		UserId:   1,
+		X:        floor.X + floor.W/2,
+		Y:        floor.Y - playerHeight/2,
+		Alive:    true,
+		OnGround: true,
+		Input: PlayerInput{
+			Down: true,
+		},
+	}
+
+	room.updatePlayer(player, 0.016, now, settings)
+
+	assert.InDelta(t, floor.Y-playerHeight/2, player.Y, 0.001)
+	assert.True(t, player.OnGround)
+	assert.Zero(t, player.VY)
+}
+
+func TestUpdatePlayerDownDropsThroughOneWayPlatform(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	now := time.Now()
+	platform := battleTestPlatform(t, settings, "center-low")
+	player := &player{
+		UserId:   1,
+		X:        platform.X + platform.W/2,
+		Y:        platform.Y - playerHeight/2,
+		Alive:    true,
+		OnGround: true,
+		Input: PlayerInput{
+			Down: true,
+		},
+	}
+
+	room.updatePlayer(player, 0.016, now, settings)
+
+	assert.Greater(t, player.Y, platform.Y-playerHeight/2)
+	assert.False(t, player.OnGround)
+}
+
 func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
 	room := newRoom("test", NewManager())
 	settings := battleSimulationSettings()
@@ -291,4 +336,15 @@ func TestCapStormHitTransfersWholeStackToTarget(t *testing.T) {
 	assert.Equal(t, owner.UserId, room.events[0].UserId)
 	assert.Equal(t, target.UserId, room.events[0].TargetUserId)
 	assert.Equal(t, 5, room.events[0].CapCount)
+}
+
+func battleTestPlatform(t *testing.T, settings operation_setting.BattleSetting, id string) platform {
+	t.Helper()
+	for _, item := range battlePlatforms(settings) {
+		if item.Id == id {
+			return item
+		}
+	}
+	t.Fatalf("platform %q not found", id)
+	return platform{}
 }

@@ -284,7 +284,11 @@ function movePlayer(
     player.vy = jumpVelocity
     player.on_ground = false
   }
-  if (input.down && player.on_ground) {
+  if (
+    input.down &&
+    player.on_ground &&
+    isStandingOnOneWayPlatform(player, platforms)
+  ) {
     player.y += 2
     player.vy = Math.max(player.vy, playerSpeed)
     player.on_ground = false
@@ -296,7 +300,7 @@ function movePlayer(
   )
   const oldY = player.y
   player.y += player.vy * dt
-  resolveVertical(player, oldY, platforms, mapHeight)
+  resolveVertical(player, oldY, input, platforms, mapHeight)
 }
 
 function resolveHorizontal(
@@ -333,6 +337,7 @@ function resolveHorizontal(
 function resolveVertical(
   player: BattlePlayer,
   oldY: number,
+  input: BattleInput,
   platforms: BattlePlatform[],
   mapHeight: number
 ): void {
@@ -350,6 +355,7 @@ function resolveVertical(
       continue
     }
     if (player.vy >= 0) {
+      if (input.down && platform.one_way) continue
       if (oldBottom <= platform.y && newBottom >= platform.y) {
         player.y = platform.y - playerHeight / 2
         player.vy = 0
@@ -378,6 +384,34 @@ function resolveVertical(
     player.vy = 0
     player.on_ground = true
   }
+}
+
+function isStandingOnOneWayPlatform(
+  player: BattlePlayer,
+  platforms: BattlePlatform[]
+): boolean {
+  const platform = standingPlatform(player, platforms)
+  return Boolean(platform?.one_way)
+}
+
+function standingPlatform(
+  player: BattlePlayer,
+  platforms: BattlePlatform[]
+): BattlePlatform | null {
+  const tolerance = 3
+  const bottom = playerBottom(player)
+  for (const platform of platforms) {
+    if (
+      playerRight(player) <= platform.x ||
+      playerLeft(player) >= platform.x + platform.w
+    ) {
+      continue
+    }
+    if (Math.abs(bottom - platform.y) <= tolerance) {
+      return platform
+    }
+  }
+  return null
 }
 
 function playerLeft(player: BattlePlayer): number {

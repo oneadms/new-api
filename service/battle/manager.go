@@ -586,7 +586,7 @@ func (r *Room) updatePlayer(p *player, dt float64, now time.Time, settings opera
 	}
 	p.LastJump = jumpPressed
 
-	if p.Input.Down && p.OnGround {
+	if p.Input.Down && p.OnGround && p.standingOnOneWayPlatform(settings) {
 		p.Y += 2
 		p.VY = math.Max(p.VY, float64(settings.PlayerSpeed))
 		p.OnGround = false
@@ -1062,6 +1062,31 @@ func clearPlayerCaps(p *player) {
 
 func (p *player) capStormActive(now time.Time) bool {
 	return p != nil && !p.CapStormUntil.IsZero() && now.Before(p.CapStormUntil)
+}
+
+func (p *player) standingOnOneWayPlatform(settings operation_setting.BattleSetting) bool {
+	if p == nil {
+		return false
+	}
+	standingPlatform, ok := p.standingPlatform(settings)
+	return ok && standingPlatform.OneWay
+}
+
+func (p *player) standingPlatform(settings operation_setting.BattleSetting) (platform, bool) {
+	if p == nil {
+		return platform{}, false
+	}
+	const tolerance = 3.0
+	bottom := playerBottom(p)
+	for _, item := range battlePlatforms(settings) {
+		if playerRight(p) <= item.X || playerLeft(p) >= item.X+item.W {
+			continue
+		}
+		if math.Abs(bottom-item.Y) <= tolerance {
+			return item, true
+		}
+	}
+	return platform{}, false
 }
 
 func battlePlatforms(settings operation_setting.BattleSetting) []platform {
