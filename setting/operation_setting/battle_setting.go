@@ -11,6 +11,7 @@ type BattleSetting struct {
 	MaxRoundGainQuota  int  `json:"max_round_gain_quota"`
 	MaxDailyLossQuota  int  `json:"max_daily_loss_quota"`
 	MaxDailyGainQuota  int  `json:"max_daily_gain_quota"`
+	CapQuota           int  `json:"cap_quota"`
 	MaxPlayersPerRoom  int  `json:"max_players_per_room"`
 	TickRate           int  `json:"tick_rate"`
 	MapWidth           int  `json:"map_width"`
@@ -34,6 +35,7 @@ var battleSetting = BattleSetting{
 	MaxRoundGainQuota:  5000,
 	MaxDailyLossQuota:  20000,
 	MaxDailyGainQuota:  20000,
+	CapQuota:           100,
 	MaxPlayersPerRoom:  8,
 	TickRate:           30,
 	MapWidth:           1600,

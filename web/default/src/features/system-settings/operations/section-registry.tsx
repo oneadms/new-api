@@ -103,8 +103,7 @@ const OPERATIONS_SECTIONS = [
         defaultValues={{
           enabled: settings['battle_setting.enabled'],
           hideRoomInput: settings['battle_setting.hide_room_input'],
-          minDropQuota: settings['battle_setting.min_drop_quota'],
-          maxDropQuota: settings['battle_setting.max_drop_quota'],
+          capQuota: settings['battle_setting.cap_quota'],
           maxRoundLossQuota: settings['battle_setting.max_round_loss_quota'],
           maxRoundGainQuota: settings['battle_setting.max_round_gain_quota'],
           maxDailyLossQuota: settings['battle_setting.max_daily_loss_quota'],
@@ -113,10 +112,7 @@ const OPERATIONS_SECTIONS = [
           tickRate: settings['battle_setting.tick_rate'],
           playerSpeed: settings['battle_setting.player_speed'],
           bulletSpeed: settings['battle_setting.bullet_speed'],
-          bulletDamage: settings['battle_setting.bullet_damage'],
           fireCooldownMs: settings['battle_setting.fire_cooldown_ms'],
-          respawnSeconds: settings['battle_setting.respawn_seconds'],
-          dropExpireSeconds: settings['battle_setting.drop_expire_seconds'],
         }}
       />
     ),

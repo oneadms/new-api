@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,13 +23,22 @@ const (
 	messageTypeJoined   = "joined"
 	messageTypeSnapshot = "snapshot"
 
-	eventTypeHit         = "hit"
-	eventTypeKnockout    = "knockout"
-	eventTypeQuotaPickup = "quota_pickup"
-	eventTypeQuotaFailed = "quota_failed"
+	eventTypeHit              = "hit"
+	eventTypeCapSettlement    = "cap_settlement"
+	eventTypeSettlementFailed = "settlement_failed"
 
-	playerRadius = 18
-	bulletRadius = 6
+	playerWidth  = 46.0
+	playerHeight = 70.0
+	capWidth     = 42.0
+	capHeight    = 28.0
+
+	gravity              = 1800.0
+	jumpVelocity         = -760.0
+	maxFallSpeed         = 980.0
+	fastFallAcceleration = 900.0
+	capThrowUpVelocity   = -430.0
+	capGravity           = 1450.0
+	capStackSpacing      = 12.0
 )
 
 var ErrBattleDisabled = errors.New("battle is disabled")
@@ -142,6 +152,7 @@ type PlayerInput struct {
 	Left  bool    `json:"left"`
 	Right bool    `json:"right"`
 	Shoot bool    `json:"shoot"`
+	Jump  bool    `json:"jump,omitempty"`
 	AimX  float64 `json:"aim_x"`
 	AimY  float64 `json:"aim_y"`
 }
@@ -223,20 +234,21 @@ func (c *Client) sendJSON(payload any) {
 }
 
 type Room struct {
-	id         string
-	manager    *Manager
-	register   chan *Client
-	unregister chan *Client
-	inputs     chan clientInput
-	clients    map[int]*Client
-	players    map[int]*player
-	bullets    map[string]*bullet
-	drops      map[string]*drop
-	events     []BattleEvent
-	rng        *rand.Rand
-	nextId     int64
-	idleSince  time.Time
-	done       chan struct{}
+	id          string
+	manager     *Manager
+	register    chan *Client
+	unregister  chan *Client
+	inputs      chan clientInput
+	clients     map[int]*Client
+	players     map[int]*player
+	bullets     map[string]*bullet
+	roundLosses map[int]int
+	roundGains  map[int]int
+	events      []BattleEvent
+	rng         *rand.Rand
+	nextId      int64
+	idleSince   time.Time
+	done        chan struct{}
 }
 
 type clientInput struct {
@@ -246,22 +258,26 @@ type clientInput struct {
 }
 
 type player struct {
-	UserId    int
-	Username  string
-	X         float64
-	Y         float64
-	HP        int
-	Alive     bool
-	RespawnAt time.Time
-	LastShot  time.Time
-	LastAimX  float64
-	LastAimY  float64
-	Input     PlayerInput
-	InputSeq  int64
-	Score     int
-	Deaths    int
-	RoundLoss int
-	RoundGain int
+	UserId     int
+	Username   string
+	X          float64
+	Y          float64
+	VX         float64
+	VY         float64
+	Alive      bool
+	LastShot   time.Time
+	LastJump   bool
+	LastShoot  bool
+	LastAimX   float64
+	LastAimY   float64
+	Direction  int
+	OnGround   bool
+	Input      PlayerInput
+	InputSeq   int64
+	RoundLoss  int
+	RoundGain  int
+	CapStack   int
+	CapSources map[int]int
 }
 
 type bullet struct {
@@ -271,17 +287,16 @@ type bullet struct {
 	Y         float64
 	VX        float64
 	VY        float64
-	Damage    int
 	ExpiresAt time.Time
 }
 
-type drop struct {
-	Id         string
-	FromUserId int
-	Quota      int
-	X          float64
-	Y          float64
-	ExpiresAt  time.Time
+type platform struct {
+	Id     string
+	X      float64
+	Y      float64
+	W      float64
+	H      float64
+	OneWay bool
 }
 
 type BattleEvent struct {
@@ -294,18 +309,18 @@ type BattleEvent struct {
 }
 
 type Snapshot struct {
-	Type        string           `json:"type"`
-	RoomId      string           `json:"room_id"`
-	Me          int              `json:"me"`
-	AckSeq      int64            `json:"ack_seq"`
-	ServerTime  int64            `json:"server_time"`
-	MapWidth    int              `json:"map_width"`
-	MapHeight   int              `json:"map_height"`
-	PlayerSpeed int              `json:"player_speed"`
-	Players    []PlayerSnapshot `json:"players"`
-	Bullets    []BulletSnapshot `json:"bullets"`
-	Drops      []DropSnapshot   `json:"drops"`
-	Events     []BattleEvent    `json:"events"`
+	Type        string             `json:"type"`
+	RoomId      string             `json:"room_id"`
+	Me          int                `json:"me"`
+	AckSeq      int64              `json:"ack_seq"`
+	ServerTime  int64              `json:"server_time"`
+	MapWidth    int                `json:"map_width"`
+	MapHeight   int                `json:"map_height"`
+	PlayerSpeed int                `json:"player_speed"`
+	Players     []PlayerSnapshot   `json:"players"`
+	Bullets     []BulletSnapshot   `json:"bullets"`
+	Platforms   []PlatformSnapshot `json:"platforms"`
+	Events      []BattleEvent      `json:"events"`
 }
 
 type PlayerSnapshot struct {
@@ -313,12 +328,14 @@ type PlayerSnapshot struct {
 	Username  string  `json:"username"`
 	X         float64 `json:"x"`
 	Y         float64 `json:"y"`
-	HP        int     `json:"hp"`
+	VX        float64 `json:"vx"`
+	VY        float64 `json:"vy"`
 	Alive     bool    `json:"alive"`
-	Score     int     `json:"score"`
-	Deaths    int     `json:"deaths"`
+	Direction int     `json:"direction"`
+	OnGround  bool    `json:"on_ground"`
 	RoundLoss int     `json:"round_loss"`
 	RoundGain int     `json:"round_gain"`
+	CapStack  int     `json:"cap_stack"`
 }
 
 type BulletSnapshot struct {
@@ -326,29 +343,40 @@ type BulletSnapshot struct {
 	OwnerId int     `json:"owner_id"`
 	X       float64 `json:"x"`
 	Y       float64 `json:"y"`
+	VX      float64 `json:"vx"`
+	VY      float64 `json:"vy"`
 }
 
-type DropSnapshot struct {
-	Id         string  `json:"id"`
-	FromUserId int     `json:"from_user_id"`
-	Quota      int     `json:"quota"`
-	X          float64 `json:"x"`
-	Y          float64 `json:"y"`
+type PlatformSnapshot struct {
+	Id     string  `json:"id"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	W      float64 `json:"w"`
+	H      float64 `json:"h"`
+	OneWay bool    `json:"one_way"`
+}
+
+type capSettlement struct {
+	UserId    int
+	CapCount  int
+	Amount    int
+	Remainder int
 }
 
 func newRoom(id string, manager *Manager) *Room {
 	return &Room{
-		id:         id,
-		manager:    manager,
-		register:   make(chan *Client, 8),
-		unregister: make(chan *Client, 64),
-		inputs:     make(chan clientInput, 128),
-		clients:    make(map[int]*Client),
-		players:    make(map[int]*player),
-		bullets:    make(map[string]*bullet),
-		drops:      make(map[string]*drop),
-		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
-		done:       make(chan struct{}),
+		id:          id,
+		manager:     manager,
+		register:    make(chan *Client, 8),
+		unregister:  make(chan *Client, 64),
+		inputs:      make(chan clientInput, 128),
+		clients:     make(map[int]*Client),
+		players:     make(map[int]*player),
+		bullets:     make(map[string]*bullet),
+		roundLosses: make(map[int]int),
+		roundGains:  make(map[int]int),
+		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -422,17 +450,23 @@ func (r *Room) handleRegister(client *Client) {
 	p := r.players[client.userId]
 	if p == nil {
 		p = &player{
-			UserId:   client.userId,
-			Username: client.username,
-			Alive:    true,
-			HP:       100,
-			LastAimX: 1,
-			LastAimY: 0,
+			UserId:     client.userId,
+			Username:   client.username,
+			Alive:      true,
+			LastAimX:   1,
+			LastAimY:   0,
+			Direction:  1,
+			RoundLoss:  r.roundLosses[client.userId],
+			RoundGain:  r.roundGains[client.userId],
+			CapSources: make(map[int]int),
 		}
 		r.placePlayer(p, settings)
 		r.players[client.userId] = p
 	} else {
 		p.Username = client.username
+		if p.CapSources == nil {
+			p.CapSources = make(map[int]int)
+		}
 	}
 	p.Input = PlayerInput{AimX: 1, AimY: 0}
 	p.InputSeq = 0
@@ -443,12 +477,19 @@ func (r *Room) handleUnregister(client *Client) {
 	if current := r.clients[client.userId]; current != client {
 		return
 	}
+	if p := r.players[client.userId]; p != nil {
+		r.settlePlayerCaps(p, normalizedSettings())
+	}
 	delete(r.clients, client.userId)
 	delete(r.players, client.userId)
 	close(client.send)
 }
 
 func (r *Room) closeAll(messageType string, message string) {
+	settings := normalizedSettings()
+	for _, p := range r.players {
+		r.settlePlayerCaps(p, settings)
+	}
 	for userId, client := range r.clients {
 		client.sendJSON(map[string]any{"type": messageType, "message": message})
 		close(client.send)
@@ -457,7 +498,6 @@ func (r *Room) closeAll(messageType string, message string) {
 	}
 	r.players = make(map[int]*player)
 	r.bullets = make(map[string]*bullet)
-	r.drops = make(map[string]*drop)
 }
 
 func (r *Room) step(dt float64, now time.Time, settings operation_setting.BattleSetting) {
@@ -468,31 +508,20 @@ func (r *Room) step(dt float64, now time.Time, settings operation_setting.Battle
 	for _, p := range r.players {
 		r.updatePlayer(p, dt, now, settings)
 	}
-	r.updateBullets(now, dt, settings)
-	r.updateDrops(now, settings)
-	r.handlePickups(now, settings)
+	r.updateCaps(now, dt, settings)
 	r.broadcastSnapshot(now, settings)
 }
 
 func (r *Room) updatePlayer(p *player, dt float64, now time.Time, settings operation_setting.BattleSetting) {
-	if !p.Alive {
-		if !p.RespawnAt.IsZero() && now.After(p.RespawnAt) {
-			p.Alive = true
-			p.HP = 100
-			r.placePlayer(p, settings)
-		}
-		return
+	moveX := boolToFloat(p.Input.Right) - boolToFloat(p.Input.Left)
+	if moveX < 0 {
+		p.Direction = -1
+	} else if moveX > 0 {
+		p.Direction = 1
 	}
-
-	dx := boolToFloat(p.Input.Right) - boolToFloat(p.Input.Left)
-	dy := boolToFloat(p.Input.Down) - boolToFloat(p.Input.Up)
-	length := math.Hypot(dx, dy)
-	if length > 0 {
-		dx /= length
-		dy /= length
-		p.X = clampFloat(p.X+dx*float64(settings.PlayerSpeed)*dt, playerRadius, float64(settings.MapWidth-playerRadius))
-		p.Y = clampFloat(p.Y+dy*float64(settings.PlayerSpeed)*dt, playerRadius, float64(settings.MapHeight-playerRadius))
-	}
+	p.VX = moveX * float64(settings.PlayerSpeed)
+	p.X += p.VX * dt
+	r.resolvePlayerHorizontal(p, settings)
 
 	if isFiniteVector(p.Input.AimX, p.Input.AimY) {
 		aimLength := math.Hypot(p.Input.AimX, p.Input.AimY)
@@ -502,17 +531,111 @@ func (r *Room) updatePlayer(p *player, dt float64, now time.Time, settings opera
 		}
 	}
 
-	if p.Input.Shoot && now.Sub(p.LastShot) >= time.Duration(settings.FireCooldownMs)*time.Millisecond {
+	jumpPressed := p.Input.Jump || p.Input.Up
+	if jumpPressed && !p.LastJump && p.OnGround {
+		p.VY = jumpVelocity
+		p.OnGround = false
+	}
+	p.LastJump = jumpPressed
+
+	if p.Input.Down && p.OnGround {
+		p.Y += 2
+		p.VY = math.Max(p.VY, float64(settings.PlayerSpeed))
+		p.OnGround = false
+	}
+
+	p.VY += gravity * dt
+	if p.Input.Down {
+		p.VY += fastFallAcceleration * dt
+	}
+	p.VY = math.Min(p.VY, maxFallSpeed)
+	oldY := p.Y
+	p.Y += p.VY * dt
+	r.resolvePlayerVertical(p, oldY, settings)
+
+	if p.Input.Shoot && !p.LastShoot && now.Sub(p.LastShot) >= time.Duration(settings.FireCooldownMs)*time.Millisecond {
 		p.LastShot = now
 		r.spawnBullet(p, now, settings)
 	}
+	p.LastShoot = p.Input.Shoot
 }
 
-func (r *Room) updateBullets(now time.Time, dt float64, settings operation_setting.BattleSetting) {
+func (r *Room) resolvePlayerHorizontal(p *player, settings operation_setting.BattleSetting) {
+	p.X = clampFloat(p.X, playerWidth/2, float64(settings.MapWidth)-playerWidth/2)
+	if p.VX == 0 {
+		return
+	}
+	for _, platform := range battlePlatforms(settings) {
+		if platform.OneWay || !rectsOverlap(playerLeft(p), playerTop(p), playerWidth, playerHeight, platform.X, platform.Y, platform.W, platform.H) {
+			continue
+		}
+		if p.VX > 0 {
+			p.X = platform.X - playerWidth/2
+		} else {
+			p.X = platform.X + platform.W + playerWidth/2
+		}
+		p.VX = 0
+	}
+	p.X = clampFloat(p.X, playerWidth/2, float64(settings.MapWidth)-playerWidth/2)
+}
+
+func (r *Room) resolvePlayerVertical(p *player, oldY float64, settings operation_setting.BattleSetting) {
+	oldTop := oldY - playerHeight/2
+	oldBottom := oldY + playerHeight/2
+	newTop := playerTop(p)
+	newBottom := playerBottom(p)
+	p.OnGround = false
+
+	for _, platform := range battlePlatforms(settings) {
+		if playerRight(p) <= platform.X || playerLeft(p) >= platform.X+platform.W {
+			continue
+		}
+
+		if p.VY >= 0 {
+			if p.Input.Down && platform.OneWay {
+				continue
+			}
+			if oldBottom <= platform.Y && newBottom >= platform.Y {
+				p.Y = platform.Y - playerHeight/2
+				p.VY = 0
+				p.OnGround = true
+				break
+			}
+			continue
+		}
+
+		if platform.OneWay {
+			continue
+		}
+		if oldTop >= platform.Y+platform.H && newTop <= platform.Y+platform.H {
+			p.Y = platform.Y + platform.H + playerHeight/2
+			p.VY = 0
+			break
+		}
+	}
+
+	if playerTop(p) < 0 {
+		p.Y = playerHeight / 2
+		p.VY = 0
+	}
+	if playerBottom(p) > float64(settings.MapHeight) {
+		p.Y = float64(settings.MapHeight) - playerHeight/2
+		p.VY = 0
+		p.OnGround = true
+	}
+}
+
+func (r *Room) updateCaps(now time.Time, dt float64, settings operation_setting.BattleSetting) {
 	for id, b := range r.bullets {
+		previousY := b.Y
+		b.VY = math.Min(b.VY+capGravity*dt, maxFallSpeed)
 		b.X += b.VX * dt
 		b.Y += b.VY * dt
 		if now.After(b.ExpiresAt) || b.X < 0 || b.X > float64(settings.MapWidth) || b.Y < 0 || b.Y > float64(settings.MapHeight) {
+			delete(r.bullets, id)
+			continue
+		}
+		if capHitPlatform(b, previousY, settings) {
 			delete(r.bullets, id)
 			continue
 		}
@@ -520,196 +643,280 @@ func (r *Room) updateBullets(now time.Time, dt float64, settings operation_setti
 			if target.UserId == b.OwnerId || !target.Alive {
 				continue
 			}
-			if distance(b.X, b.Y, target.X, target.Y) > playerRadius+bulletRadius {
+			if !capHitsHead(b, target) {
 				continue
 			}
 			delete(r.bullets, id)
-			r.handleHit(b, target, now, settings)
+			r.handleHit(b, target)
 			break
 		}
 	}
 }
 
-func (r *Room) updateDrops(now time.Time, _ operation_setting.BattleSetting) {
-	for id, d := range r.drops {
-		if now.After(d.ExpiresAt) {
-			delete(r.drops, id)
-		}
+func (r *Room) handleHit(b *bullet, target *player) {
+	if target.CapSources == nil {
+		target.CapSources = make(map[int]int)
 	}
-}
-
-func (r *Room) handlePickups(now time.Time, settings operation_setting.BattleSetting) {
-	for dropId, d := range r.drops {
-		for _, p := range r.players {
-			if !p.Alive || p.UserId == d.FromUserId {
-				continue
-			}
-			if distance(p.X, p.Y, d.X, d.Y) > float64(settings.DropPickupRadius) {
-				continue
-			}
-			quota, err := r.settleDrop(d, p, settings)
-			if err != nil {
-				if errors.Is(err, model.ErrBattleQuotaInsufficient) {
-					delete(r.drops, dropId)
-				} else {
-					d.ExpiresAt = now.Add(time.Second)
-				}
-				r.addEvent(eventTypeQuotaFailed, p.UserId, d.FromUserId, 0)
-				break
-			}
-			if quota > 0 {
-				r.addEvent(eventTypeQuotaPickup, p.UserId, d.FromUserId, quota)
-				if d.Quota <= 0 {
-					delete(r.drops, dropId)
-					break
-				}
-			}
-		}
-	}
-}
-
-func (r *Room) handleHit(b *bullet, target *player, now time.Time, settings operation_setting.BattleSetting) {
-	attacker := r.players[b.OwnerId]
-	target.HP -= b.Damage
-	r.createDrop(target, now, settings)
+	target.CapStack++
+	target.CapSources[b.OwnerId]++
 	r.addEvent(eventTypeHit, b.OwnerId, target.UserId, 0)
-
-	if target.HP <= 0 {
-		target.HP = 0
-		target.Alive = false
-		target.Deaths++
-		target.RespawnAt = now.Add(time.Duration(settings.RespawnSeconds) * time.Second)
-		if attacker != nil {
-			attacker.Score++
-		}
-		r.addEvent(eventTypeKnockout, b.OwnerId, target.UserId, 0)
-	}
-}
-
-func (r *Room) createDrop(target *player, now time.Time, settings operation_setting.BattleSetting) {
-	remaining := settings.MaxRoundLossQuota - target.RoundLoss
-	if remaining <= 0 {
-		return
-	}
-	balance, err := model.GetUserQuota(target.UserId, true)
-	if err != nil {
-		r.addEvent(eventTypeQuotaFailed, 0, target.UserId, 0)
-		return
-	}
-	remaining = minPositive(remaining, balance)
-	if remaining <= 0 {
-		return
-	}
-
-	dailyStart := model.BattleDailyUsageStart()
-	usage, err := model.GetBattleQuotaUsageSince(target.UserId, dailyStart)
-	if err != nil {
-		r.addEvent(eventTypeQuotaFailed, 0, target.UserId, 0)
-		return
-	}
-	remaining = minPositive(remaining, settings.MaxDailyLossQuota-usage.Lost)
-	if remaining <= 0 {
-		return
-	}
-
-	quota := settings.MinDropQuota
-	if settings.MaxDropQuota > settings.MinDropQuota {
-		quota += r.rng.Intn(settings.MaxDropQuota - settings.MinDropQuota + 1)
-	}
-	if quota > remaining {
-		quota = remaining
-	}
-	if quota <= 0 {
-		return
-	}
-
-	id := newBattleObjectId("drop")
-	_, err = model.DebitBattleQuota(model.BattleQuotaMutationParams{
-		RoomId:  r.id,
-		EventId: id + "-debit",
-		UserId:  target.UserId,
-		Quota:   quota,
-		Reason:  "drop",
-		UsageLimit: &model.BattleQuotaLimit{
-			Since: dailyStart,
-			Max:   settings.MaxDailyLossQuota,
-		},
-	})
-	if err != nil {
-		r.addEvent(eventTypeQuotaFailed, 0, target.UserId, 0)
-		return
-	}
-	target.RoundLoss += quota
-	r.drops[id] = &drop{
-		Id:         id,
-		FromUserId: target.UserId,
-		Quota:      quota,
-		X:          clampFloat(target.X+r.rng.Float64()*50-25, 20, float64(settings.MapWidth-20)),
-		Y:          clampFloat(target.Y+r.rng.Float64()*50-25, 20, float64(settings.MapHeight-20)),
-		ExpiresAt:  now.Add(time.Duration(settings.DropExpireSeconds) * time.Second),
-	}
-}
-
-func (r *Room) settleDrop(d *drop, picker *player, settings operation_setting.BattleSetting) (int, error) {
-	if d.Quota <= 0 {
-		return 0, nil
-	}
-
-	dailyStart := model.BattleDailyUsageStart()
-	toUsage, err := model.GetBattleQuotaUsageSince(picker.UserId, dailyStart)
-	if err != nil {
-		return 0, err
-	}
-
-	amount := d.Quota
-	amount = minPositive(amount, settings.MaxRoundGainQuota-picker.RoundGain)
-	amount = minPositive(amount, settings.MaxDailyGainQuota-toUsage.Won)
-	if amount <= 0 {
-		return 0, nil
-	}
-
-	_, err = model.CreditBattleQuota(model.BattleQuotaMutationParams{
-		RoomId:  r.id,
-		EventId: newBattleObjectId("pickup"),
-		UserId:  picker.UserId,
-		Quota:   amount,
-		Reason:  "pickup",
-		UsageLimit: &model.BattleQuotaLimit{
-			Since: dailyStart,
-			Max:   settings.MaxDailyGainQuota,
-		},
-	})
-	if err != nil {
-		if errors.Is(err, model.ErrBattleQuotaLimitExceeded) {
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	picker.RoundGain += amount
-	d.Quota -= amount
-	return amount, nil
 }
 
 func (r *Room) spawnBullet(p *player, now time.Time, settings operation_setting.BattleSetting) {
 	id := newBattleObjectId("bullet")
-	vx := p.LastAimX * float64(settings.BulletSpeed)
-	vy := p.LastAimY * float64(settings.BulletSpeed)
+	direction := p.Direction
+	if direction == 0 {
+		direction = 1
+	}
+	vx := float64(direction * settings.BulletSpeed)
 	r.bullets[id] = &bullet{
 		Id:        id,
 		OwnerId:   p.UserId,
-		X:         p.X + p.LastAimX*(playerRadius+bulletRadius),
-		Y:         p.Y + p.LastAimY*(playerRadius+bulletRadius),
+		X:         p.X + float64(direction)*(playerWidth/2+capWidth/2),
+		Y:         p.Y - playerHeight*0.34,
 		VX:        vx,
-		VY:        vy,
-		Damage:    settings.BulletDamage,
-		ExpiresAt: now.Add(1400 * time.Millisecond),
+		VY:        capThrowUpVelocity,
+		ExpiresAt: now.Add(2300 * time.Millisecond),
 	}
 }
 
 func (r *Room) placePlayer(p *player, settings operation_setting.BattleSetting) {
-	p.X = float64(playerRadius) + r.rng.Float64()*float64(settings.MapWidth-playerRadius*2)
-	p.Y = float64(playerRadius) + r.rng.Float64()*float64(settings.MapHeight-playerRadius*2)
+	surfaces := spawnSurfaces(settings)
+	surface := surfaces[r.rng.Intn(len(surfaces))]
+	p.X = clampFloat(surface.X+playerWidth/2+r.rng.Float64()*math.Max(1, surface.W-playerWidth), playerWidth/2, float64(settings.MapWidth)-playerWidth/2)
+	p.Y = surface.Y - playerHeight/2
+	p.VX = 0
+	p.VY = 0
+	p.OnGround = true
+	if p.Direction == 0 {
+		p.Direction = 1
+	}
+}
+
+func (r *Room) settlePlayerCaps(target *player, settings operation_setting.BattleSetting) {
+	if target == nil || target.CapStack <= 0 || settings.CapQuota <= 0 {
+		clearPlayerCaps(target)
+		return
+	}
+
+	totalCaps := 0
+	for userId, count := range target.CapSources {
+		if userId > 0 && userId != target.UserId && count > 0 {
+			totalCaps += count
+		}
+	}
+	if totalCaps <= 0 {
+		clearPlayerCaps(target)
+		return
+	}
+
+	settleAmount := r.maxCapSettlementAmount(target, totalCaps, settings)
+	if settleAmount <= 0 {
+		r.addEvent(eventTypeSettlementFailed, 0, target.UserId, 0)
+		clearPlayerCaps(target)
+		return
+	}
+
+	settlements := r.allocateCapSettlements(target, totalCaps, settleAmount, settings)
+	settled := 0
+	dailyStart := model.BattleDailyUsageStart()
+	for _, settlement := range settlements {
+		if settlement.Amount <= 0 {
+			continue
+		}
+		_, err := model.TransferBattleQuota(model.BattleQuotaTransferParams{
+			RoomId:     r.id,
+			EventId:    newBattleObjectId("cap-settle"),
+			FromUserId: target.UserId,
+			ToUserId:   settlement.UserId,
+			Quota:      settlement.Amount,
+			Reason:     "cap_settle",
+			FromUsageLimit: &model.BattleQuotaLimit{
+				Since: dailyStart,
+				Max:   settings.MaxDailyLossQuota,
+			},
+			ToUsageLimit: &model.BattleQuotaLimit{
+				Since: dailyStart,
+				Max:   settings.MaxDailyGainQuota,
+			},
+		})
+		if err != nil {
+			r.addEvent(eventTypeSettlementFailed, settlement.UserId, target.UserId, 0)
+			continue
+		}
+		settled += settlement.Amount
+		r.recordSettledTransfer(target.UserId, settlement.UserId, settlement.Amount)
+		r.addEvent(eventTypeCapSettlement, settlement.UserId, target.UserId, settlement.Amount)
+	}
+	if settled <= 0 {
+		r.addEvent(eventTypeSettlementFailed, 0, target.UserId, 0)
+	}
+	clearPlayerCaps(target)
+}
+
+func (r *Room) maxCapSettlementAmount(target *player, totalCaps int, settings operation_setting.BattleSetting) int {
+	amount := totalCaps * settings.CapQuota
+	balance, err := model.GetUserQuota(target.UserId, true)
+	if err != nil {
+		return 0
+	}
+	amount = minPositive(amount, balance)
+	amount = minPositive(amount, settings.MaxRoundLossQuota-r.roundLosses[target.UserId])
+
+	dailyStart := model.BattleDailyUsageStart()
+	usage, err := model.GetBattleQuotaUsageSince(target.UserId, dailyStart)
+	if err != nil {
+		return 0
+	}
+	amount = minPositive(amount, settings.MaxDailyLossQuota-usage.Lost)
+	return amount
+}
+
+func (r *Room) allocateCapSettlements(target *player, totalCaps int, totalAmount int, settings operation_setting.BattleSetting) []capSettlement {
+	settlements := make([]capSettlement, 0, len(target.CapSources))
+	for userId, count := range target.CapSources {
+		if userId <= 0 || userId == target.UserId || count <= 0 {
+			continue
+		}
+		raw := totalAmount * count
+		settlements = append(settlements, capSettlement{
+			UserId:    userId,
+			CapCount:  count,
+			Amount:    raw / totalCaps,
+			Remainder: raw % totalCaps,
+		})
+	}
+	sort.Slice(settlements, func(i, j int) bool {
+		if settlements[i].Remainder == settlements[j].Remainder {
+			return settlements[i].UserId < settlements[j].UserId
+		}
+		return settlements[i].Remainder > settlements[j].Remainder
+	})
+
+	assigned := 0
+	for index := range settlements {
+		assigned += settlements[index].Amount
+	}
+	for index := 0; assigned < totalAmount && index < len(settlements); index++ {
+		settlements[index].Amount++
+		assigned++
+	}
+
+	sort.Slice(settlements, func(i, j int) bool {
+		return settlements[i].UserId < settlements[j].UserId
+	})
+	for index := range settlements {
+		remainingGain := r.remainingCapGain(settlements[index].UserId, settings)
+		settlements[index].Amount = minPositive(settlements[index].Amount, remainingGain)
+	}
+	return settlements
+}
+
+func (r *Room) remainingCapGain(userId int, settings operation_setting.BattleSetting) int {
+	remaining := settings.MaxRoundGainQuota - r.roundGains[userId]
+	dailyStart := model.BattleDailyUsageStart()
+	usage, err := model.GetBattleQuotaUsageSince(userId, dailyStart)
+	if err != nil {
+		return 0
+	}
+	return minPositive(remaining, settings.MaxDailyGainQuota-usage.Won)
+}
+
+func (r *Room) recordSettledTransfer(fromUserId int, toUserId int, amount int) {
+	if amount <= 0 {
+		return
+	}
+	r.roundLosses[fromUserId] += amount
+	if p := r.players[fromUserId]; p != nil {
+		p.RoundLoss = r.roundLosses[fromUserId]
+	}
+	r.roundGains[toUserId] += amount
+	if p := r.players[toUserId]; p != nil {
+		p.RoundGain = r.roundGains[toUserId]
+	}
+}
+
+func clearPlayerCaps(p *player) {
+	if p == nil {
+		return
+	}
+	p.CapStack = 0
+	p.CapSources = make(map[int]int)
+}
+
+func battlePlatforms(settings operation_setting.BattleSetting) []platform {
+	scaleX := float64(settings.MapWidth) / 1600
+	scaleY := float64(settings.MapHeight) / 900
+	floorH := math.Max(26, 40*scaleY)
+	thinH := math.Max(18, 30*scaleY)
+	wallW := math.Max(28, 34*scaleX)
+	wallH := math.Max(80, 140*scaleY)
+
+	platforms := []platform{
+		{Id: "floor", X: 0, Y: float64(settings.MapHeight) - floorH, W: float64(settings.MapWidth), H: floorH},
+		scaledPlatform("left-low", 80, 735, 360, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("center-low", 540, 695, 330, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("right-low", 1035, 720, 430, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("left-mid", 250, 575, 300, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("center-mid", 735, 545, 310, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("right-mid", 1170, 520, 310, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("left-high", 60, 410, 300, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("center-high", 500, 375, 365, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("right-high", 1015, 345, 345, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("left-top", 220, 255, 340, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("center-top", 760, 235, 300, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("right-top", 1230, 215, 270, thinH, true, scaleX, scaleY, settings),
+		scaledPlatform("left-wall", 0, 0, wallW, 900, false, scaleX, scaleY, settings),
+		scaledPlatform("right-wall", 1600-wallW/scaleX, 0, wallW, 900, false, scaleX, scaleY, settings),
+		scaledPlatform("low-pillar", 665, 735, wallW, wallH, false, scaleX, scaleY, settings),
+		scaledPlatform("right-pillar", 1445, 575, wallW, 285, false, scaleX, scaleY, settings),
+		scaledPlatform("upper-pillar", 382, 255, wallW, 165, false, scaleX, scaleY, settings),
+	}
+	return platforms
+}
+
+func scaledPlatform(id string, x float64, y float64, w float64, h float64, oneWay bool, scaleX float64, scaleY float64, settings operation_setting.BattleSetting) platform {
+	nextX := clampFloat(x*scaleX, 0, float64(settings.MapWidth)-1)
+	nextY := clampFloat(y*scaleY, 0, float64(settings.MapHeight)-1)
+	nextW := math.Min(w*scaleX, float64(settings.MapWidth)-nextX)
+	nextH := math.Min(h*scaleY, float64(settings.MapHeight)-nextY)
+	if nextW < 1 {
+		nextW = 1
+	}
+	if nextH < 1 {
+		nextH = 1
+	}
+	return platform{Id: id, X: nextX, Y: nextY, W: nextW, H: nextH, OneWay: oneWay}
+}
+
+func spawnSurfaces(settings operation_setting.BattleSetting) []platform {
+	platforms := battlePlatforms(settings)
+	surfaces := make([]platform, 0, len(platforms))
+	for _, platform := range platforms {
+		if platform.W >= playerWidth && platform.Y >= playerHeight {
+			surfaces = append(surfaces, platform)
+		}
+	}
+	if len(surfaces) == 0 {
+		return []platform{{Id: "fallback", X: 0, Y: float64(settings.MapHeight) - 1, W: float64(settings.MapWidth), H: 1}}
+	}
+	return surfaces
+}
+
+func platformSnapshots(settings operation_setting.BattleSetting) []PlatformSnapshot {
+	platforms := battlePlatforms(settings)
+	snapshots := make([]PlatformSnapshot, 0, len(platforms))
+	for _, platform := range platforms {
+		snapshots = append(snapshots, PlatformSnapshot{
+			Id:     platform.Id,
+			X:      platform.X,
+			Y:      platform.Y,
+			W:      platform.W,
+			H:      platform.H,
+			OneWay: platform.OneWay,
+		})
+	}
+	return snapshots
 }
 
 func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.BattleSetting) {
@@ -722,7 +929,7 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 		PlayerSpeed: settings.PlayerSpeed,
 		Players:     make([]PlayerSnapshot, 0, len(r.players)),
 		Bullets:     make([]BulletSnapshot, 0, len(r.bullets)),
-		Drops:       make([]DropSnapshot, 0, len(r.drops)),
+		Platforms:   platformSnapshots(settings),
 		Events:      append(make([]BattleEvent, 0, len(r.events)), r.events...),
 	}
 	for _, p := range r.players {
@@ -731,12 +938,14 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 			Username:  p.Username,
 			X:         p.X,
 			Y:         p.Y,
-			HP:        p.HP,
+			VX:        p.VX,
+			VY:        p.VY,
 			Alive:     p.Alive,
-			Score:     p.Score,
-			Deaths:    p.Deaths,
-			RoundLoss: p.RoundLoss,
-			RoundGain: p.RoundGain,
+			Direction: p.Direction,
+			OnGround:  p.OnGround,
+			RoundLoss: r.roundLosses[p.UserId] + p.CapStack*settings.CapQuota,
+			RoundGain: r.roundGains[p.UserId] + r.pendingCapGain(p.UserId, settings),
+			CapStack:  p.CapStack,
 		})
 	}
 	for _, b := range r.bullets {
@@ -745,18 +954,10 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 			OwnerId: b.OwnerId,
 			X:       b.X,
 			Y:       b.Y,
+			VX:      b.VX,
+			VY:      b.VY,
 		})
 	}
-	for _, d := range r.drops {
-		base.Drops = append(base.Drops, DropSnapshot{
-			Id:         d.Id,
-			FromUserId: d.FromUserId,
-			Quota:      d.Quota,
-			X:          d.X,
-			Y:          d.Y,
-		})
-	}
-
 	for userId, client := range r.clients {
 		snapshot := base
 		snapshot.Me = userId
@@ -765,6 +966,20 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 		}
 		client.sendJSON(snapshot)
 	}
+}
+
+func (r *Room) pendingCapGain(userId int, settings operation_setting.BattleSetting) int {
+	if settings.CapQuota <= 0 {
+		return 0
+	}
+	totalCaps := 0
+	for _, p := range r.players {
+		if p == nil || p.UserId == userId {
+			continue
+		}
+		totalCaps += p.CapSources[userId]
+	}
+	return totalCaps * settings.CapQuota
 }
 
 func (r *Room) addEvent(eventType string, userId int, targetUserId int, quota int) {
@@ -791,6 +1006,7 @@ func normalizedSettings() operation_setting.BattleSetting {
 	s.MaxRoundGainQuota = clampInt(s.MaxRoundGainQuota, 0, 100000000)
 	s.MaxDailyLossQuota = clampInt(s.MaxDailyLossQuota, 0, 100000000)
 	s.MaxDailyGainQuota = clampInt(s.MaxDailyGainQuota, 0, 100000000)
+	s.CapQuota = clampInt(s.CapQuota, 0, 100000000)
 	s.MaxPlayersPerRoom = clampInt(s.MaxPlayersPerRoom, 2, 32)
 	s.TickRate = clampInt(s.TickRate, 10, 60)
 	s.MapWidth = clampInt(s.MapWidth, 600, 4000)
@@ -816,15 +1032,61 @@ func sanitizeInput(input PlayerInput) PlayerInput {
 	return input
 }
 
+func capHitPlatform(b *bullet, previousY float64, settings operation_setting.BattleSetting) bool {
+	capLeft := b.X - capWidth/2
+	capTop := b.Y - capHeight/2
+	for _, platform := range battlePlatforms(settings) {
+		if !rectsOverlap(capLeft, capTop, capWidth, capHeight, platform.X, platform.Y, platform.W, platform.H) {
+			continue
+		}
+		if platform.OneWay && previousY+capHeight/2 > platform.Y {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func capHitsHead(b *bullet, target *player) bool {
+	headTop := playerTop(target) - float64(target.CapStack)*capStackSpacing - capHeight*0.35
+	headHeight := playerHeight * 0.34
+	return rectsOverlap(
+		b.X-capWidth/2,
+		b.Y-capHeight/2,
+		capWidth,
+		capHeight,
+		playerLeft(target)+playerWidth*0.08,
+		headTop,
+		playerWidth*0.84,
+		headHeight,
+	)
+}
+
+func playerLeft(p *player) float64 {
+	return p.X - playerWidth/2
+}
+
+func playerRight(p *player) float64 {
+	return p.X + playerWidth/2
+}
+
+func playerTop(p *player) float64 {
+	return p.Y - playerHeight/2
+}
+
+func playerBottom(p *player) float64 {
+	return p.Y + playerHeight/2
+}
+
+func rectsOverlap(ax float64, ay float64, aw float64, ah float64, bx float64, by float64, bw float64, bh float64) bool {
+	return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by
+}
+
 func boolToFloat(value bool) float64 {
 	if value {
 		return 1
 	}
 	return 0
-}
-
-func distance(x1 float64, y1 float64, x2 float64, y2 float64) float64 {
-	return math.Hypot(x1-x2, y1-y2)
 }
 
 func isFiniteVector(x float64, y float64) bool {

@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getBattleStatus } from './api'
-import { drawBattleCanvas, getCanvasMetrics, screenToWorld } from './lib/canvas'
+import { drawBattleCanvas } from './lib/canvas'
 import {
   cloneBattleInput,
   interpolateBattleSnapshot,
@@ -40,9 +40,9 @@ import {
 } from './lib/prediction'
 import type {
   BattleBullet,
-  BattleDrop,
   BattleEvent,
   BattleInput,
+  BattlePlatform,
   BattlePlayer,
   BattleServerMessage,
   BattleSnapshot,
@@ -63,6 +63,7 @@ function createEmptyInput(): BattleInput {
     left: false,
     right: false,
     shoot: false,
+    jump: false,
     aim_x: 1,
     aim_y: 0,
   }
@@ -70,9 +71,8 @@ function createEmptyInput(): BattleInput {
 
 const battleEventTypes = new Set<BattleEvent['type']>([
   'hit',
-  'knockout',
-  'quota_pickup',
-  'quota_failed',
+  'cap_settlement',
+  'settlement_failed',
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -119,12 +119,14 @@ function normalizePlayer(value: unknown): BattlePlayer | null {
     username: stringValue(value.username, `#${userId}`),
     x: finiteNumber(value.x, 0),
     y: finiteNumber(value.y, 0),
-    hp: finiteNumber(value.hp, 0),
+    vx: finiteNumber(value.vx, 0),
+    vy: finiteNumber(value.vy, 0),
     alive: Boolean(value.alive),
-    score: finiteNumber(value.score, 0),
-    deaths: finiteNumber(value.deaths, 0),
+    direction: finiteNumber(value.direction, 1) >= 0 ? 1 : -1,
+    on_ground: Boolean(value.on_ground),
     round_loss: finiteNumber(value.round_loss, 0),
     round_gain: finiteNumber(value.round_gain, 0),
+    cap_stack: finiteNumber(value.cap_stack, 0),
   }
 }
 
@@ -135,17 +137,22 @@ function normalizeBullet(value: unknown): BattleBullet | null {
     owner_id: finiteNumber(value.owner_id, 0),
     x: finiteNumber(value.x, 0),
     y: finiteNumber(value.y, 0),
+    vx: finiteNumber(value.vx, 0),
+    vy: finiteNumber(value.vy, 0),
   }
 }
 
-function normalizeDrop(value: unknown): BattleDrop | null {
+function normalizePlatform(value: unknown): BattlePlatform | null {
   if (!isRecord(value)) return null
+  const id = stringValue(value.id)
+  if (!id) return null
   return {
-    id: stringValue(value.id, ''),
-    from_user_id: finiteNumber(value.from_user_id, 0),
-    quota: finiteNumber(value.quota, 0),
+    id,
     x: finiteNumber(value.x, 0),
     y: finiteNumber(value.y, 0),
+    w: finiteNumber(value.w, 0),
+    h: finiteNumber(value.h, 0),
+    one_way: Boolean(value.one_way),
   }
 }
 
@@ -180,7 +187,7 @@ function normalizeSnapshot(value: Record<string, unknown>): BattleSnapshot {
     player_speed: positiveNumber(value.player_speed, defaultPlayerSpeed),
     players: normalizeArray(value.players, normalizePlayer),
     bullets: normalizeArray(value.bullets, normalizeBullet),
-    drops: normalizeArray(value.drops, normalizeDrop),
+    platforms: normalizeArray(value.platforms, normalizePlatform),
     events: normalizeArray(value.events, normalizeEvent),
   }
 }
@@ -244,8 +251,8 @@ export function Battle() {
 
   const leaderboard = useMemo(() => {
     return [...(snapshot?.players ?? [])].sort((a, b) => {
-      if (b.score === a.score) return a.deaths - b.deaths
-      return b.score - a.score
+      if (a.cap_stack === b.cap_stack) return b.round_gain - a.round_gain
+      return a.cap_stack - b.cap_stack
     })
   }, [snapshot])
 
@@ -457,30 +464,32 @@ export function Battle() {
       }
       const input = inputRef.current
       let changed = false
-      const setFlag = (key: 'up' | 'down' | 'left' | 'right' | 'shoot') => {
+      const setFlag = (
+        key: 'up' | 'down' | 'left' | 'right' | 'shoot' | 'jump'
+      ) => {
         if (input[key] === pressed) return
         input[key] = pressed
         changed = true
       }
       switch (event.code) {
-        case 'KeyW':
-        case 'ArrowUp':
-          setFlag('up')
+        case 'KeyA':
+          setFlag('left')
+          event.preventDefault()
           break
         case 'KeyS':
-        case 'ArrowDown':
           setFlag('down')
-          break
-        case 'KeyA':
-        case 'ArrowLeft':
-          setFlag('left')
+          event.preventDefault()
           break
         case 'KeyD':
-        case 'ArrowRight':
           setFlag('right')
+          event.preventDefault()
           break
-        case 'Space':
+        case 'KeyJ':
           setFlag('shoot')
+          event.preventDefault()
+          break
+        case 'KeyK':
+          setFlag('jump')
           event.preventDefault()
           break
         default:
@@ -497,39 +506,6 @@ export function Battle() {
       window.removeEventListener('keyup', keyup)
     }
   }, [sendInput])
-
-  const updateAimFromPointer = useCallback(
-    (event: React.PointerEvent<HTMLCanvasElement>) => {
-      const canvas = canvasRef.current
-      const currentSnapshot = snapshotRef.current
-      if (!canvas || !currentSnapshot) return
-      const predictedPlayer = predictedPlayerRef.current
-      const currentPlayer =
-        predictedPlayer?.user_id === currentSnapshot.me
-          ? predictedPlayer
-          : currentSnapshot.players.find(
-              (player) => player.user_id === currentSnapshot.me
-            )
-      if (!currentPlayer) return
-
-      const rect = canvas.getBoundingClientRect()
-      const x = (event.clientX - rect.left) * (canvas.width / rect.width)
-      const y = (event.clientY - rect.top) * (canvas.height / rect.height)
-      const world = screenToWorld(
-        x,
-        y,
-        getCanvasMetrics(canvas, currentSnapshot)
-      )
-      const dx = world.x - currentPlayer.x
-      const dy = world.y - currentPlayer.y
-      const length = Math.hypot(dx, dy)
-      if (length > 0.01) {
-        inputRef.current.aim_x = dx / length
-        inputRef.current.aim_y = dy / length
-      }
-    },
-    []
-  )
 
   const status = battleStatus.data
   const events = snapshot?.events ?? []
@@ -613,25 +589,7 @@ export function Battle() {
         <div className='relative min-h-[420px] overflow-hidden rounded-md border bg-slate-950'>
           <canvas
             ref={canvasRef}
-            className='h-full min-h-[420px] w-full cursor-crosshair touch-none'
-            onPointerMove={updateAimFromPointer}
-            onPointerDown={(event) => {
-              inputRef.current.shoot = true
-              updateAimFromPointer(event)
-              sendInput()
-              event.currentTarget.setPointerCapture(event.pointerId)
-            }}
-            onPointerUp={(event) => {
-              inputRef.current.shoot = false
-              sendInput()
-              event.currentTarget.releasePointerCapture(event.pointerId)
-            }}
-            onPointerLeave={() => {
-              if (inputRef.current.shoot) {
-                inputRef.current.shoot = false
-                sendInput()
-              }
-            }}
+            className='h-full min-h-[420px] w-full touch-none'
           />
           <div className='absolute top-3 left-3 flex items-center gap-2 rounded-md border border-white/10 bg-slate-950/80 px-3 py-2 text-xs text-slate-100 backdrop-blur'>
             {connected ? (
@@ -655,8 +613,20 @@ export function Battle() {
                 label={t('Loss')}
                 value={formatQuota(me?.round_loss ?? 0)}
               />
-              <Stat label={t('Score')} value={String(me?.score ?? 0)} />
-              <Stat label={t('Deaths')} value={String(me?.deaths ?? 0)} />
+              <Stat
+                label={t('Caps on head')}
+                value={String(me?.cap_stack ?? 0)}
+              />
+              <Stat
+                label={t('Movement')}
+                value={
+                  me?.on_ground
+                    ? t('Grounded')
+                    : me && me.vy < 0
+                      ? t('Jumping')
+                      : t('Falling')
+                }
+              />
             </div>
           </section>
 
@@ -664,10 +634,8 @@ export function Battle() {
             <h2 className='text-base font-medium'>{t('Limits')}</h2>
             <div className='text-muted-foreground mt-3 space-y-2 text-sm'>
               <LimitRow
-                label={t('Cap reward')}
-                value={`${formatQuota(status?.min_drop_quota ?? 0)} - ${formatQuota(
-                  status?.max_drop_quota ?? 0
-                )}`}
+                label={t('Quota per cap')}
+                value={formatQuota(status?.cap_quota ?? 0)}
               />
               <LimitRow
                 label={t('Round loss')}
@@ -760,11 +728,11 @@ function PlayerRow(props: { player: BattlePlayer; active: boolean }) {
           {props.player.username}
         </div>
         <div className='text-muted-foreground text-xs'>
-          {props.player.hp} HP
+          x{props.player.cap_stack}
         </div>
       </div>
       <div className='text-right font-medium'>
-        {props.player.score}/{props.player.deaths}
+        {formatQuota(props.player.round_gain)}
       </div>
     </div>
   )
@@ -780,17 +748,14 @@ function battleEventText(
   if (event.type === 'hit') {
     return t('{{user}} put a green cap on {{target}}', { user, target })
   }
-  if (event.type === 'knockout') {
-    return t('{{user}} buried {{target}} in green caps', { user, target })
-  }
-  if (event.type === 'quota_pickup') {
-    return t('{{user}} collected {{quota}} from {{target}}', {
+  if (event.type === 'cap_settlement') {
+    return t('{{user}} settled {{quota}} from {{target}}', {
       user,
       target,
       quota: formatQuota(event.quota ?? 0),
     })
   }
-  return t('Cap reward pickup failed')
+  return t('Cap settlement failed')
 }
 
 function playerName(

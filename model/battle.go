@@ -49,6 +49,17 @@ type BattleQuotaMutationParams struct {
 	UsageLimit *BattleQuotaLimit
 }
 
+type BattleQuotaTransferParams struct {
+	RoomId         string
+	EventId        string
+	FromUserId     int
+	ToUserId       int
+	Quota          int
+	Reason         string
+	FromUsageLimit *BattleQuotaLimit
+	ToUsageLimit   *BattleQuotaLimit
+}
+
 func DebitBattleQuota(params BattleQuotaMutationParams) (*BattleRecord, error) {
 	if params.UserId <= 0 {
 		return nil, errors.New("battle debit user id is invalid")
@@ -107,6 +118,107 @@ func DebitBattleQuota(params BattleQuotaMutationParams) (*BattleRecord, error) {
 		}
 	})
 	RecordLog(params.UserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战掉落额度 %s", logger.LogQuota(params.Quota)))
+	return record, nil
+}
+
+func TransferBattleQuota(params BattleQuotaTransferParams) (*BattleRecord, error) {
+	if params.FromUserId <= 0 {
+		return nil, errors.New("battle transfer from user id is invalid")
+	}
+	if params.ToUserId <= 0 {
+		return nil, errors.New("battle transfer to user id is invalid")
+	}
+	if params.FromUserId == params.ToUserId {
+		return nil, errors.New("battle transfer users must differ")
+	}
+	if params.Quota <= 0 {
+		return nil, errors.New("battle transfer quota must be positive")
+	}
+	if params.EventId == "" {
+		return nil, errors.New("battle transfer event id is required")
+	}
+	if err := validateBattleQuotaLimit(params.FromUsageLimit); err != nil {
+		return nil, err
+	}
+	if err := validateBattleQuotaLimit(params.ToUsageLimit); err != nil {
+		return nil, err
+	}
+
+	record := &BattleRecord{
+		CreatedAt:  common.GetTimestamp(),
+		RoomId:     params.RoomId,
+		EventId:    params.EventId,
+		FromUserId: params.FromUserId,
+		ToUserId:   params.ToUserId,
+		Quota:      params.Quota,
+		Reason:     params.Reason,
+	}
+
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		firstUserId := params.FromUserId
+		secondUserId := params.ToUserId
+		if secondUserId < firstUserId {
+			firstUserId, secondUserId = secondUserId, firstUserId
+		}
+		firstUser, err := lockBattleUser(tx, firstUserId)
+		if err != nil {
+			return err
+		}
+		secondUser, err := lockBattleUser(tx, secondUserId)
+		if err != nil {
+			return err
+		}
+
+		fromUser := firstUser
+		if firstUser.Id != params.FromUserId {
+			fromUser = secondUser
+		}
+		if fromUser.Quota < params.Quota {
+			return ErrBattleQuotaInsufficient
+		}
+		if err := enforceBattleQuotaLimit(tx, "from_user_id", params.FromUserId, params.Quota, params.FromUsageLimit); err != nil {
+			return err
+		}
+		if err := enforceBattleQuotaLimit(tx, "to_user_id", params.ToUserId, params.Quota, params.ToUsageLimit); err != nil {
+			return err
+		}
+		if err := tx.Create(record).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&User{}).
+			Where("id = ? AND quota >= ?", params.FromUserId, params.Quota).
+			Update("quota", gorm.Expr("quota - ?", params.Quota))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrBattleQuotaInsufficient
+		}
+		result = tx.Model(&User{}).
+			Where("id = ?", params.ToUserId).
+			Update("quota", gorm.Expr("quota + ?", params.Quota))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrBattleUserNotFound
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	gopool.Go(func() {
+		if err := cacheDecrUserQuota(params.FromUserId, int64(params.Quota)); err != nil {
+			common.SysLog("failed to decrease battle transfer user quota cache: " + err.Error())
+		}
+		if err := cacheIncrUserQuota(params.ToUserId, int64(params.Quota)); err != nil {
+			common.SysLog("failed to increase battle transfer user quota cache: " + err.Error())
+		}
+	})
+	RecordLog(params.FromUserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战结算扣除额度 %s", logger.LogQuota(params.Quota)))
+	RecordLog(params.ToUserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战结算获得额度 %s", logger.LogQuota(params.Quota)))
 	return record, nil
 }
 

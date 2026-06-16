@@ -13,14 +13,16 @@ import (
 
 func battleSimulationSettings() operation_setting.BattleSetting {
 	return operation_setting.BattleSetting{
-		MapWidth:          200,
-		MapHeight:         120,
-		PlayerSpeed:       100,
-		BulletSpeed:       500,
-		BulletDamage:      60,
-		FireCooldownMs:    200,
-		RespawnSeconds:    3,
-		MaxRoundLossQuota: 0,
+		MapWidth:          1600,
+		MapHeight:         900,
+		PlayerSpeed:       260,
+		BulletSpeed:       780,
+		FireCooldownMs:    220,
+		CapQuota:          100,
+		MaxRoundLossQuota: 5000,
+		MaxRoundGainQuota: 5000,
+		MaxDailyLossQuota: 20000,
+		MaxDailyGainQuota: 20000,
 	}
 }
 
@@ -43,7 +45,7 @@ func TestSanitizeInput(t *testing.T) {
 
 func TestBattleObjectIdsFitRecordColumn(t *testing.T) {
 	seen := make(map[string]struct{})
-	for _, prefix := range []string{"drop", "pickup", "bullet"} {
+	for _, prefix := range []string{"bullet", "cap-settle", "room"} {
 		for range 20 {
 			id := newBattleObjectId(prefix)
 			assert.LessOrEqual(t, len(id), 80)
@@ -53,41 +55,42 @@ func TestBattleObjectIdsFitRecordColumn(t *testing.T) {
 	}
 }
 
-func TestUpdatePlayerUsesServerMovementAndBulletRules(t *testing.T) {
+func TestUpdatePlayerUsesPlatformMovementJumpAndCapThrow(t *testing.T) {
 	room := newRoom("test", NewManager())
 	settings := battleSimulationSettings()
 	now := time.Now()
+	floorY := float64(settings.MapHeight) - 40
 	player := &player{
-		UserId:   1,
-		X:        175,
-		Y:        60,
-		HP:       100,
-		Alive:    true,
-		LastAimX: 1,
+		UserId:    1,
+		X:         400,
+		Y:         floorY - playerHeight/2,
+		Alive:     true,
+		Direction: -1,
+		OnGround:  true,
+		LastAimX:  1,
 		Input: PlayerInput{
 			Right: true,
 			Shoot: true,
-			AimX:  4,
+			Jump:  true,
 		},
 	}
 
-	room.updatePlayer(player, 1, now, settings)
+	room.updatePlayer(player, 0.016, now, settings)
 
-	assert.Equal(t, float64(settings.MapWidth-playerRadius), player.X)
-	assert.Equal(t, float64(60), player.Y)
-	assert.Equal(t, float64(1), player.LastAimX)
-	assert.Zero(t, player.LastAimY)
+	assert.Greater(t, player.X, float64(400))
+	assert.Less(t, player.Y, floorY-playerHeight/2)
+	assert.Equal(t, 1, player.Direction)
+	assert.False(t, player.OnGround)
+	assert.Less(t, player.VY, float64(0))
 	require.Len(t, room.bullets, 1)
 	for _, bullet := range room.bullets {
 		assert.Equal(t, player.UserId, bullet.OwnerId)
 		assert.Equal(t, float64(settings.BulletSpeed), bullet.VX)
-		assert.Zero(t, bullet.VY)
+		assert.Equal(t, capThrowUpVelocity, bullet.VY)
 	}
 
 	room.updatePlayer(player, 0.01, now.Add(100*time.Millisecond), settings)
 	assert.Len(t, room.bullets, 1)
-	room.updatePlayer(player, 0.01, now.Add(250*time.Millisecond), settings)
-	assert.Len(t, room.bullets, 2)
 }
 
 func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
@@ -98,9 +101,9 @@ func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
 		Username: "player",
 		X:        50,
 		Y:        50,
-		HP:       100,
 		Alive:    true,
 		InputSeq: 42,
+		CapStack: 7,
 	}
 	room.players[player.UserId] = player
 	room.clients[player.UserId] = &Client{
@@ -115,47 +118,33 @@ func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
 	var snapshot Snapshot
 	require.NoError(t, common.Unmarshal(data, &snapshot))
 	assert.Equal(t, int64(42), snapshot.AckSeq)
+	require.NotEmpty(t, snapshot.Platforms)
+	require.Len(t, snapshot.Players, 1)
+	assert.Equal(t, 7, snapshot.Players[0].CapStack)
 }
 
-func TestUpdateBulletsAppliesServerHitAndKnockout(t *testing.T) {
+func TestUpdateCapsStacksCapsOnTargetHead(t *testing.T) {
 	room := newRoom("test", NewManager())
 	settings := battleSimulationSettings()
 	now := time.Now()
-	attacker := &player{UserId: 1, X: 30, Y: 60, HP: 100, Alive: true}
-	target := &player{UserId: 2, X: 80, Y: 60, HP: 100, Alive: true}
+	attacker := &player{UserId: 1, X: 500, Y: 500, Alive: true}
+	target := &player{UserId: 2, X: 560, Y: 500, Alive: true}
 	room.players[attacker.UserId] = attacker
 	room.players[target.UserId] = target
 
-	room.bullets["first"] = &bullet{
-		Id:        "first",
+	room.bullets["cap"] = &bullet{
+		Id:        "cap",
 		OwnerId:   attacker.UserId,
 		X:         target.X,
-		Y:         target.Y,
-		Damage:    settings.BulletDamage,
+		Y:         target.Y - playerHeight/2 + 8,
 		ExpiresAt: now.Add(time.Second),
 	}
-	room.updateBullets(now, 0.01, settings)
-	assert.Equal(t, 40, target.HP)
+	room.updateCaps(now, 0.01, settings)
+
+	assert.Equal(t, 1, target.CapStack)
+	assert.Equal(t, 1, target.CapSources[attacker.UserId])
 	assert.True(t, target.Alive)
 	assert.Empty(t, room.bullets)
-
-	room.bullets["second"] = &bullet{
-		Id:        "second",
-		OwnerId:   attacker.UserId,
-		X:         target.X,
-		Y:         target.Y,
-		Damage:    settings.BulletDamage,
-		ExpiresAt: now.Add(time.Second),
-	}
-	room.updateBullets(now, 0.01, settings)
-
-	assert.Zero(t, target.HP)
-	assert.False(t, target.Alive)
-	assert.Equal(t, 1, target.Deaths)
-	assert.Equal(t, 1, attacker.Score)
-	assert.Equal(t, now.Add(3*time.Second), target.RespawnAt)
-	require.Len(t, room.events, 3)
+	require.Len(t, room.events, 1)
 	assert.Equal(t, eventTypeHit, room.events[0].Type)
-	assert.Equal(t, eventTypeHit, room.events[1].Type)
-	assert.Equal(t, eventTypeKnockout, room.events[2].Type)
 }

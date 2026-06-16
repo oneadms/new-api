@@ -20,7 +20,6 @@ import { useMemo, useRef } from 'react'
 import { z } from 'zod'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -43,32 +42,21 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 
-const createSchema = (t: TFunction) =>
-  z
-    .object({
-      enabled: z.boolean(),
-      hideRoomInput: z.boolean(),
-      minDropQuota: z.coerce.number().int().min(0),
-      maxDropQuota: z.coerce.number().int().min(0),
-      maxRoundLossQuota: z.coerce.number().int().min(0),
-      maxRoundGainQuota: z.coerce.number().int().min(0),
-      maxDailyLossQuota: z.coerce.number().int().min(0),
-      maxDailyGainQuota: z.coerce.number().int().min(0),
-      maxPlayersPerRoom: z.coerce.number().int().min(2).max(32),
-      tickRate: z.coerce.number().int().min(10).max(60),
-      playerSpeed: z.coerce.number().int().min(80).max(900),
-      bulletSpeed: z.coerce.number().int().min(100).max(1800),
-      bulletDamage: z.coerce.number().int().min(1).max(100),
-      fireCooldownMs: z.coerce.number().int().min(80).max(2000),
-      respawnSeconds: z.coerce.number().int().min(1).max(30),
-      dropExpireSeconds: z.coerce.number().int().min(3).max(120),
-    })
-    .refine((values) => values.maxDropQuota >= values.minDropQuota, {
-      path: ['maxDropQuota'],
-      message: t(
-        'Maximum cap reward quota must be greater than minimum cap reward quota'
-      ),
-    })
+const createSchema = () =>
+  z.object({
+    enabled: z.boolean(),
+    hideRoomInput: z.boolean(),
+    capQuota: z.coerce.number().int().min(0),
+    maxRoundLossQuota: z.coerce.number().int().min(0),
+    maxRoundGainQuota: z.coerce.number().int().min(0),
+    maxDailyLossQuota: z.coerce.number().int().min(0),
+    maxDailyGainQuota: z.coerce.number().int().min(0),
+    maxPlayersPerRoom: z.coerce.number().int().min(2).max(32),
+    tickRate: z.coerce.number().int().min(10).max(60),
+    playerSpeed: z.coerce.number().int().min(80).max(900),
+    bulletSpeed: z.coerce.number().int().min(100).max(1800),
+    fireCooldownMs: z.coerce.number().int().min(80).max(2000),
+  })
 
 type Values = z.infer<ReturnType<typeof createSchema>>
 type NumericFieldName = Exclude<keyof Values, 'enabled' | 'hideRoomInput'>
@@ -80,8 +68,7 @@ type BattleSettingsSectionProps = {
 const optionKeys: Record<keyof Values, string> = {
   enabled: 'battle_setting.enabled',
   hideRoomInput: 'battle_setting.hide_room_input',
-  minDropQuota: 'battle_setting.min_drop_quota',
-  maxDropQuota: 'battle_setting.max_drop_quota',
+  capQuota: 'battle_setting.cap_quota',
   maxRoundLossQuota: 'battle_setting.max_round_loss_quota',
   maxRoundGainQuota: 'battle_setting.max_round_gain_quota',
   maxDailyLossQuota: 'battle_setting.max_daily_loss_quota',
@@ -90,17 +77,14 @@ const optionKeys: Record<keyof Values, string> = {
   tickRate: 'battle_setting.tick_rate',
   playerSpeed: 'battle_setting.player_speed',
   bulletSpeed: 'battle_setting.bullet_speed',
-  bulletDamage: 'battle_setting.bullet_damage',
   fireCooldownMs: 'battle_setting.fire_cooldown_ms',
-  respawnSeconds: 'battle_setting.respawn_seconds',
-  dropExpireSeconds: 'battle_setting.drop_expire_seconds',
 }
 
 export function BattleSettingsSection(props: BattleSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const savedValuesRef = useRef<Values>(props.defaultValues)
-  const schema = useMemo(() => createSchema(t), [t])
+  const schema = useMemo(() => createSchema(), [])
 
   const form = useForm<Values>({
     resolver: zodResolver(schema) as unknown as Resolver<Values>,
@@ -141,17 +125,9 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
     max?: number
   }> = [
     {
-      name: 'minDropQuota',
-      label: t('Minimum cap reward quota'),
-      description: t(
-        'Smallest quota amount dropped when a player gets capped.'
-      ),
-      min: 0,
-    },
-    {
-      name: 'maxDropQuota',
-      label: t('Maximum cap reward quota'),
-      description: t('Largest quota amount dropped when a player gets capped.'),
+      name: 'capQuota',
+      label: t('Quota per cap'),
+      description: t('Quota transferred for each green cap on a player.'),
       min: 0,
     },
     {
@@ -202,16 +178,9 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
     {
       name: 'bulletSpeed',
       label: t('Flying cap speed'),
-      description: t('Flying cap movement speed in map units per second.'),
+      description: t('Horizontal speed of a thrown green cap.'),
       min: 100,
       max: 1800,
-    },
-    {
-      name: 'bulletDamage',
-      label: t('Cap hit damage'),
-      description: t('Health removed by each server-confirmed cap hit.'),
-      min: 1,
-      max: 100,
     },
     {
       name: 'fireCooldownMs',
@@ -219,20 +188,6 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
       description: t('Minimum milliseconds between two cap throws.'),
       min: 80,
       max: 2000,
-    },
-    {
-      name: 'respawnSeconds',
-      label: t('Respawn seconds'),
-      description: t('Delay before a capped-out player returns.'),
-      min: 1,
-      max: 30,
-    },
-    {
-      name: 'dropExpireSeconds',
-      label: t('Cap reward lifetime'),
-      description: t('Seconds before an unclaimed cap reward disappears.'),
-      min: 3,
-      max: 120,
     },
   ]
 

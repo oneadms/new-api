@@ -18,8 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type {
   BattleBullet,
-  BattleDrop,
   BattleInput,
+  BattlePlatform,
   BattlePlayer,
   BattleSnapshot,
 } from '../types'
@@ -35,12 +35,17 @@ export type BattleInputFrame = {
   sentAt: number
 }
 
-const playerRadius = 18
 const maxPredictionMs = 110
 const maxInputHistoryMs = 2000
 const maxInputHistoryItems = 120
 const correctionSnapDistance = 360
 const correctionSmoothingMs = 55
+const playerWidth = 46
+const playerHeight = 70
+const gravity = 1800
+const jumpVelocity = -760
+const maxFallSpeed = 980
+const fastFallAcceleration = 900
 
 export function cloneBattleInput(input: BattleInput): BattleInput {
   return {
@@ -49,6 +54,7 @@ export function cloneBattleInput(input: BattleInput): BattleInput {
     left: input.left,
     right: input.right,
     shoot: input.shoot,
+    jump: input.jump,
     aim_x: input.aim_x,
     aim_y: input.aim_y,
   }
@@ -129,7 +135,8 @@ export function predictLocalPlayer(
       (entry.sentAt - cursor) / 1000,
       playerSpeed,
       snapshot.map_width,
-      snapshot.map_height
+      snapshot.map_height,
+      snapshot.platforms
     )
     activeInput = entry.input
     cursor = entry.sentAt
@@ -142,7 +149,8 @@ export function predictLocalPlayer(
       (cappedNow - cursor) / 1000,
       playerSpeed,
       snapshot.map_width,
-      snapshot.map_height
+      snapshot.map_height,
+      snapshot.platforms
     )
   }
 
@@ -199,7 +207,6 @@ function interpolateSnapshot(
     ),
     players: interpolatePlayers(previous.players, next.players, progress),
     bullets: interpolateBullets(previous.bullets, next.bullets, progress),
-    drops: interpolateDrops(previous.drops, next.drops, progress),
   }
 }
 
@@ -239,23 +246,6 @@ function interpolateBullets(
   })
 }
 
-function interpolateDrops(
-  previous: BattleDrop[],
-  next: BattleDrop[],
-  progress: number
-): BattleDrop[] {
-  const previousById = new Map(previous.map((drop) => [drop.id, drop]))
-  return next.map((drop) => {
-    const before = previousById.get(drop.id)
-    if (!before) return drop
-    return {
-      ...drop,
-      x: lerp(before.x, drop.x, progress),
-      y: lerp(before.y, drop.y, progress),
-    }
-  })
-}
-
 function findInputAtOrBeforeSeq(
   history: BattleInputFrame[],
   seq: number
@@ -274,27 +264,139 @@ function movePlayer(
   dt: number,
   playerSpeed: number,
   mapWidth: number,
-  mapHeight: number
+  mapHeight: number,
+  platforms: BattlePlatform[]
 ): void {
   if (dt <= 0) return
 
-  let dx = numberFromBoolean(input.right) - numberFromBoolean(input.left)
-  let dy = numberFromBoolean(input.down) - numberFromBoolean(input.up)
-  const length = Math.hypot(dx, dy)
-  if (length <= 0) return
+  const moveX = numberFromBoolean(input.right) - numberFromBoolean(input.left)
+  if (moveX < 0) player.direction = -1
+  if (moveX > 0) player.direction = 1
+  player.vx = moveX * playerSpeed
+  player.x = clamp(player.x + player.vx * dt, playerWidth / 2, mapWidth - playerWidth / 2)
+  resolveHorizontal(player, platforms, mapWidth)
 
-  dx /= length
-  dy /= length
-  player.x = clamp(
-    player.x + dx * playerSpeed * dt,
-    playerRadius,
-    mapWidth - playerRadius
+  if (input.jump && player.on_ground) {
+    player.vy = jumpVelocity
+    player.on_ground = false
+  }
+  if (input.down && player.on_ground) {
+    player.y += 2
+    player.vy = Math.max(player.vy, playerSpeed)
+    player.on_ground = false
+  }
+
+  player.vy = Math.min(
+    player.vy + gravity * dt + (input.down ? fastFallAcceleration * dt : 0),
+    maxFallSpeed
   )
-  player.y = clamp(
-    player.y + dy * playerSpeed * dt,
-    playerRadius,
-    mapHeight - playerRadius
-  )
+  const oldY = player.y
+  player.y += player.vy * dt
+  resolveVertical(player, oldY, platforms, mapHeight)
+}
+
+function resolveHorizontal(
+  player: BattlePlayer,
+  platforms: BattlePlatform[],
+  mapWidth: number
+): void {
+  if (player.vx === 0) return
+  for (const platform of platforms) {
+    if (platform.one_way) continue
+    if (
+      !rectsOverlap(
+        playerLeft(player),
+        playerTop(player),
+        playerWidth,
+        playerHeight,
+        platform.x,
+        platform.y,
+        platform.w,
+        platform.h
+      )
+    ) {
+      continue
+    }
+    player.x =
+      player.vx > 0
+        ? platform.x - playerWidth / 2
+        : platform.x + platform.w + playerWidth / 2
+    player.vx = 0
+  }
+  player.x = clamp(player.x, playerWidth / 2, mapWidth - playerWidth / 2)
+}
+
+function resolveVertical(
+  player: BattlePlayer,
+  oldY: number,
+  platforms: BattlePlatform[],
+  mapHeight: number
+): void {
+  const oldTop = oldY - playerHeight / 2
+  const oldBottom = oldY + playerHeight / 2
+  const newTop = playerTop(player)
+  const newBottom = playerBottom(player)
+  player.on_ground = false
+
+  for (const platform of platforms) {
+    if (playerRight(player) <= platform.x || playerLeft(player) >= platform.x + platform.w) {
+      continue
+    }
+    if (player.vy >= 0) {
+      if (oldBottom <= platform.y && newBottom >= platform.y) {
+        player.y = platform.y - playerHeight / 2
+        player.vy = 0
+        player.on_ground = true
+        break
+      }
+      continue
+    }
+    if (platform.one_way) continue
+    if (oldTop >= platform.y + platform.h && newTop <= platform.y + platform.h) {
+      player.y = platform.y + platform.h + playerHeight / 2
+      player.vy = 0
+      break
+    }
+  }
+
+  if (playerTop(player) < 0) {
+    player.y = playerHeight / 2
+    player.vy = 0
+  }
+  if (playerBottom(player) > mapHeight) {
+    player.y = mapHeight - playerHeight / 2
+    player.vy = 0
+    player.on_ground = true
+  }
+}
+
+function playerLeft(player: BattlePlayer): number {
+  return player.x - playerWidth / 2
+}
+
+function playerRight(player: BattlePlayer): number {
+  return player.x + playerWidth / 2
+}
+
+function playerTop(player: BattlePlayer): number {
+  return player.y - playerHeight / 2
+}
+
+function playerBottom(player: BattlePlayer): number {
+  return player.y + playerHeight / 2
+}
+
+function rectsOverlap(
+  ax: number,
+  ay: number,
+  aw: number,
+  ah: number,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number
+): boolean {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
 }
 
 function numberFromBoolean(value: boolean): number {

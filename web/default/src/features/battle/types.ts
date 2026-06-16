@@ -22,8 +22,7 @@ export type BattleStatus = {
   quota: number
   daily_lost: number
   daily_won: number
-  min_drop_quota: number
-  max_drop_quota: number
+  cap_quota: number
   max_round_loss: number
   max_round_gain: number
   max_daily_loss: number
@@ -32,8 +31,6 @@ export type BattleStatus = {
   map_width: number
   map_height: number
   player_speed: number
-  respawn_seconds: number
-  drop_expire_seconds: number
 }
 
 export type BattleInput = {
@@ -42,6 +39,7 @@ export type BattleInput = {
   left: boolean
   right: boolean
   shoot: boolean
+  jump: boolean
   aim_x: number
   aim_y: number
 }
@@ -51,12 +49,14 @@ export type BattlePlayer = {
   username: string
   x: number
   y: number
-  hp: number
+  vx: number
+  vy: number
   alive: boolean
-  score: number
-  deaths: number
+  direction: number
+  on_ground: boolean
   round_loss: number
   round_gain: number
+  cap_stack: number
 }
 
 export type BattleBullet = {
@@ -64,23 +64,26 @@ export type BattleBullet = {
   owner_id: number
   x: number
   y: number
-}
-
-export type BattleDrop = {
-  id: string
-  from_user_id: number
-  quota: number
-  x: number
-  y: number
+  vx: number
+  vy: number
 }
 
 export type BattleEvent = {
   id: string
-  type: 'hit' | 'knockout' | 'quota_pickup' | 'quota_failed'
+  type: 'hit' | 'cap_settlement' | 'settlement_failed'
   user_id?: number
   target_user_id?: number
   quota?: number
   created_at: number
+}
+
+export type BattlePlatform = {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  one_way: boolean
 }
 
 export type BattleSnapshot = {
@@ -94,7 +97,7 @@ export type BattleSnapshot = {
   player_speed: number
   players: BattlePlayer[]
   bullets: BattleBullet[]
-  drops: BattleDrop[]
+  platforms: BattlePlatform[]
   events: BattleEvent[]
 }
 

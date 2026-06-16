@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import backgroundImageUrl from '@/assets/battle/background.jpg'
+import brickImageUrl from '@/assets/battle/brick.png'
 import capImageUrl from '@/assets/battle/cap.png'
 import playerThrow1ImageUrl from '@/assets/battle/people-throw-1.png'
 import playerThrow2ImageUrl from '@/assets/battle/people-throw-2.png'
@@ -24,8 +26,8 @@ import playerThrow4ImageUrl from '@/assets/battle/people-throw-4.png'
 import playerImageUrl from '@/assets/battle/people.png'
 import type {
   BattleBullet,
-  BattleDrop,
   BattlePlayer,
+  BattlePlatform,
   BattleSnapshot,
 } from '../types'
 
@@ -38,7 +40,6 @@ export type CanvasMetrics = {
 }
 
 const PLAYER_RADIUS = 18
-const DROP_RADIUS = 9
 const MAX_DEVICE_PIXEL_RATIO = 2
 const CAP_IMAGE_WIDTH = 93
 const CAP_IMAGE_HEIGHT = 62
@@ -46,10 +47,34 @@ const CAP_IMAGE_RATIO = CAP_IMAGE_HEIGHT / CAP_IMAGE_WIDTH
 const PLAYER_IMAGE_WIDTH = 107
 const PLAYER_IMAGE_HEIGHT = 156
 const PLAYER_IMAGE_RATIO = PLAYER_IMAGE_HEIGHT / PLAYER_IMAGE_WIDTH
+const PLAYER_SPRITE_WIDTH = 58
+const CAP_STACK_GAP = 11
+const BRICK_IMAGE_WIDTH = 60
+const BRICK_IMAGE_HEIGHT = 20
 
+let backgroundImage: HTMLImageElement | null = null
+let brickImage: HTMLImageElement | null = null
 let capImage: HTMLImageElement | null = null
 let playerImage: HTMLImageElement | null = null
 let playerThrowImages: HTMLImageElement[] | null = null
+
+function getBackgroundImage(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null
+  if (!backgroundImage) {
+    backgroundImage = new Image()
+    backgroundImage.src = backgroundImageUrl
+  }
+  return backgroundImage
+}
+
+function getBrickImage(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null
+  if (!brickImage) {
+    brickImage = new Image()
+    brickImage.src = brickImageUrl
+  }
+  return brickImage
+}
 
 function getCapImage(): HTMLImageElement | null {
   if (typeof Image === 'undefined') return null
@@ -143,7 +168,8 @@ export function drawBattleCanvas(
     ctx,
     metrics,
     snapshot?.map_width || 1600,
-    snapshot?.map_height || 900
+    snapshot?.map_height || 900,
+    snapshot?.platforms
   )
 
   if (!snapshot) {
@@ -154,11 +180,8 @@ export function drawBattleCanvas(
     return
   }
 
-  const drops = Array.isArray(snapshot.drops) ? snapshot.drops : []
   const bullets = Array.isArray(snapshot.bullets) ? snapshot.bullets : []
   const players = Array.isArray(snapshot.players) ? snapshot.players : []
-
-  drops.forEach((drop) => drawQuotaCap(ctx, drop, metrics))
 
   bullets.forEach((bullet) => drawFlyingCap(ctx, bullet, metrics))
 
@@ -188,60 +211,127 @@ function drawArena(
   ctx: CanvasRenderingContext2D,
   metrics: CanvasMetrics,
   mapWidth: number,
-  mapHeight: number
+  mapHeight: number,
+  platforms?: BattlePlatform[]
 ): void {
   ctx.save()
   ctx.translate(metrics.offsetX, metrics.offsetY)
+  drawBackground(ctx, metrics)
+
+  ctx.strokeStyle = 'rgba(226, 232, 240, 0.32)'
+  ctx.lineWidth = 2
+  ctx.strokeRect(0, 0, mapWidth * metrics.scale, mapHeight * metrics.scale)
+
+  const platformList =
+    platforms && platforms.length > 0
+      ? platforms
+      : createFallbackPlatforms(mapWidth, mapHeight)
+  platformList.forEach((platform) => drawBrickPlatform(ctx, platform, metrics))
+  ctx.restore()
+}
+
+function drawBackground(
+  ctx: CanvasRenderingContext2D,
+  metrics: CanvasMetrics
+): void {
+  const image = getBackgroundImage()
+  if (image?.complete && image.naturalWidth > 0) {
+    const imageRatio = image.naturalWidth / image.naturalHeight
+    const arenaRatio = metrics.width / metrics.height
+    let sx = 0
+    let sy = 0
+    let sw = image.naturalWidth
+    let sh = image.naturalHeight
+    if (imageRatio > arenaRatio) {
+      sw = image.naturalHeight * arenaRatio
+      sx = (image.naturalWidth - sw) / 2
+    } else {
+      sh = image.naturalWidth / arenaRatio
+      sy = (image.naturalHeight - sh) / 2
+    }
+    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, metrics.width, metrics.height)
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.38)'
+    ctx.fillRect(0, 0, metrics.width, metrics.height)
+    return
+  }
+
   const arenaGradient = ctx.createLinearGradient(
     0,
     0,
     metrics.width,
     metrics.height
   )
-  arenaGradient.addColorStop(0, '#0f172a')
-  arenaGradient.addColorStop(0.48, '#172033')
-  arenaGradient.addColorStop(1, '#0d1f1b')
+  arenaGradient.addColorStop(0, '#111827')
+  arenaGradient.addColorStop(0.52, '#1f2937')
+  arenaGradient.addColorStop(1, '#052e16')
   ctx.fillStyle = arenaGradient
   ctx.fillRect(0, 0, metrics.width, metrics.height)
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)'
-  ctx.lineWidth = 1
+}
 
-  const grid = 100 * metrics.scale
-  for (let x = 0; x <= metrics.width; x += grid) {
-    ctx.beginPath()
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x, metrics.height)
-    ctx.stroke()
+function drawBrickPlatform(
+  ctx: CanvasRenderingContext2D,
+  platform: BattlePlatform,
+  metrics: CanvasMetrics
+): void {
+  const x = platform.x * metrics.scale
+  const y = platform.y * metrics.scale
+  const width = platform.w * metrics.scale
+  const height = platform.h * metrics.scale
+  const image = getBrickImage()
+
+  ctx.save()
+  if (image?.complete && image.naturalWidth > 0) {
+    const tileWidth = BRICK_IMAGE_WIDTH * metrics.scale
+    const tileHeight = BRICK_IMAGE_HEIGHT * metrics.scale
+    for (let ty = y; ty < y + height; ty += tileHeight) {
+      for (let tx = x; tx < x + width; tx += tileWidth) {
+        const nextWidth = Math.min(tileWidth, x + width - tx)
+        const nextHeight = Math.min(tileHeight, y + height - ty)
+        ctx.drawImage(image, tx, ty, nextWidth, nextHeight)
+      }
+    }
+  } else {
+    ctx.fillStyle = '#8b1e27'
+    ctx.fillRect(x, y, width, height)
   }
-  for (let y = 0; y <= metrics.height; y += grid) {
-    ctx.beginPath()
-    ctx.moveTo(0, y)
-    ctx.lineTo(metrics.width, y)
-    ctx.stroke()
-  }
-
-  ctx.strokeStyle = 'rgba(226, 232, 240, 0.32)'
-  ctx.lineWidth = 2
-  ctx.strokeRect(0, 0, mapWidth * metrics.scale, mapHeight * metrics.scale)
-
-  ctx.fillStyle = 'rgba(34, 197, 94, 0.12)'
-  ctx.strokeStyle = 'rgba(34, 197, 94, 0.24)'
+  ctx.strokeStyle = platform.one_way
+    ? 'rgba(34, 197, 94, 0.48)'
+    : 'rgba(248, 113, 113, 0.42)'
   ctx.lineWidth = Math.max(1, metrics.scale)
-  const platformHeight = 18 * metrics.scale
-  const platforms = [
-    { x: 0.08, y: 0.22, w: 0.26 },
-    { x: 0.46, y: 0.36, w: 0.32 },
-    { x: 0.18, y: 0.58, w: 0.24 },
-    { x: 0.62, y: 0.72, w: 0.28 },
-  ]
-  platforms.forEach((platform) => {
-    const x = platform.x * metrics.width
-    const y = platform.y * metrics.height
-    const width = platform.w * metrics.width
-    ctx.fillRect(x, y, width, platformHeight)
-    ctx.strokeRect(x, y, width, platformHeight)
-  })
+  ctx.strokeRect(x, y, width, height)
   ctx.restore()
+}
+
+function createFallbackPlatforms(
+  mapWidth: number,
+  mapHeight: number
+): BattlePlatform[] {
+  return [
+    {
+      id: 'floor',
+      x: 0,
+      y: mapHeight - 40,
+      w: mapWidth,
+      h: 40,
+      one_way: false,
+    },
+    {
+      id: 'middle',
+      x: mapWidth * 0.25,
+      y: mapHeight * 0.58,
+      w: mapWidth * 0.42,
+      h: 26,
+      one_way: true,
+    },
+    {
+      id: 'top',
+      x: mapWidth * 0.48,
+      y: mapHeight * 0.34,
+      w: mapWidth * 0.34,
+      h: 26,
+      one_way: true,
+    },
+  ]
 }
 
 function drawFlyingCap(
@@ -255,49 +345,12 @@ function drawFlyingCap(
       95 +
       hashString(bullet.id)) %
     (Math.PI * 2)
+  const arcTilt = Math.atan2(bullet.vy || 0, bullet.vx || 1) * 0.2
 
   ctx.save()
   ctx.shadowColor = 'rgba(34, 197, 94, 0.65)'
   ctx.shadowBlur = 16 * metrics.scale
-  drawCapSprite(ctx, point.x, point.y, 54 * metrics.scale, spin, 1)
-  ctx.restore()
-}
-
-function drawQuotaCap(
-  ctx: CanvasRenderingContext2D,
-  drop: BattleDrop,
-  metrics: CanvasMetrics
-): void {
-  const point = toScreen(drop.x, drop.y, metrics)
-  const bob =
-    Math.sin(
-      ((typeof performance !== 'undefined' ? performance.now() : Date.now()) +
-        hashString(drop.id) * 120) /
-        360
-    ) *
-    4 *
-    metrics.scale
-
-  ctx.save()
-  ctx.shadowColor = 'rgba(132, 204, 22, 0.72)'
-  ctx.shadowBlur = 18 * metrics.scale
-  drawCapSprite(
-    ctx,
-    point.x,
-    point.y - DROP_RADIUS * metrics.scale + bob,
-    48 * metrics.scale,
-    -0.12,
-    1
-  )
-  ctx.shadowBlur = 0
-  ctx.fillStyle = 'rgba(240, 253, 244, 0.95)'
-  ctx.font = `${Math.max(10, 11 * metrics.scale)}px system-ui, sans-serif`
-  ctx.textAlign = 'center'
-  ctx.fillText(
-    formatCompactQuota(drop.quota),
-    point.x,
-    point.y + 23 * metrics.scale
-  )
+  drawCapSprite(ctx, point.x, point.y, 54 * metrics.scale, spin + arcTilt, 1)
   ctx.restore()
 }
 
@@ -311,10 +364,11 @@ function drawPlayer(
   const point = toScreen(player.x, player.y, metrics)
   const radius = PLAYER_RADIUS * metrics.scale
   const alpha = player.alive ? 1 : 0.58
-  const spriteWidth = 58 * metrics.scale
+  const spriteWidth = PLAYER_SPRITE_WIDTH * metrics.scale
   const spriteHeight = spriteWidth * PLAYER_IMAGE_RATIO
-  const spriteBottom = point.y + radius * 1.15
+  const spriteBottom = point.y + 35 * metrics.scale
   const spriteTop = spriteBottom - spriteHeight
+  const capCount = Math.max(0, Math.floor(player.cap_stack || 0))
 
   ctx.save()
   ctx.globalAlpha = alpha
@@ -342,7 +396,8 @@ function drawPlayer(
     spriteWidth,
     spriteHeight,
     player.alive,
-    isThrowing
+    isThrowing,
+    player.direction
   )
   ctx.shadowBlur = 0
 
@@ -354,28 +409,21 @@ function drawPlayer(
     ctx.stroke()
   }
 
-  drawCapSprite(
-    ctx,
-    point.x + spriteWidth * 0.03,
-    spriteTop + spriteHeight * 0.16,
-    spriteWidth * 0.72,
-    -0.1,
-    alpha
-  )
-
-  const hpWidth = 54 * metrics.scale
-  const hpHeight = Math.max(4, 6 * metrics.scale)
-  const hpX = point.x - hpWidth / 2
-  const hpY = spriteTop - 13 * metrics.scale
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.72)'
-  ctx.fillRect(hpX, hpY, hpWidth, hpHeight)
-  ctx.fillStyle = player.hp > 35 ? '#22c55e' : '#ef4444'
-  ctx.fillRect(hpX, hpY, (hpWidth * Math.max(0, player.hp)) / 100, hpHeight)
+  drawCapStack(ctx, point.x, spriteTop + spriteHeight * 0.16, capCount, metrics)
 
   ctx.fillStyle = 'rgba(241, 245, 249, 0.92)'
   ctx.font = `${Math.max(11, 12 * metrics.scale)}px system-ui, sans-serif`
   ctx.textAlign = 'center'
   ctx.fillText(player.username, point.x, spriteBottom + 16 * metrics.scale)
+  if (capCount > 0) {
+    ctx.fillStyle = 'rgba(187, 247, 208, 0.95)'
+    ctx.font = `700 ${Math.max(11, 13 * metrics.scale)}px system-ui, sans-serif`
+    ctx.fillText(
+      `x${capCount}`,
+      point.x + spriteWidth * 0.58,
+      spriteTop - Math.min(capCount, 10) * CAP_STACK_GAP * metrics.scale
+    )
+  }
   ctx.restore()
 }
 
@@ -386,11 +434,18 @@ function drawPlayerSprite(
   width: number,
   height: number,
   alive: boolean,
-  isThrowing: boolean
+  isThrowing: boolean,
+  direction: number
 ): void {
   const image = getPlayerSpriteImage(isThrowing)
   if (image?.complete && image.naturalWidth > 0) {
-    ctx.drawImage(image, x - width / 2, y, width, height)
+    ctx.save()
+    ctx.translate(x, y)
+    if (direction < 0) {
+      ctx.scale(-1, 1)
+    }
+    ctx.drawImage(image, -width / 2, 0, width, height)
+    ctx.restore()
     return
   }
 
@@ -409,6 +464,25 @@ function drawPlayerSprite(
   ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)'
   ctx.lineWidth = Math.max(1, width * 0.04)
   ctx.stroke()
+}
+
+function drawCapStack(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  headY: number,
+  capCount: number,
+  metrics: CanvasMetrics
+): void {
+  if (capCount <= 0) return
+  const capWidth = PLAYER_SPRITE_WIDTH * 0.72 * metrics.scale
+  const gap = CAP_STACK_GAP * metrics.scale
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  for (let index = 0; index < capCount; index += 1) {
+    const y = headY - index * gap
+    const sway = Math.sin((now + index * 137) / 280) * 1.5 * metrics.scale
+    const rotation = -0.1 + Math.sin((now + index * 83) / 420) * 0.08
+    drawCapSprite(ctx, x + sway, y, capWidth, rotation, 1)
+  }
 }
 
 function getPlayerSpriteImage(isThrowing: boolean): HTMLImageElement | null {
@@ -482,11 +556,4 @@ function hashString(value: string): number {
     hash = (hash * 31 + value.charCodeAt(index)) % 997
   }
   return hash
-}
-
-function formatCompactQuota(value: number): string {
-  const amount = Math.abs(value)
-  if (amount >= 1000000) return `${Math.round(value / 100000) / 10}M`
-  if (amount >= 1000) return `${Math.round(value / 100) / 10}K`
-  return `${value}`
 }
