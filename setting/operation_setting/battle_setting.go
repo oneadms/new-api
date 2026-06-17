@@ -3,27 +3,31 @@ package operation_setting
 import "github.com/QuantumNous/new-api/setting/config"
 
 type BattleSetting struct {
-	Enabled            bool `json:"enabled"`
-	HideRoomInput      bool `json:"hide_room_input"`
-	MinDropQuota       int  `json:"min_drop_quota"`
-	MaxDropQuota       int  `json:"max_drop_quota"`
-	MaxRoundLossQuota  int  `json:"max_round_loss_quota"`
-	MaxRoundGainQuota  int  `json:"max_round_gain_quota"`
-	MaxDailyLossQuota  int  `json:"max_daily_loss_quota"`
-	MaxDailyGainQuota  int  `json:"max_daily_gain_quota"`
-	CapQuota           int  `json:"cap_quota"`
-	MaxPlayersPerRoom  int  `json:"max_players_per_room"`
-	TickRate           int  `json:"tick_rate"`
-	MapWidth           int  `json:"map_width"`
-	MapHeight          int  `json:"map_height"`
-	PlayerSpeed        int  `json:"player_speed"`
-	BulletSpeed        int  `json:"bullet_speed"`
-	BulletDamage       int  `json:"bullet_damage"`
-	FireCooldownMs     int  `json:"fire_cooldown_ms"`
-	RespawnSeconds     int  `json:"respawn_seconds"`
-	DropPickupRadius   int  `json:"drop_pickup_radius"`
-	DropExpireSeconds  int  `json:"drop_expire_seconds"`
-	IdleRoomTTLSeconds int  `json:"idle_room_ttl_seconds"`
+	Enabled            bool  `json:"enabled"`
+	HideRoomInput      bool  `json:"hide_room_input"`
+	MinDropQuota       int   `json:"min_drop_quota"`
+	MaxDropQuota       int   `json:"max_drop_quota"`
+	MaxRoundLossQuota  int   `json:"max_round_loss_quota"`
+	MaxRoundGainQuota  int   `json:"max_round_gain_quota"`
+	MaxDailyLossQuota  int   `json:"max_daily_loss_quota"`
+	MaxDailyGainQuota  int   `json:"max_daily_gain_quota"`
+	CapQuota           int   `json:"cap_quota"`
+	MaxPlayersPerRoom  int   `json:"max_players_per_room"`
+	TickRate           int   `json:"tick_rate"`
+	MapWidth           int   `json:"map_width"`
+	MapHeight          int   `json:"map_height"`
+	PlayerSpeed        int   `json:"player_speed"`
+	BulletSpeed        int   `json:"bullet_speed"`
+	BulletDamage       int   `json:"bullet_damage"`
+	FireCooldownMs     int   `json:"fire_cooldown_ms"`
+	RespawnSeconds     int   `json:"respawn_seconds"`
+	DropPickupRadius   int   `json:"drop_pickup_radius"`
+	DropExpireSeconds  int   `json:"drop_expire_seconds"`
+	IdleRoomTTLSeconds int   `json:"idle_room_ttl_seconds"`
+	MatchModeEnabled   bool  `json:"match_mode_enabled"`
+	MatchMinPlayers    int   `json:"match_min_players"`
+	MatchDurationSecs  int   `json:"match_duration_seconds"`
+	MatchStartAt       int64 `json:"match_start_at"`
 }
 
 var battleSetting = BattleSetting{
@@ -48,6 +52,10 @@ var battleSetting = BattleSetting{
 	DropPickupRadius:   38,
 	DropExpireSeconds:  18,
 	IdleRoomTTLSeconds: 30,
+	MatchModeEnabled:   false,
+	MatchMinPlayers:    4,
+	MatchDurationSecs:  300,
+	MatchStartAt:       0,
 }
 
 func init() {

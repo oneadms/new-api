@@ -21,6 +21,7 @@ const (
 	messageTypeError    = "error"
 	messageTypeInput    = "input"
 	messageTypeJoined   = "joined"
+	messageTypeLeave    = "leave"
 	messageTypeSnapshot = "snapshot"
 
 	eventTypeHit              = "hit"
@@ -28,10 +29,18 @@ const (
 	eventTypeSettlementFailed = "settlement_failed"
 	eventTypePowerupPickup    = "powerup_pickup"
 	eventTypeCapStormHit      = "cap_storm_hit"
+	eventTypeMatchStarted     = "match_started"
+	eventTypeMatchEnded       = "match_ended"
+	eventTypePlayerForfeit    = "player_forfeit"
 
 	bulletKindCap       = "cap"
 	bulletKindCapStorm  = "cap_storm"
 	powerupTypeCapStorm = "cap_storm"
+
+	matchPhaseFree    = "free"
+	matchPhaseWaiting = "waiting"
+	matchPhaseRunning = "running"
+	matchPhaseEnded   = "ended"
 
 	playerWidth  = 46.0
 	playerHeight = 70.0
@@ -99,6 +108,40 @@ func (m *Manager) Join(conn *websocket.Conn, userId int, username string, roomId
 	_ = conn.Close()
 }
 
+func (m *Manager) StartMatch(roomId string) int {
+	roomId = strings.TrimSpace(roomId)
+	rooms := m.matchRooms(roomId)
+	started := 0
+	for _, room := range rooms {
+		select {
+		case room.startMatchRequests <- struct{}{}:
+			started++
+		case <-room.done:
+		default:
+		}
+	}
+	return started
+}
+
+func (m *Manager) matchRooms(roomId string) []*Room {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if roomId != "" {
+		normalizedRoomId := normalizeRoomId(roomId)
+		if room := m.rooms[normalizedRoomId]; room != nil {
+			return []*Room{room}
+		}
+		return nil
+	}
+
+	rooms := make([]*Room, 0, len(m.rooms))
+	for _, room := range m.rooms {
+		rooms = append(rooms, room)
+	}
+	return rooms
+}
+
 func (m *Manager) getOrCreateRoom(roomId string) *Room {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -156,9 +199,10 @@ type Client struct {
 }
 
 type ClientMessage struct {
-	Type  string      `json:"type"`
-	Seq   int64       `json:"seq,omitempty"`
-	Input PlayerInput `json:"input"`
+	Type      string      `json:"type"`
+	Seq       int64       `json:"seq,omitempty"`
+	Input     PlayerInput `json:"input"`
+	ForceQuit bool        `json:"force_quit,omitempty"`
 }
 
 type PlayerInput struct {
@@ -195,6 +239,9 @@ func (c *Client) readPump() {
 		var message ClientMessage
 		if err := common.Unmarshal(data, &message); err != nil {
 			continue
+		}
+		if message.Type == messageTypeLeave {
+			return
 		}
 		if message.Type != messageTypeInput {
 			continue
@@ -249,23 +296,27 @@ func (c *Client) sendJSON(payload any) {
 }
 
 type Room struct {
-	id            string
-	manager       *Manager
-	register      chan *Client
-	unregister    chan *Client
-	inputs        chan clientInput
-	clients       map[int]*Client
-	players       map[int]*player
-	bullets       map[string]*bullet
-	powerups      map[string]*powerup
-	roundLosses   map[int]int
-	roundGains    map[int]int
-	events        []BattleEvent
-	rng           *rand.Rand
-	nextId        int64
-	nextPowerupAt time.Time
-	idleSince     time.Time
-	done          chan struct{}
+	id                 string
+	manager            *Manager
+	register           chan *Client
+	unregister         chan *Client
+	startMatchRequests chan struct{}
+	inputs             chan clientInput
+	clients            map[int]*Client
+	players            map[int]*player
+	bullets            map[string]*bullet
+	powerups           map[string]*powerup
+	roundLosses        map[int]int
+	roundGains         map[int]int
+	events             []BattleEvent
+	rng                *rand.Rand
+	nextId             int64
+	nextPowerupAt      time.Time
+	idleSince          time.Time
+	matchPhase         string
+	matchStartsAt      time.Time
+	matchEndsAt        time.Time
+	done               chan struct{}
 }
 
 type clientInput struct {
@@ -339,19 +390,23 @@ type BattleEvent struct {
 }
 
 type Snapshot struct {
-	Type        string             `json:"type"`
-	RoomId      string             `json:"room_id"`
-	Me          int                `json:"me"`
-	AckSeq      int64              `json:"ack_seq"`
-	ServerTime  int64              `json:"server_time"`
-	MapWidth    int                `json:"map_width"`
-	MapHeight   int                `json:"map_height"`
-	PlayerSpeed int                `json:"player_speed"`
-	Players     []PlayerSnapshot   `json:"players"`
-	Bullets     []BulletSnapshot   `json:"bullets"`
-	Platforms   []PlatformSnapshot `json:"platforms"`
-	Powerups    []PowerupSnapshot  `json:"powerups"`
-	Events      []BattleEvent      `json:"events"`
+	Type            string             `json:"type"`
+	RoomId          string             `json:"room_id"`
+	Me              int                `json:"me"`
+	AckSeq          int64              `json:"ack_seq"`
+	ServerTime      int64              `json:"server_time"`
+	MapWidth        int                `json:"map_width"`
+	MapHeight       int                `json:"map_height"`
+	PlayerSpeed     int                `json:"player_speed"`
+	MatchPhase      string             `json:"match_phase,omitempty"`
+	MatchStartsAt   int64              `json:"match_starts_at,omitempty"`
+	MatchEndsAt     int64              `json:"match_ends_at,omitempty"`
+	MatchMinPlayers int                `json:"match_min_players,omitempty"`
+	Players         []PlayerSnapshot   `json:"players"`
+	Bullets         []BulletSnapshot   `json:"bullets"`
+	Platforms       []PlatformSnapshot `json:"platforms"`
+	Powerups        []PowerupSnapshot  `json:"powerups"`
+	Events          []BattleEvent      `json:"events"`
 }
 
 type PlayerSnapshot struct {
@@ -405,19 +460,20 @@ type capSettlement struct {
 
 func newRoom(id string, manager *Manager) *Room {
 	return &Room{
-		id:          id,
-		manager:     manager,
-		register:    make(chan *Client, 8),
-		unregister:  make(chan *Client, 64),
-		inputs:      make(chan clientInput, 128),
-		clients:     make(map[int]*Client),
-		players:     make(map[int]*player),
-		bullets:     make(map[string]*bullet),
-		powerups:    make(map[string]*powerup),
-		roundLosses: make(map[int]int),
-		roundGains:  make(map[int]int),
-		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
-		done:        make(chan struct{}),
+		id:                 id,
+		manager:            manager,
+		register:           make(chan *Client, 8),
+		unregister:         make(chan *Client, 64),
+		startMatchRequests: make(chan struct{}, 4),
+		inputs:             make(chan clientInput, 128),
+		clients:            make(map[int]*Client),
+		players:            make(map[int]*player),
+		bullets:            make(map[string]*bullet),
+		powerups:           make(map[string]*powerup),
+		roundLosses:        make(map[int]int),
+		roundGains:         make(map[int]int),
+		rng:                rand.New(rand.NewSource(time.Now().UnixNano())),
+		done:               make(chan struct{}),
 	}
 }
 
@@ -437,6 +493,9 @@ func (r *Room) run() {
 			r.handleRegister(client)
 		case client := <-r.unregister:
 			r.handleUnregister(client)
+		case <-r.startMatchRequests:
+			settings = normalizedSettings()
+			r.startMatch(time.Now(), settings, true)
 		case input := <-r.inputs:
 			if p := r.players[input.userId]; p != nil {
 				if input.seq > 0 {
@@ -477,6 +536,9 @@ func (r *Room) handleRegister(client *Client) {
 		close(client.send)
 		return
 	}
+	if settings.MatchModeEnabled && r.matchPhase == matchPhaseEnded && len(r.clients) == 0 {
+		r.prepareMatchWaiting(settings)
+	}
 	if _, ok := r.clients[client.userId]; !ok && len(r.clients) >= settings.MaxPlayersPerRoom {
 		client.sendJSON(map[string]any{"type": messageTypeError, "message": "room full"})
 		close(client.send)
@@ -511,6 +573,7 @@ func (r *Room) handleRegister(client *Client) {
 	}
 	p.Input = PlayerInput{AimX: 1, AimY: 0}
 	p.InputSeq = 0
+	r.updateMatchState(time.Now(), settings)
 	client.sendJSON(map[string]any{"type": messageTypeJoined, "room_id": r.id})
 }
 
@@ -518,9 +581,14 @@ func (r *Room) handleUnregister(client *Client) {
 	if current := r.clients[client.userId]; current != client {
 		return
 	}
+	settings := normalizedSettings()
 	if p := r.players[client.userId]; p != nil {
-		r.settlePlayerCaps(p, normalizedSettings())
+		r.settlePlayerCaps(p, settings)
+		if settings.MatchModeEnabled && r.matchPhase == matchPhaseRunning {
+			r.addEvent(eventTypePlayerForfeit, client.userId, 0, 0)
+		}
 	}
+	r.clearPendingRewardsForUser(client.userId)
 	delete(r.clients, client.userId)
 	delete(r.players, client.userId)
 	close(client.send)
@@ -528,9 +596,7 @@ func (r *Room) handleUnregister(client *Client) {
 
 func (r *Room) closeAll(messageType string, message string) {
 	settings := normalizedSettings()
-	for _, p := range r.players {
-		r.settlePlayerCaps(p, settings)
-	}
+	r.settleAllPlayerCaps(settings)
 	for userId, client := range r.clients {
 		client.sendJSON(map[string]any{"type": messageType, "message": message})
 		close(client.send)
@@ -545,6 +611,10 @@ func (r *Room) closeAll(messageType string, message string) {
 func (r *Room) step(dt float64, now time.Time, settings operation_setting.BattleSetting) {
 	if dt <= 0 || dt > 0.2 {
 		dt = 1.0 / float64(settings.TickRate)
+	}
+	if r.updateMatchState(now, settings) {
+		r.broadcastSnapshot(now, settings)
+		return
 	}
 
 	r.updatePowerups(now, settings)
@@ -620,7 +690,7 @@ func (r *Room) resolvePlayerHorizontal(p *player, settings operation_setting.Bat
 		return
 	}
 	for _, platform := range battlePlatforms(settings) {
-		if platform.OneWay || !rectsOverlap(playerLeft(p), playerTop(p), playerWidth, playerHeight, platform.X, platform.Y, platform.W, platform.H) {
+		if platform.OneWay || isBoundaryWall(platform) || !rectsOverlap(playerLeft(p), playerTop(p), playerWidth, playerHeight, platform.X, platform.Y, platform.W, platform.H) {
 			continue
 		}
 		if p.VX > 0 {
@@ -1048,6 +1118,132 @@ func (r *Room) recordSettledTransfer(fromUserId int, toUserId int, amount int) {
 	}
 }
 
+func (r *Room) updateMatchState(now time.Time, settings operation_setting.BattleSetting) bool {
+	if !settings.MatchModeEnabled {
+		r.matchPhase = matchPhaseFree
+		r.matchStartsAt = time.Time{}
+		r.matchEndsAt = time.Time{}
+		return false
+	}
+
+	if r.matchPhase == "" || r.matchPhase == matchPhaseFree {
+		r.prepareMatchWaiting(settings)
+	}
+	if r.matchPhase == matchPhaseEnded {
+		return true
+	}
+
+	r.matchStartsAt = matchStartTime(settings)
+	if r.matchPhase == matchPhaseWaiting {
+		if r.matchCanAutoStart(now, settings) {
+			r.startMatch(now, settings, false)
+			return false
+		}
+		return true
+	}
+
+	if r.matchPhase == matchPhaseRunning && !r.matchEndsAt.IsZero() && !now.Before(r.matchEndsAt) {
+		r.endMatch(settings)
+		return true
+	}
+	return false
+}
+
+func (r *Room) prepareMatchWaiting(settings operation_setting.BattleSetting) {
+	r.matchPhase = matchPhaseWaiting
+	r.matchStartsAt = matchStartTime(settings)
+	r.matchEndsAt = time.Time{}
+}
+
+func (r *Room) matchCanAutoStart(now time.Time, settings operation_setting.BattleSetting) bool {
+	if len(r.players) < settings.MatchMinPlayers {
+		return false
+	}
+	if r.matchStartsAt.IsZero() {
+		return true
+	}
+	return !now.Before(r.matchStartsAt)
+}
+
+func (r *Room) startMatch(now time.Time, settings operation_setting.BattleSetting, force bool) bool {
+	if !settings.MatchModeEnabled || r.matchPhase == matchPhaseRunning {
+		return false
+	}
+	if !force && !r.matchCanAutoStart(now, settings) {
+		return false
+	}
+	r.roundLosses = make(map[int]int)
+	r.roundGains = make(map[int]int)
+	r.bullets = make(map[string]*bullet)
+	r.powerups = make(map[string]*powerup)
+	r.events = nil
+	r.nextPowerupAt = time.Time{}
+	for _, p := range r.players {
+		clearPlayerCaps(p)
+		p.RoundLoss = 0
+		p.RoundGain = 0
+		p.CapStormUntil = time.Time{}
+		p.LastStormThrow = time.Time{}
+		p.Input = PlayerInput{AimX: 1, AimY: 0}
+		p.InputSeq = 0
+		r.placePlayer(p, settings)
+	}
+	r.matchPhase = matchPhaseRunning
+	r.matchStartsAt = now
+	r.matchEndsAt = now.Add(time.Duration(settings.MatchDurationSecs) * time.Second)
+	r.addEvent(eventTypeMatchStarted, 0, 0, 0)
+	return true
+}
+
+func (r *Room) endMatch(settings operation_setting.BattleSetting) {
+	if r.matchPhase != matchPhaseRunning {
+		return
+	}
+	r.settleAllPlayerCaps(settings)
+	r.bullets = make(map[string]*bullet)
+	r.powerups = make(map[string]*powerup)
+	r.matchPhase = matchPhaseEnded
+	r.addEvent(eventTypeMatchEnded, 0, 0, 0)
+}
+
+func (r *Room) settleAllPlayerCaps(settings operation_setting.BattleSetting) {
+	userIds := make([]int, 0, len(r.players))
+	for userId := range r.players {
+		userIds = append(userIds, userId)
+	}
+	sort.Ints(userIds)
+	for _, userId := range userIds {
+		r.settlePlayerCaps(r.players[userId], settings)
+	}
+}
+
+func (r *Room) clearPendingRewardsForUser(userId int) {
+	if userId <= 0 {
+		return
+	}
+	for _, target := range r.players {
+		if target == nil || target.UserId == userId || target.CapSources == nil {
+			continue
+		}
+		count := target.CapSources[userId]
+		if count <= 0 {
+			continue
+		}
+		delete(target.CapSources, userId)
+		target.CapStack -= count
+		if target.CapStack < 0 {
+			target.CapStack = 0
+		}
+	}
+}
+
+func matchStartTime(settings operation_setting.BattleSetting) time.Time {
+	if settings.MatchStartAt <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(settings.MatchStartAt, 0)
+}
+
 func clearPlayerCaps(p *player) {
 	if p == nil {
 		return
@@ -1110,7 +1306,6 @@ func battlePlatforms(settings operation_setting.BattleSetting) []platform {
 		scaledPlatform("left-wall", 0, 0, wallW, 900, false, scaleX, scaleY, settings),
 		scaledPlatform("right-wall", 1600-wallW/scaleX, 0, wallW, 900, false, scaleX, scaleY, settings),
 		scaledPlatform("low-pillar", 665, 735, wallW, wallH, false, scaleX, scaleY, settings),
-		scaledPlatform("right-pillar", 1445, 575, wallW, 285, false, scaleX, scaleY, settings),
 		scaledPlatform("upper-pillar", 382, 255, wallW, 165, false, scaleX, scaleY, settings),
 	}
 	return platforms
@@ -1128,6 +1323,10 @@ func scaledPlatform(id string, x float64, y float64, w float64, h float64, oneWa
 		nextH = 1
 	}
 	return platform{Id: id, X: nextX, Y: nextY, W: nextW, H: nextH, OneWay: oneWay}
+}
+
+func isBoundaryWall(platform platform) bool {
+	return platform.Id == "left-wall" || platform.Id == "right-wall"
 }
 
 func spawnSurfaces(settings operation_setting.BattleSetting) []platform {
@@ -1187,11 +1386,21 @@ func (r *Room) broadcastSnapshot(now time.Time, settings operation_setting.Battl
 		MapWidth:    settings.MapWidth,
 		MapHeight:   settings.MapHeight,
 		PlayerSpeed: settings.PlayerSpeed,
+		MatchPhase:  r.snapshotMatchPhase(settings),
 		Players:     make([]PlayerSnapshot, 0, len(r.players)),
 		Bullets:     make([]BulletSnapshot, 0, len(r.bullets)),
 		Platforms:   platformSnapshots(settings),
 		Powerups:    r.powerupSnapshots(),
 		Events:      append(make([]BattleEvent, 0, len(r.events)), r.events...),
+	}
+	if settings.MatchModeEnabled {
+		if !r.matchStartsAt.IsZero() {
+			base.MatchStartsAt = r.matchStartsAt.UnixMilli()
+		}
+		if !r.matchEndsAt.IsZero() {
+			base.MatchEndsAt = r.matchEndsAt.UnixMilli()
+		}
+		base.MatchMinPlayers = settings.MatchMinPlayers
 	}
 	for _, p := range r.players {
 		playerSnapshot := PlayerSnapshot{
@@ -1248,6 +1457,16 @@ func (r *Room) pendingCapGain(userId int, settings operation_setting.BattleSetti
 	return totalCaps * settings.CapQuota
 }
 
+func (r *Room) snapshotMatchPhase(settings operation_setting.BattleSetting) string {
+	if !settings.MatchModeEnabled {
+		return matchPhaseFree
+	}
+	if r.matchPhase == "" || r.matchPhase == matchPhaseFree {
+		return matchPhaseWaiting
+	}
+	return r.matchPhase
+}
+
 func (r *Room) addEvent(eventType string, userId int, targetUserId int, quota int, capCount ...int) {
 	r.nextId++
 	event := BattleEvent{
@@ -1288,6 +1507,11 @@ func normalizedSettings() operation_setting.BattleSetting {
 	s.DropPickupRadius = clampInt(s.DropPickupRadius, 8, 160)
 	s.DropExpireSeconds = clampInt(s.DropExpireSeconds, 3, 120)
 	s.IdleRoomTTLSeconds = clampInt(s.IdleRoomTTLSeconds, 5, 600)
+	s.MatchMinPlayers = clampInt(s.MatchMinPlayers, 2, s.MaxPlayersPerRoom)
+	s.MatchDurationSecs = clampInt(s.MatchDurationSecs, 30, 86400)
+	if s.MatchStartAt < 0 {
+		s.MatchStartAt = 0
+	}
 	return s
 }
 

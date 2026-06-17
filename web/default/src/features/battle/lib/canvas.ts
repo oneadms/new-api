@@ -211,10 +211,6 @@ function drawArena(
   ctx.translate(metrics.offsetX, metrics.offsetY)
   drawBackground(ctx, metrics)
 
-  ctx.strokeStyle = 'rgba(226, 232, 240, 0.32)'
-  ctx.lineWidth = 2
-  ctx.strokeRect(0, 0, mapWidth * metrics.scale, mapHeight * metrics.scale)
-
   const platformList =
     platforms && platforms.length > 0
       ? platforms
@@ -287,11 +283,6 @@ function drawBrickPlatform(
     ctx.fillStyle = '#8b1e27'
     ctx.fillRect(x, y, width, height)
   }
-  ctx.strokeStyle = platform.one_way
-    ? 'rgba(34, 197, 94, 0.48)'
-    : 'rgba(248, 113, 113, 0.42)'
-  ctx.lineWidth = Math.max(1, metrics.scale)
-  ctx.strokeRect(x, y, width, height)
   ctx.restore()
 }
 

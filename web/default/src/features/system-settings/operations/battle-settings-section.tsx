@@ -20,12 +20,15 @@ import { useMemo, useRef } from 'react'
 import { z } from 'zod'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
   DEFAULT_CURRENCY_CONFIG,
   useSystemConfigStore,
 } from '@/stores/system-config-store'
+import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -50,6 +53,7 @@ const createSchema = () =>
   z.object({
     enabled: z.boolean(),
     hideRoomInput: z.boolean(),
+    matchModeEnabled: z.boolean(),
     capQuota: z.coerce.number().int().min(0),
     maxRoundLossQuota: z.coerce.number().int().min(0),
     maxRoundGainQuota: z.coerce.number().int().min(0),
@@ -60,10 +64,16 @@ const createSchema = () =>
     playerSpeed: z.coerce.number().int().min(80).max(900),
     bulletSpeed: z.coerce.number().int().min(100).max(1800),
     fireCooldownMs: z.coerce.number().int().min(80).max(2000),
+    matchMinPlayers: z.coerce.number().int().min(2).max(32),
+    matchDurationSeconds: z.coerce.number().int().min(30).max(86400),
+    matchStartAt: z.coerce.number().int().min(0),
   })
 
 type Values = z.infer<ReturnType<typeof createSchema>>
-type NumericFieldName = Exclude<keyof Values, 'enabled' | 'hideRoomInput'>
+type NumericFieldName = Exclude<
+  keyof Values,
+  'enabled' | 'hideRoomInput' | 'matchModeEnabled' | 'matchStartAt'
+>
 
 type BattleSettingsSectionProps = {
   defaultValues: Values
@@ -72,6 +82,7 @@ type BattleSettingsSectionProps = {
 const optionKeys: Record<keyof Values, string> = {
   enabled: 'battle_setting.enabled',
   hideRoomInput: 'battle_setting.hide_room_input',
+  matchModeEnabled: 'battle_setting.match_mode_enabled',
   capQuota: 'battle_setting.cap_quota',
   maxRoundLossQuota: 'battle_setting.max_round_loss_quota',
   maxRoundGainQuota: 'battle_setting.max_round_gain_quota',
@@ -82,6 +93,9 @@ const optionKeys: Record<keyof Values, string> = {
   playerSpeed: 'battle_setting.player_speed',
   bulletSpeed: 'battle_setting.bullet_speed',
   fireCooldownMs: 'battle_setting.fire_cooldown_ms',
+  matchMinPlayers: 'battle_setting.match_min_players',
+  matchDurationSeconds: 'battle_setting.match_duration_seconds',
+  matchStartAt: 'battle_setting.match_start_at',
 }
 
 export function BattleSettingsSection(props: BattleSettingsSectionProps) {
@@ -99,8 +113,33 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
     resolver: zodResolver(schema) as unknown as Resolver<Values>,
     defaultValues: props.defaultValues,
   })
+  const startMatchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post<{
+        success: boolean
+        message: string
+        data?: { started_rooms?: number }
+      }>('/api/battle/match/start')
+      return res.data
+    },
+    onSuccess: (data) => {
+      if (!data.success) {
+        toast.error(data.message || t('Failed to start match'))
+        return
+      }
+      toast.success(
+        t('Match start requested for {{count}} room(s)', {
+          count: data.data?.started_rooms ?? 0,
+        })
+      )
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to start match'))
+    },
+  })
 
   const enabled = form.watch('enabled')
+  const matchModeEnabled = form.watch('matchModeEnabled')
   const { isDirty, isSubmitting } = form.formState
 
   async function onSubmit(values: Values) {
@@ -123,7 +162,7 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
 
     savedValuesRef.current = values
     form.reset(values)
-    toast.success(t('Battle settings saved'))
+    toast.success(t('Forgive Cap Battle settings saved'))
   }
 
   const numericFields: Array<{
@@ -133,6 +172,7 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
     min: number
     max?: number
     unit?: 'usd'
+    matchOnly?: boolean
   }> = [
     {
       name: 'capQuota',
@@ -204,6 +244,24 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
       min: 80,
       max: 2000,
     },
+    {
+      name: 'matchMinPlayers',
+      label: t('Match start players'),
+      description: t(
+        'A scheduled match starts when this many players are in the room.'
+      ),
+      min: 2,
+      max: 32,
+      matchOnly: true,
+    },
+    {
+      name: 'matchDurationSeconds',
+      label: t('Match duration'),
+      description: t('Seconds before a match ends and settles all caps.'),
+      min: 30,
+      max: 86400,
+      matchOnly: true,
+    },
   ]
 
   return (
@@ -214,7 +272,7 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
             onSave={form.handleSubmit(onSubmit)}
             isSaving={updateOption.isPending || isSubmitting}
             isSaveDisabled={!isDirty}
-            saveLabel='Save battle settings'
+            saveLabel='Save Forgive Cap Battle settings'
           />
 
           <FormField
@@ -242,80 +300,156 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
           />
 
           {enabled && (
-            <FormField
-              control={form.control}
-              name='hideRoomInput'
-              render={({ field }) => (
-                <SettingsSwitchItem>
-                  <SettingsSwitchContent>
-                    <FormLabel>{t('Hide room input')}</FormLabel>
-                    <FormDescription>
-                      {t(
-                        'Send all players to the default lobby and hide the room selector.'
-                      )}
-                    </FormDescription>
-                  </SettingsSwitchContent>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={updateOption.isPending || isSubmitting}
-                    />
-                  </FormControl>
-                </SettingsSwitchItem>
-              )}
-            />
+            <>
+              <FormField
+                control={form.control}
+                name='hideRoomInput'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Hide room input')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Send all players to the default lobby and hide the room selector.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={updateOption.isPending || isSubmitting}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='matchModeEnabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Enable match mode')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Players wait for a scheduled or manually started match; normal match end settles all caps.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={updateOption.isPending || isSubmitting}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+            </>
           )}
 
           {enabled && (
             <div className='grid gap-6 sm:grid-cols-2 xl:grid-cols-3'>
-              {numericFields.map((item) => (
-                <FormField
-                  key={item.name}
-                  control={form.control}
-                  name={item.name}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        {item.label}
-                        {item.unit === 'usd' ? ' (USD)' : ''}
-                      </FormLabel>
-                      <FormControl>
-                        {item.unit === 'usd' ? (
-                          <Input
-                            type='number'
-                            min={quotaToUsd(item.min, quotaPerUnit)}
-                            max={
-                              item.max === undefined
-                                ? undefined
-                                : quotaToUsd(item.max, quotaPerUnit)
-                            }
-                            step='0.0001'
-                            name={field.name}
-                            ref={field.ref}
-                            value={quotaToUsd(field.value, quotaPerUnit)}
-                            onBlur={field.onBlur}
-                            onChange={(event) =>
-                              field.onChange(
-                                usdToQuota(event.target.value, quotaPerUnit)
-                              )
-                            }
-                          />
-                        ) : (
-                          <Input
-                            type='number'
-                            min={item.min}
-                            max={item.max}
-                            {...field}
-                          />
-                        )}
-                      </FormControl>
-                      <FormDescription>{item.description}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
+              {numericFields
+                .filter((item) => !item.matchOnly || matchModeEnabled)
+                .map((item) => (
+                  <FormField
+                    key={item.name}
+                    control={form.control}
+                    name={item.name}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {item.label}
+                          {item.unit === 'usd' ? ' (USD)' : ''}
+                        </FormLabel>
+                        <FormControl>
+                          {item.unit === 'usd' ? (
+                            <Input
+                              type='number'
+                              min={quotaToUsd(item.min, quotaPerUnit)}
+                              max={
+                                item.max === undefined
+                                  ? undefined
+                                  : quotaToUsd(item.max, quotaPerUnit)
+                              }
+                              step='0.0001'
+                              name={field.name}
+                              ref={field.ref}
+                              value={quotaToUsd(field.value, quotaPerUnit)}
+                              onBlur={field.onBlur}
+                              onChange={(event) =>
+                                field.onChange(
+                                  usdToQuota(event.target.value, quotaPerUnit)
+                                )
+                              }
+                            />
+                          ) : (
+                            <Input
+                              type='number'
+                              min={item.min}
+                              max={item.max}
+                              {...field}
+                            />
+                          )}
+                        </FormControl>
+                        <FormDescription>{item.description}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ))}
+            </div>
+          )}
+
+          {enabled && matchModeEnabled && (
+            <div className='grid gap-6 sm:grid-cols-2 xl:grid-cols-3'>
+              <FormField
+                control={form.control}
+                name='matchStartAt'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Scheduled match start')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='datetime-local'
+                        name={field.name}
+                        ref={field.ref}
+                        value={unixSecondsToLocalInput(field.value)}
+                        onBlur={field.onBlur}
+                        onChange={(event) =>
+                          field.onChange(
+                            localInputToUnixSeconds(event.target.value)
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Leave empty to allow the match to start as soon as the player requirement is met.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className='flex flex-col justify-end gap-2'>
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => startMatchMutation.mutate()}
+                  disabled={startMatchMutation.isPending}
+                >
+                  {t('Start match now')}
+                </Button>
+                <p className='text-muted-foreground text-sm'>
+                  {t(
+                    'Starts every waiting battle room immediately, even if the scheduled time or player count has not been reached.'
                   )}
-                />
-              ))}
+                </p>
+              </div>
             </div>
           )}
         </SettingsForm>
@@ -337,4 +471,19 @@ function usdToQuota(value: string, quotaPerUnit: number): number {
 
 function safeQuotaPerUnit(quotaPerUnit: number): number {
   return quotaPerUnit > 0 ? quotaPerUnit : DEFAULT_CURRENCY_CONFIG.quotaPerUnit
+}
+
+function unixSecondsToLocalInput(value: number): string {
+  if (!value) return ''
+  const date = new Date(value * 1000)
+  if (!Number.isFinite(date.getTime())) return ''
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return localDate.toISOString().slice(0, 16)
+}
+
+function localInputToUnixSeconds(value: string): number {
+  if (!value) return 0
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) return 0
+  return Math.floor(timestamp / 1000)
 }

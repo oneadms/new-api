@@ -50,21 +50,33 @@ func GetBattleStatus(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"enabled":         setting.Enabled,
-			"hide_room_input": setting.HideRoomInput,
-			"quota":           quota,
-			"daily_lost":      usage.Lost,
-			"daily_won":       usage.Won,
-			"max_round_loss":  setting.MaxRoundLossQuota,
-			"max_round_gain":  setting.MaxRoundGainQuota,
-			"max_daily_loss":  setting.MaxDailyLossQuota,
-			"max_daily_gain":  setting.MaxDailyGainQuota,
-			"cap_quota":       setting.CapQuota,
-			"max_players":     setting.MaxPlayersPerRoom,
-			"map_width":       setting.MapWidth,
-			"map_height":      setting.MapHeight,
-			"player_speed":    setting.PlayerSpeed,
+			"enabled":                  setting.Enabled,
+			"hide_room_input":          setting.HideRoomInput,
+			"quota":                    quota,
+			"daily_lost":               usage.Lost,
+			"daily_won":                usage.Won,
+			"max_round_loss":           setting.MaxRoundLossQuota,
+			"max_round_gain":           setting.MaxRoundGainQuota,
+			"max_daily_loss":           setting.MaxDailyLossQuota,
+			"max_daily_gain":           setting.MaxDailyGainQuota,
+			"cap_quota":                setting.CapQuota,
+			"max_players":              setting.MaxPlayersPerRoom,
+			"map_width":                setting.MapWidth,
+			"map_height":               setting.MapHeight,
+			"player_speed":             setting.PlayerSpeed,
+			"match_mode_enabled":       setting.MatchModeEnabled,
+			"match_min_players":        setting.MatchMinPlayers,
+			"match_duration_seconds":   setting.MatchDurationSecs,
+			"match_start_at":           setting.MatchStartAt,
+			"force_exit_clears_reward": true,
 		},
+	})
+}
+
+func StartBattleMatch(c *gin.Context) {
+	started := battlesvc.DefaultManager.StartMatch(c.Query("room"))
+	common.ApiSuccess(c, gin.H{
+		"started_rooms": started,
 	})
 }
 

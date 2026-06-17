@@ -113,6 +113,11 @@ const OPERATIONS_SECTIONS = [
           playerSpeed: settings['battle_setting.player_speed'],
           bulletSpeed: settings['battle_setting.bullet_speed'],
           fireCooldownMs: settings['battle_setting.fire_cooldown_ms'],
+          matchModeEnabled: settings['battle_setting.match_mode_enabled'],
+          matchMinPlayers: settings['battle_setting.match_min_players'],
+          matchDurationSeconds:
+            settings['battle_setting.match_duration_seconds'],
+          matchStartAt: settings['battle_setting.match_start_at'],
         }}
       />
     ),

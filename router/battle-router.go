@@ -13,6 +13,7 @@ func SetBattleRouter(router *gin.Engine) {
 	battleRoute.Use(middleware.GlobalAPIRateLimit())
 	{
 		battleRoute.GET("/status", middleware.UserAuth(), controller.GetBattleStatus)
+		battleRoute.POST("/match/start", middleware.AdminAuth(), controller.StartBattleMatch)
 		battleRoute.GET("/ws", controller.BattleWebSocket)
 	}
 }

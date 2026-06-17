@@ -31,6 +31,11 @@ export type BattleStatus = {
   map_width: number
   map_height: number
   player_speed: number
+  match_mode_enabled: boolean
+  match_min_players: number
+  match_duration_seconds: number
+  match_start_at: number
+  force_exit_clears_reward: boolean
 }
 
 export type BattleInput = {
@@ -78,6 +83,9 @@ export type BattleEvent = {
     | 'settlement_failed'
     | 'powerup_pickup'
     | 'cap_storm_hit'
+    | 'match_started'
+    | 'match_ended'
+    | 'player_forfeit'
   user_id?: number
   target_user_id?: number
   quota?: number
@@ -110,6 +118,10 @@ export type BattleSnapshot = {
   map_width: number
   map_height: number
   player_speed: number
+  match_phase?: 'free' | 'waiting' | 'running' | 'ended' | string
+  match_starts_at?: number
+  match_ends_at?: number
+  match_min_players?: number
   players: BattlePlayer[]
   bullets: BattleBullet[]
   platforms: BattlePlatform[]

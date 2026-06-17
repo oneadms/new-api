@@ -140,6 +140,70 @@ func TestUpdatePlayerDownDropsThroughOneWayPlatform(t *testing.T) {
 	assert.False(t, player.OnGround)
 }
 
+func TestPlayerCanMoveAwayFromRightCorner(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	now := time.Now()
+	floor := battleTestPlatform(t, settings, "floor")
+	player := &player{
+		UserId:    1,
+		X:         float64(settings.MapWidth) - playerWidth/2,
+		Y:         floor.Y - playerHeight/2,
+		Alive:     true,
+		OnGround:  true,
+		Direction: -1,
+		Input: PlayerInput{
+			Left: true,
+		},
+	}
+
+	startX := player.X
+	room.updatePlayer(player, 0.1, now, settings)
+
+	assert.Less(t, player.X, startX)
+}
+
+func TestClearPendingRewardsForLeavingPlayer(t *testing.T) {
+	room := newRoom("test", NewManager())
+	target := &player{
+		UserId:     2,
+		CapStack:   4,
+		CapSources: map[int]int{1: 3, 3: 1},
+	}
+	room.players[target.UserId] = target
+
+	room.clearPendingRewardsForUser(1)
+
+	assert.Equal(t, 1, target.CapStack)
+	assert.NotContains(t, target.CapSources, 1)
+	assert.Equal(t, 1, target.CapSources[3])
+}
+
+func TestMatchModeWaitsForScheduledStartAndPlayers(t *testing.T) {
+	room := newRoom("test", NewManager())
+	now := time.Now()
+	settings := battleSimulationSettings()
+	settings.MatchModeEnabled = true
+	settings.MatchMinPlayers = 2
+	settings.MatchDurationSecs = 90
+	settings.MatchStartAt = now.Add(time.Minute).Unix()
+	room.players[1] = &player{UserId: 1, Alive: true}
+	room.players[2] = &player{UserId: 2, Alive: true}
+
+	paused := room.updateMatchState(now, settings)
+
+	assert.True(t, paused)
+	assert.Equal(t, matchPhaseWaiting, room.matchPhase)
+
+	paused = room.updateMatchState(now.Add(time.Minute), settings)
+
+	assert.False(t, paused)
+	assert.Equal(t, matchPhaseRunning, room.matchPhase)
+	assert.Equal(t, now.Add(time.Minute+90*time.Second), room.matchEndsAt)
+	require.Len(t, room.events, 1)
+	assert.Equal(t, eventTypeMatchStarted, room.events[0].Type)
+}
+
 func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
 	room := newRoom("test", NewManager())
 	settings := battleSimulationSettings()

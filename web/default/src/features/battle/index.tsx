@@ -106,6 +106,9 @@ const battleEventTypes = new Set<BattleEvent['type']>([
   'settlement_failed',
   'powerup_pickup',
   'cap_storm_hit',
+  'match_started',
+  'match_ended',
+  'player_forfeit',
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -233,6 +236,10 @@ function normalizeSnapshot(value: Record<string, unknown>): BattleSnapshot {
     map_width: positiveNumber(value.map_width, 1600),
     map_height: positiveNumber(value.map_height, 900),
     player_speed: positiveNumber(value.player_speed, defaultPlayerSpeed),
+    match_phase: stringValue(value.match_phase) || undefined,
+    match_starts_at: optionalPositiveNumber(value.match_starts_at),
+    match_ends_at: optionalPositiveNumber(value.match_ends_at),
+    match_min_players: optionalPositiveNumber(value.match_min_players),
     players: normalizeArray(value.players, normalizePlayer),
     bullets: normalizeArray(value.bullets, normalizeBullet),
     platforms: normalizeArray(value.platforms, normalizePlatform),
@@ -284,6 +291,7 @@ export function Battle() {
   const [snapshot, setSnapshot] = useState<BattleSnapshot | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
   const battleStatus = useQuery({
     queryKey: ['battle-status'],
@@ -363,6 +371,9 @@ export function Battle() {
   }, [])
 
   const disconnect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'leave', force_quit: true }))
+    }
     wsRef.current?.close()
     wsRef.current = null
     inputRef.current = createEmptyInput()
@@ -375,6 +386,10 @@ export function Battle() {
     clearHudUpdateTimer()
     setConnectionState('closed')
   }, [clearHudUpdateTimer])
+
+  const requestDisconnect = useCallback(() => {
+    setLeaveConfirmOpen(true)
+  }, [])
 
   const connect = useCallback(() => {
     const statusData = battleStatus.data
@@ -585,6 +600,14 @@ export function Battle() {
     capStormSeconds > 0
       ? t('Cap Storm {{seconds}}s', { seconds: capStormSeconds })
       : t('No power-up')
+  const matchPhase =
+    snapshot?.match_phase ?? (status?.match_mode_enabled ? 'waiting' : 'free')
+  const matchLabel = matchStatusText(
+    matchPhase,
+    snapshot,
+    status?.match_min_players,
+    t
+  )
   const ruleControls = useMemo<RuleControl[]>(
     () => [
       { keys: ['A'], label: t('Move left') },
@@ -610,7 +633,10 @@ export function Battle() {
       ),
       t('Each cap is currently worth {{quota}}.', { quota: capQuotaText }),
       t(
-        'When a player leaves or the room ends, players lose quota for caps on their own head and the throwers receive that quota.'
+        'When a match ends normally, players lose quota for caps on their own head and the throwers receive that quota.'
+      ),
+      t(
+        'If you force quit, caps on your own head still settle as losses, but your pending rewards from caps on other players are cleared.'
       ),
     ],
     [capQuotaText, t]
@@ -670,7 +696,7 @@ export function Battle() {
             {t('Game rules')}
           </Button>
           <Button
-            onClick={connected ? disconnect : connect}
+            onClick={connected ? requestDisconnect : connect}
             disabled={joinDisabled}
             className='h-9'
           >
@@ -739,6 +765,9 @@ export function Battle() {
                 value={String(me?.cap_stack ?? 0)}
               />
               <Stat label={t('Power-up')} value={capStormLabel} />
+              {status?.match_mode_enabled && (
+                <Stat label={t('Match')} value={matchLabel} />
+              )}
               <Stat
                 label={t('Movement')}
                 value={
@@ -825,6 +854,37 @@ export function Battle() {
         controls={ruleControls}
         notes={ruleNotes}
       />
+      <Dialog open={leaveConfirmOpen} onOpenChange={setLeaveConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('Force quit battle?')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'Leaving now clears your pending rewards from caps you placed on other players. Caps on your own head will still settle as losses.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setLeaveConfirmOpen(false)}
+            >
+              {t('Stay in battle')}
+            </Button>
+            <Button
+              type='button'
+              variant='destructive'
+              onClick={() => {
+                setLeaveConfirmOpen(false)
+                disconnect()
+              }}
+            >
+              {t('Force quit')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -986,6 +1046,37 @@ function PlayerRow(props: { player: BattlePlayer; active: boolean }) {
   )
 }
 
+function matchStatusText(
+  phase: string,
+  snapshot: BattleSnapshot | null,
+  fallbackMinPlayers: number | undefined,
+  t: TFunction
+): string {
+  const serverTime = snapshot?.server_time ?? Date.now()
+  if (phase === 'running') {
+    const seconds = Math.max(
+      0,
+      Math.ceil(((snapshot?.match_ends_at ?? serverTime) - serverTime) / 1000)
+    )
+    return t('Running, {{seconds}}s left', { seconds })
+  }
+  if (phase === 'waiting') {
+    const startsAt = snapshot?.match_starts_at
+    if (startsAt && startsAt > serverTime) {
+      const seconds = Math.ceil((startsAt - serverTime) / 1000)
+      return t('Waiting, starts in {{seconds}}s', { seconds })
+    }
+    return t('Waiting for players {{count}}/{{min}}', {
+      count: snapshot?.players.length ?? 0,
+      min: snapshot?.match_min_players ?? fallbackMinPlayers ?? 0,
+    })
+  }
+  if (phase === 'ended') {
+    return t('Match ended')
+  }
+  return t('Free play')
+}
+
 function battleEventText(
   event: BattleEvent,
   snapshot: BattleSnapshot,
@@ -1012,6 +1103,15 @@ function battleEventText(
       target,
       quota: formatQuota(event.quota ?? 0),
     })
+  }
+  if (event.type === 'match_started') {
+    return t('Match started')
+  }
+  if (event.type === 'match_ended') {
+    return t('Match ended')
+  }
+  if (event.type === 'player_forfeit') {
+    return t('{{user}} force quit and cleared pending rewards', { user })
   }
   return t('Cap settlement failed')
 }
