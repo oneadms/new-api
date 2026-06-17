@@ -80,6 +80,7 @@ type RuleControl = {
 }
 
 const defaultRoomId = 'lobby'
+const battleJoinBalanceMessage = 'Balance must be positive to join'
 const hudUpdateIntervalMs = 150
 const inputSendIntervalMs = 50
 const snapshotInterpolationDelayMs = 120
@@ -378,6 +379,11 @@ export function Battle() {
   const connect = useCallback(() => {
     const statusData = battleStatus.data
     if (!statusData?.enabled) return
+    if (statusData.quota <= 0) {
+      setLastError(battleJoinBalanceMessage)
+      toast.error(t(battleJoinBalanceMessage))
+      return
+    }
     wsRef.current?.close()
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -561,6 +567,13 @@ export function Battle() {
   const connected = connectionState === 'connected'
   const showPreJoinRules = !connected
   const hideRoomInput = Boolean(status?.hide_room_input)
+  const hasPositiveBalance = (status?.quota ?? 0) > 0
+  const joinBlockReason =
+    status && status.quota <= 0 ? t(battleJoinBalanceMessage) : undefined
+  const joinDisabled =
+    connectionState === 'connecting' ||
+    (!connected &&
+      (battleStatus.isLoading || !status?.enabled || !hasPositiveBalance))
   const capQuotaText = formatQuota(status?.cap_quota ?? 0)
   const capStormSeconds = Math.max(
     0,
@@ -658,11 +671,7 @@ export function Battle() {
           </Button>
           <Button
             onClick={connected ? disconnect : connect}
-            disabled={
-              battleStatus.isLoading ||
-              !status?.enabled ||
-              connectionState === 'connecting'
-            }
+            disabled={joinDisabled}
             className='h-9'
           >
             {connected ? (
@@ -704,11 +713,8 @@ export function Battle() {
               <BattleRulesEmptyState
                 controls={ruleControls}
                 notes={ruleNotes}
-                disabled={
-                  battleStatus.isLoading ||
-                  !status?.enabled ||
-                  connectionState === 'connecting'
-                }
+                disabled={joinDisabled}
+                blockReason={joinBlockReason}
                 onJoin={connect}
                 onOpenRules={() => setRulesOpen(true)}
               />
@@ -827,6 +833,7 @@ function BattleRulesEmptyState(props: {
   controls: RuleControl[]
   notes: string[]
   disabled: boolean
+  blockReason?: string
   onJoin: () => void
   onOpenRules: () => void
 }) {
@@ -846,6 +853,11 @@ function BattleRulesEmptyState(props: {
       <EmptyContent className='max-w-2xl'>
         <BattleControlList controls={props.controls} compact />
         <RuleNotes notes={props.notes.slice(0, 3)} />
+        {props.blockReason && (
+          <div className='text-destructive text-center text-sm font-medium'>
+            {props.blockReason}
+          </div>
+        )}
         <div className='flex w-full flex-col gap-2 sm:flex-row sm:justify-center'>
           <Button
             type='button'

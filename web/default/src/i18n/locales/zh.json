@@ -514,6 +514,7 @@
     "Balance and top-up management": "余额充值管理",
     "Balance depleted": "余额已耗尽",
     "Balance is shown in quota units": "余额以额度单位显示",
+    "Balance must be positive to join": "余额必须大于 0 才能加入",
     "Balance queried successfully": "余额查询成功",
     "Balance updated successfully": "余额更新成功",
     "Balance updated: {{balance}}": "余额已更新：{{balance}}",

@@ -514,6 +514,7 @@
     "Balance and top-up management": "Управление балансом и пополнением",
     "Balance depleted": "Баланс исчерпан",
     "Balance is shown in quota units": "Баланс показан в единицах квоты",
+    "Balance must be positive to join": "Для входа баланс должен быть положительным",
     "Balance queried successfully": "Баланс успешно запрошен",
     "Balance updated successfully": "Баланс успешно обновлён",
     "Balance updated: {{balance}}": "Баланс обновлён: {{balance}}",

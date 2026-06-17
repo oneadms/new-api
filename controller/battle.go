@@ -32,7 +32,7 @@ var battleUpgrader = websocket.Upgrader{
 
 func GetBattleStatus(c *gin.Context) {
 	userId := c.GetInt("id")
-	quota, err := model.GetUserQuota(userId, false)
+	quota, err := model.GetUserQuota(userId, true)
 	if err != nil {
 		common.SysLog("failed to get battle user quota: " + err.Error())
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
@@ -82,6 +82,20 @@ func BattleWebSocket(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": "not logged in",
+		})
+		return
+	}
+
+	quota, err := model.GetUserQuota(userId, true)
+	if err != nil {
+		common.SysLog("failed to get battle user quota before websocket: " + err.Error())
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
+		return
+	}
+	if quota <= 0 {
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"success": false,
+			"message": "Balance must be positive to join",
 		})
 		return
 	}

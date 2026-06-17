@@ -514,6 +514,7 @@
     "Balance and top-up management": "Quản lý số dư và nạp tiền",
     "Balance depleted": "Đã hết số dư",
     "Balance is shown in quota units": "Số dư được hiển thị theo đơn vị hạn mức",
+    "Balance must be positive to join": "Số dư phải dương mới có thể tham gia",
     "Balance queried successfully": "Truy vấn số dư thành công",
     "Balance updated successfully": "Đã cập nhật số dư thành công",
     "Balance updated: {{balance}}": "Số dư đã cập nhật: {{balance}}",

@@ -514,6 +514,7 @@
     "Balance and top-up management": "Gestion du solde et des recharges",
     "Balance depleted": "Solde épuisé",
     "Balance is shown in quota units": "Le solde est affiché en unités de quota",
+    "Balance must be positive to join": "Le solde doit être positif pour rejoindre",
     "Balance queried successfully": "Solde interrogé avec succès",
     "Balance updated successfully": "Solde mis à jour avec succès",
     "Balance updated: {{balance}}": "Solde mis à jour : {{balance}}",

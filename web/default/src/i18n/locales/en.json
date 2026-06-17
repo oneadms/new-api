@@ -514,6 +514,7 @@
     "Balance and top-up management": "Balance and top-up management",
     "Balance depleted": "Balance depleted",
     "Balance is shown in quota units": "Balance is shown in quota units",
+    "Balance must be positive to join": "Balance must be positive to join",
     "Balance queried successfully": "Balance queried successfully",
     "Balance updated successfully": "Balance updated successfully",
     "Balance updated: {{balance}}": "Balance updated: {{balance}}",
