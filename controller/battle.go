@@ -59,6 +59,7 @@ func GetBattleStatus(c *gin.Context) {
 			"max_round_gain":           setting.MaxRoundGainQuota,
 			"max_daily_loss":           setting.MaxDailyLossQuota,
 			"max_daily_gain":           setting.MaxDailyGainQuota,
+			"allow_negative_balance":   setting.AllowNegativeBalance,
 			"cap_quota":                setting.CapQuota,
 			"max_players":              setting.MaxPlayersPerRoom,
 			"map_width":                setting.MapWidth,

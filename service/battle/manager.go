@@ -29,6 +29,7 @@ const (
 	eventTypeSettlementFailed = "settlement_failed"
 	eventTypePowerupPickup    = "powerup_pickup"
 	eventTypeCapStormHit      = "cap_storm_hit"
+	eventTypeCapInvalid       = "cap_invalid_insufficient_quota"
 	eventTypeMatchStarted     = "match_started"
 	eventTypeMatchEnded       = "match_ended"
 	eventTypePlayerForfeit    = "player_forfeit"
@@ -63,9 +64,12 @@ const (
 	capStormMaxProjectiles   = 80
 	powerupMinSpawnDelaySecs = 8
 	powerupSpawnJitterSecs   = 8
+	maxAffordableCapCount    = int(^uint(0) >> 1)
 )
 
 var ErrBattleDisabled = errors.New("battle is disabled")
+var getBattleUserQuota = model.GetUserQuota
+var getBattleQuotaUsageSince = model.GetBattleQuotaUsageSince
 
 type Manager struct {
 	mu    sync.Mutex
@@ -771,17 +775,21 @@ func (r *Room) updateCaps(now time.Time, dt float64, settings operation_setting.
 				continue
 			}
 			if b.Kind == bulletKindCapStorm {
-				r.handleCapStormHit(b, target)
+				r.handleCapStormHit(b, target, settings)
 			} else {
 				delete(r.bullets, id)
-				r.handleHit(b, target)
+				r.handleHit(b, target, settings)
 			}
 			break
 		}
 	}
 }
 
-func (r *Room) handleHit(b *bullet, target *player) {
+func (r *Room) handleHit(b *bullet, target *player, settings operation_setting.BattleSetting) {
+	if r.affordableCapCount(b.OwnerId, target, 1, settings) < 1 {
+		r.addEvent(eventTypeCapInvalid, b.OwnerId, target.UserId, 0, 1)
+		return
+	}
 	if target.CapSources == nil {
 		target.CapSources = make(map[int]int)
 	}
@@ -790,7 +798,7 @@ func (r *Room) handleHit(b *bullet, target *player) {
 	r.addEvent(eventTypeHit, b.OwnerId, target.UserId, 0)
 }
 
-func (r *Room) handleCapStormHit(b *bullet, target *player) {
+func (r *Room) handleCapStormHit(b *bullet, target *player, settings operation_setting.BattleSetting) {
 	owner := r.players[b.OwnerId]
 	if owner == nil || owner.CapStack <= 0 {
 		r.deleteCapStormAttempt(b)
@@ -798,17 +806,23 @@ func (r *Room) handleCapStormHit(b *bullet, target *player) {
 	}
 	capCount := owner.CapStack
 	r.deleteCapStormAttempt(b)
-	clearPlayerCaps(owner)
-	owner.CapStormUntil = time.Time{}
-	if capCount <= 0 {
+	affordableCount := r.affordableCapCount(owner.UserId, target, capCount, settings)
+	if affordableCount <= 0 {
+		owner.CapStormUntil = time.Time{}
+		r.addEvent(eventTypeCapInvalid, owner.UserId, target.UserId, 0, capCount)
 		return
 	}
+	removePlayerCaps(owner, affordableCount)
+	owner.CapStormUntil = time.Time{}
 	if target.CapSources == nil {
 		target.CapSources = make(map[int]int)
 	}
-	target.CapSources[owner.UserId] += capCount
-	target.CapStack += capCount
-	r.addEvent(eventTypeCapStormHit, owner.UserId, target.UserId, 0, capCount)
+	target.CapSources[owner.UserId] += affordableCount
+	target.CapStack += affordableCount
+	r.addEvent(eventTypeCapStormHit, owner.UserId, target.UserId, 0, affordableCount)
+	if invalidCount := capCount - affordableCount; invalidCount > 0 {
+		r.addEvent(eventTypeCapInvalid, owner.UserId, target.UserId, 0, invalidCount)
+	}
 }
 
 func (r *Room) deleteCapStormAttempt(b *bullet) {
@@ -1017,7 +1031,7 @@ func (r *Room) settlePlayerCaps(target *player, settings operation_setting.Battl
 			ToUserId:          settlement.UserId,
 			Quota:             settlement.Amount,
 			Reason:            "cap_settle",
-			AllowNegativeFrom: true,
+			AllowNegativeFrom: settings.AllowNegativeBalance,
 			FromUsageLimit: &model.BattleQuotaLimit{
 				Since: dailyStart,
 				Max:   settings.MaxDailyLossQuota,
@@ -1046,11 +1060,18 @@ func (r *Room) maxCapSettlementAmount(target *player, totalCaps int, settings op
 	amount = minPositive(amount, settings.MaxRoundLossQuota-r.roundLosses[target.UserId])
 
 	dailyStart := model.BattleDailyUsageStart()
-	usage, err := model.GetBattleQuotaUsageSince(target.UserId, dailyStart)
+	usage, err := getBattleQuotaUsageSince(target.UserId, dailyStart)
 	if err != nil {
 		return 0
 	}
 	amount = minPositive(amount, settings.MaxDailyLossQuota-usage.Lost)
+	if !settings.AllowNegativeBalance {
+		quota, err := getBattleUserQuota(target.UserId, true)
+		if err != nil {
+			return 0
+		}
+		amount = minPositive(amount, quota)
+	}
 	return amount
 }
 
@@ -1097,7 +1118,7 @@ func (r *Room) allocateCapSettlements(target *player, totalCaps int, totalAmount
 func (r *Room) remainingCapGain(userId int, settings operation_setting.BattleSetting) int {
 	remaining := settings.MaxRoundGainQuota - r.roundGains[userId]
 	dailyStart := model.BattleDailyUsageStart()
-	usage, err := model.GetBattleQuotaUsageSince(userId, dailyStart)
+	usage, err := getBattleQuotaUsageSince(userId, dailyStart)
 	if err != nil {
 		return 0
 	}
@@ -1250,6 +1271,131 @@ func clearPlayerCaps(p *player) {
 	}
 	p.CapStack = 0
 	p.CapSources = make(map[int]int)
+}
+
+func removePlayerCaps(p *player, count int) int {
+	if p == nil || count <= 0 || p.CapStack <= 0 {
+		return 0
+	}
+	if count >= p.CapStack {
+		removed := p.CapStack
+		clearPlayerCaps(p)
+		return removed
+	}
+
+	removed := 0
+	if len(p.CapSources) == 0 {
+		p.CapStack -= count
+		if p.CapStack < 0 {
+			p.CapStack = 0
+		}
+		return count
+	}
+	sourceIds := make([]int, 0, len(p.CapSources))
+	for userId := range p.CapSources {
+		sourceIds = append(sourceIds, userId)
+	}
+	sort.Ints(sourceIds)
+	for _, userId := range sourceIds {
+		if removed >= count {
+			break
+		}
+		available := p.CapSources[userId]
+		if available <= 0 {
+			delete(p.CapSources, userId)
+			continue
+		}
+		take := count - removed
+		if take > available {
+			take = available
+		}
+		p.CapSources[userId] -= take
+		if p.CapSources[userId] <= 0 {
+			delete(p.CapSources, userId)
+		}
+		removed += take
+	}
+	p.CapStack -= removed
+	if p.CapStack < 0 {
+		p.CapStack = 0
+	}
+	return removed
+}
+
+func (r *Room) affordableCapCount(ownerId int, target *player, requested int, settings operation_setting.BattleSetting) int {
+	if ownerId <= 0 || target == nil || requested <= 0 {
+		return 0
+	}
+	if settings.CapQuota <= 0 || settings.AllowNegativeBalance {
+		return requested
+	}
+	count := requested
+	if targetCount := r.payableCapCount(target, settings); targetCount < count {
+		count = targetCount
+	}
+	if ownerCount := r.offensiveCapCount(ownerId, settings); ownerCount < count {
+		count = ownerCount
+	}
+	if count < 0 {
+		return 0
+	}
+	return count
+}
+
+func (r *Room) payableCapCount(target *player, settings operation_setting.BattleSetting) int {
+	if target == nil {
+		return 0
+	}
+	remaining := settings.MaxRoundLossQuota - r.roundLosses[target.UserId] - target.CapStack*settings.CapQuota
+
+	dailyStart := model.BattleDailyUsageStart()
+	usage, err := getBattleQuotaUsageSince(target.UserId, dailyStart)
+	if err != nil {
+		return 0
+	}
+	remaining = minInt(remaining, settings.MaxDailyLossQuota-usage.Lost-target.CapStack*settings.CapQuota)
+
+	quota, err := getBattleUserQuota(target.UserId, true)
+	if err != nil {
+		return 0
+	}
+	remaining = minInt(remaining, quota-target.CapStack*settings.CapQuota)
+	return quotaToCapCount(remaining, settings.CapQuota)
+}
+
+func (r *Room) offensiveCapCount(ownerId int, settings operation_setting.BattleSetting) int {
+	if ownerId <= 0 {
+		return 0
+	}
+	quota, err := getBattleUserQuota(ownerId, true)
+	if err != nil {
+		return 0
+	}
+	pendingLoss := 0
+	if owner := r.players[ownerId]; owner != nil {
+		pendingLoss = owner.CapStack * settings.CapQuota
+	}
+	pendingReward := r.pendingCapGain(ownerId, settings)
+	remaining := quota - pendingLoss - pendingReward
+	remaining = minInt(remaining, settings.MaxRoundGainQuota-r.roundGains[ownerId]-pendingReward)
+
+	dailyStart := model.BattleDailyUsageStart()
+	usage, err := getBattleQuotaUsageSince(ownerId, dailyStart)
+	if err != nil {
+		return 0
+	}
+	remaining = minInt(remaining, settings.MaxDailyGainQuota-usage.Won-pendingReward)
+	return quotaToCapCount(remaining, settings.CapQuota)
+}
+
+func quotaToCapCount(quota int, capQuota int) int {
+	if capQuota <= 0 {
+		return maxAffordableCapCount
+	}
+	if quota <= 0 {
+		return 0
+	}
+	return quota / capQuota
 }
 
 func (p *player) capStormActive(now time.Time) bool {
@@ -1614,6 +1760,13 @@ func minPositive(value int, limit int) int {
 		return limit
 	}
 	return value
+}
+
+func minInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func newBattleObjectId(prefix string) string {

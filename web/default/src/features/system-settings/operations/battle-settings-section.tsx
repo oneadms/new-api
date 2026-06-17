@@ -54,6 +54,7 @@ const createSchema = () =>
     enabled: z.boolean(),
     hideRoomInput: z.boolean(),
     matchModeEnabled: z.boolean(),
+    allowNegativeBalance: z.boolean(),
     capQuota: z.coerce.number().int().min(0),
     maxRoundLossQuota: z.coerce.number().int().min(0),
     maxRoundGainQuota: z.coerce.number().int().min(0),
@@ -72,7 +73,11 @@ const createSchema = () =>
 type Values = z.infer<ReturnType<typeof createSchema>>
 type NumericFieldName = Exclude<
   keyof Values,
-  'enabled' | 'hideRoomInput' | 'matchModeEnabled' | 'matchStartAt'
+  | 'enabled'
+  | 'hideRoomInput'
+  | 'matchModeEnabled'
+  | 'allowNegativeBalance'
+  | 'matchStartAt'
 >
 
 type BattleSettingsSectionProps = {
@@ -83,6 +88,7 @@ const optionKeys: Record<keyof Values, string> = {
   enabled: 'battle_setting.enabled',
   hideRoomInput: 'battle_setting.hide_room_input',
   matchModeEnabled: 'battle_setting.match_mode_enabled',
+  allowNegativeBalance: 'battle_setting.allow_negative_balance',
   capQuota: 'battle_setting.cap_quota',
   maxRoundLossQuota: 'battle_setting.max_round_loss_quota',
   maxRoundGainQuota: 'battle_setting.max_round_gain_quota',
@@ -334,6 +340,31 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
                       <FormDescription>
                         {t(
                           'Players wait for a scheduled or manually started match; normal match end settles all caps.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={updateOption.isPending || isSubmitting}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='allowNegativeBalance'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>
+                        {t('Allow negative battle balance')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'When disabled, cap hits require enough balance coverage and invalid hits do not stack or settle.'
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>

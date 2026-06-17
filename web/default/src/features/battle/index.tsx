@@ -106,6 +106,7 @@ const battleEventTypes = new Set<BattleEvent['type']>([
   'settlement_failed',
   'powerup_pickup',
   'cap_storm_hit',
+  'cap_invalid_insufficient_quota',
   'match_started',
   'match_ended',
   'player_forfeit',
@@ -285,6 +286,7 @@ export function Battle() {
   const renderAtRef = useRef<number | null>(null)
   const hudUpdateAtRef = useRef(0)
   const hudUpdateTimerRef = useRef<number | null>(null)
+  const eventToastSeenRef = useRef<Set<string>>(new Set())
   const [roomId, setRoomId] = useState('')
   const [connectionState, setConnectionState] =
     useState<ConnectionState>('idle')
@@ -383,6 +385,7 @@ export function Battle() {
     snapshotBufferRef.current = []
     predictedPlayerRef.current = null
     renderAtRef.current = null
+    eventToastSeenRef.current.clear()
     clearHudUpdateTimer()
     setConnectionState('closed')
   }, [clearHudUpdateTimer])
@@ -420,6 +423,7 @@ export function Battle() {
     snapshotBufferRef.current = []
     predictedPlayerRef.current = null
     renderAtRef.current = null
+    eventToastSeenRef.current.clear()
     setSnapshot(null)
     clearHudUpdateTimer()
     hudUpdateAtRef.current = 0
@@ -472,6 +476,7 @@ export function Battle() {
       snapshotBufferRef.current = []
       predictedPlayerRef.current = null
       renderAtRef.current = null
+      eventToastSeenRef.current.clear()
       clearHudUpdateTimer()
     }
   }, [clearHudUpdateTimer])
@@ -515,7 +520,8 @@ export function Battle() {
             interpolatedSnapshot ?? snapshotRef.current,
             predictedPlayer
           ),
-          t('Forgive Cap Battle')
+          t('Forgive Cap Battle'),
+          t('Invalid')
         )
       }
       frame = window.requestAnimationFrame(draw)
@@ -577,6 +583,26 @@ export function Battle() {
     }
   }, [sendInput])
 
+  useEffect(() => {
+    if (!snapshot) return
+    for (const event of snapshot.events) {
+      if (event.type !== 'cap_invalid_insufficient_quota') continue
+      if (eventToastSeenRef.current.has(event.id)) continue
+      eventToastSeenRef.current.add(event.id)
+      if (
+        event.user_id === snapshot.me ||
+        event.target_user_id === snapshot.me
+      ) {
+        toast.info(t('Cap invalid: quota insufficient'))
+      }
+    }
+    if (eventToastSeenRef.current.size > 80) {
+      eventToastSeenRef.current = new Set(
+        [...eventToastSeenRef.current].slice(-40)
+      )
+    }
+  }, [snapshot, t])
+
   const status = battleStatus.data
   const events = snapshot?.events ?? []
   const connected = connectionState === 'connected'
@@ -629,8 +655,13 @@ export function Battle() {
         'Pick one up to fling every cap on your own head with J for a limited time.'
       ),
       t(
-        'A Cap Storm hit moves the whole stack onto the target; missed throws can be retried until the timer ends.'
+        'A Cap Storm hit moves as many caps as balance coverage allows; missed throws can be retried until the timer ends.'
       ),
+      status?.allow_negative_balance
+        ? t('This room allows battle settlement to take balances negative.')
+        : t(
+            'Hits only count when both players have enough balance coverage; otherwise the cap shows Invalid and does not stack or settle.'
+          ),
       t('Each cap is currently worth {{quota}}.', { quota: capQuotaText }),
       t(
         'When a match ends normally, players lose quota for caps on their own head and the throwers receive that quota.'
@@ -639,7 +670,7 @@ export function Battle() {
         'If you force quit, caps on your own head still settle as losses, but your pending rewards from caps on other players are cleared.'
       ),
     ],
-    [capQuotaText, t]
+    [capQuotaText, status?.allow_negative_balance, t]
   )
   const connectionLabel = {
     idle: t('Idle'),
@@ -1095,6 +1126,13 @@ function battleEventText(
       user,
       target,
       count: event.cap_count ?? 0,
+    })
+  }
+  if (event.type === 'cap_invalid_insufficient_quota') {
+    return t('{{count}} cap(s) from {{user}} were invalid on {{target}}', {
+      user,
+      target,
+      count: event.cap_count ?? 1,
     })
   }
   if (event.type === 'cap_settlement') {

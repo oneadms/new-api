@@ -328,6 +328,7 @@ export type OperationsSettings = {
   'battle_setting.max_round_gain_quota': number
   'battle_setting.max_daily_loss_quota': number
   'battle_setting.max_daily_gain_quota': number
+  'battle_setting.allow_negative_balance': boolean
   'battle_setting.cap_quota': number
   'battle_setting.max_players_per_room': number
   'battle_setting.tick_rate': number

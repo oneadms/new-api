@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,6 +27,22 @@ func battleSimulationSettings() operation_setting.BattleSetting {
 		DropPickupRadius:  38,
 		DropExpireSeconds: 18,
 	}
+}
+
+func stubBattleQuota(t *testing.T, quotas map[int]int) {
+	t.Helper()
+	originalQuota := getBattleUserQuota
+	originalUsage := getBattleQuotaUsageSince
+	getBattleUserQuota = func(userId int, _ bool) (int, error) {
+		return quotas[userId], nil
+	}
+	getBattleQuotaUsageSince = func(int, int64) (model.BattleQuotaUsage, error) {
+		return model.BattleQuotaUsage{}, nil
+	}
+	t.Cleanup(func() {
+		getBattleUserQuota = originalQuota
+		getBattleQuotaUsageSince = originalUsage
+	})
 }
 
 func TestNormalizeRoomId(t *testing.T) {
@@ -258,6 +275,7 @@ func TestBroadcastSnapshotIncludesPlayerAckSeq(t *testing.T) {
 func TestUpdateCapsStacksCapsOnTargetHead(t *testing.T) {
 	room := newRoom("test", NewManager())
 	settings := battleSimulationSettings()
+	stubBattleQuota(t, map[int]int{1: 1000, 2: 1000})
 	now := time.Now()
 	attacker := &player{UserId: 1, X: 500, Y: 500, Alive: true}
 	target := &player{UserId: 2, X: 560, Y: 500, Alive: true}
@@ -279,6 +297,66 @@ func TestUpdateCapsStacksCapsOnTargetHead(t *testing.T) {
 	assert.Empty(t, room.bullets)
 	require.Len(t, room.events, 1)
 	assert.Equal(t, eventTypeHit, room.events[0].Type)
+}
+
+func TestUpdateCapsMarksInvalidWhenTargetCannotCoverCap(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	stubBattleQuota(t, map[int]int{1: 1000, 2: 50})
+	now := time.Now()
+	attacker := &player{UserId: 1, X: 500, Y: 500, Alive: true}
+	target := &player{UserId: 2, X: 560, Y: 500, Alive: true}
+	room.players[attacker.UserId] = attacker
+	room.players[target.UserId] = target
+
+	room.bullets["cap"] = &bullet{
+		Id:        "cap",
+		OwnerId:   attacker.UserId,
+		X:         target.X,
+		Y:         target.Y - playerHeight/2 + 8,
+		ExpiresAt: now.Add(time.Second),
+	}
+	room.updateCaps(now, 0.01, settings)
+
+	assert.Zero(t, target.CapStack)
+	assert.Empty(t, target.CapSources)
+	assert.Empty(t, room.bullets)
+	require.Len(t, room.events, 1)
+	assert.Equal(t, eventTypeCapInvalid, room.events[0].Type)
+	assert.Equal(t, attacker.UserId, room.events[0].UserId)
+	assert.Equal(t, target.UserId, room.events[0].TargetUserId)
+	assert.Equal(t, 1, room.events[0].CapCount)
+}
+
+func TestUpdateCapsMarksInvalidWhenThrowerCannotCoverPendingRewards(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	stubBattleQuota(t, map[int]int{1: 100, 2: 1000, 3: 1000})
+	now := time.Now()
+	attacker := &player{UserId: 1, X: 500, Y: 500, Alive: true}
+	existingTarget := &player{
+		UserId:     3,
+		CapStack:   1,
+		CapSources: map[int]int{1: 1},
+		Alive:      true,
+	}
+	target := &player{UserId: 2, X: 560, Y: 500, Alive: true}
+	room.players[attacker.UserId] = attacker
+	room.players[target.UserId] = target
+	room.players[existingTarget.UserId] = existingTarget
+
+	room.bullets["cap"] = &bullet{
+		Id:        "cap",
+		OwnerId:   attacker.UserId,
+		X:         target.X,
+		Y:         target.Y - playerHeight/2 + 8,
+		ExpiresAt: now.Add(time.Second),
+	}
+	room.updateCaps(now, 0.01, settings)
+
+	assert.Zero(t, target.CapStack)
+	require.Len(t, room.events, 1)
+	assert.Equal(t, eventTypeCapInvalid, room.events[0].Type)
 }
 
 func TestUpdatePowerupPickupsActivatesCapStorm(t *testing.T) {
@@ -347,6 +425,8 @@ func TestTrySpawnCapStormLaunchesOneProjectilePerHeadCap(t *testing.T) {
 
 func TestCapStormHitTransfersWholeStackToTarget(t *testing.T) {
 	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	stubBattleQuota(t, map[int]int{1: 1000, 3: 1000})
 	now := time.Now()
 	owner := &player{
 		UserId:        1,
@@ -386,7 +466,7 @@ func TestCapStormHitTransfersWholeStackToTarget(t *testing.T) {
 		ExpiresAt: now.Add(time.Second),
 	}
 
-	room.handleCapStormHit(room.bullets["storm-1"], target)
+	room.handleCapStormHit(room.bullets["storm-1"], target, settings)
 
 	assert.Zero(t, owner.CapStack)
 	assert.Empty(t, owner.CapSources)
@@ -400,6 +480,46 @@ func TestCapStormHitTransfersWholeStackToTarget(t *testing.T) {
 	assert.Equal(t, owner.UserId, room.events[0].UserId)
 	assert.Equal(t, target.UserId, room.events[0].TargetUserId)
 	assert.Equal(t, 5, room.events[0].CapCount)
+}
+
+func TestCapStormHitLeavesUnaffordableCapsOnOwner(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	stubBattleQuota(t, map[int]int{1: 1000, 3: 250})
+	now := time.Now()
+	owner := &player{
+		UserId:        1,
+		X:             400,
+		Y:             500,
+		Alive:         true,
+		CapStack:      5,
+		CapSources:    map[int]int{2: 5},
+		CapStormUntil: now.Add(capStormDuration),
+	}
+	target := &player{UserId: 3, X: 560, Y: 500, Alive: true}
+	room.players[owner.UserId] = owner
+	room.players[target.UserId] = target
+	room.bullets["storm-1"] = &bullet{
+		Id:        "storm-1",
+		Kind:      bulletKindCapStorm,
+		OwnerId:   owner.UserId,
+		AttemptId: "attempt",
+		X:         target.X,
+		Y:         target.Y - playerHeight/2 + 8,
+		ExpiresAt: now.Add(time.Second),
+	}
+
+	room.handleCapStormHit(room.bullets["storm-1"], target, settings)
+
+	assert.Equal(t, 3, owner.CapStack)
+	assert.Equal(t, 3, owner.CapSources[2])
+	assert.Equal(t, 2, target.CapStack)
+	assert.Equal(t, 2, target.CapSources[owner.UserId])
+	require.Len(t, room.events, 2)
+	assert.Equal(t, eventTypeCapStormHit, room.events[0].Type)
+	assert.Equal(t, 2, room.events[0].CapCount)
+	assert.Equal(t, eventTypeCapInvalid, room.events[1].Type)
+	assert.Equal(t, 3, room.events[1].CapCount)
 }
 
 func battleTestPlatform(t *testing.T, settings operation_setting.BattleSetting, id string) platform {

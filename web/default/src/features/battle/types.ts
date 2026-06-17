@@ -27,6 +27,7 @@ export type BattleStatus = {
   max_round_gain: number
   max_daily_loss: number
   max_daily_gain: number
+  allow_negative_balance: boolean
   max_players: number
   map_width: number
   map_height: number
@@ -83,6 +84,7 @@ export type BattleEvent = {
     | 'settlement_failed'
     | 'powerup_pickup'
     | 'cap_storm_hit'
+    | 'cap_invalid_insufficient_quota'
     | 'match_started'
     | 'match_ended'
     | 'player_forfeit'

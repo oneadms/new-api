@@ -108,6 +108,8 @@ const OPERATIONS_SECTIONS = [
           maxRoundGainQuota: settings['battle_setting.max_round_gain_quota'],
           maxDailyLossQuota: settings['battle_setting.max_daily_loss_quota'],
           maxDailyGainQuota: settings['battle_setting.max_daily_gain_quota'],
+          allowNegativeBalance:
+            settings['battle_setting.allow_negative_balance'],
           maxPlayersPerRoom: settings['battle_setting.max_players_per_room'],
           tickRate: settings['battle_setting.tick_rate'],
           playerSpeed: settings['battle_setting.player_speed'],

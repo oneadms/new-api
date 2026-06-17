@@ -71,6 +71,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'battle_setting.max_round_gain_quota': 5000,
   'battle_setting.max_daily_loss_quota': 20000,
   'battle_setting.max_daily_gain_quota': 20000,
+  'battle_setting.allow_negative_balance': false,
   'battle_setting.cap_quota': 100,
   'battle_setting.max_players_per_room': 8,
   'battle_setting.tick_rate': 30,

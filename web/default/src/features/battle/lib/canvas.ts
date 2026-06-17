@@ -52,12 +52,18 @@ const PLAYER_SPRITE_WIDTH = 58
 const CAP_STACK_GAP = 11
 const BRICK_IMAGE_WIDTH = 60
 const BRICK_IMAGE_HEIGHT = 20
+const MAX_RENDERED_STACK_CAPS = 36
+const HEAVY_BULLET_COUNT = 40
 
 let backgroundImage: HTMLImageElement | null = null
 let brickImage: HTMLImageElement | null = null
 let capImage: HTMLImageElement | null = null
 let playerImage: HTMLImageElement | null = null
 let playerThrowImages: HTMLImageElement[] | null = null
+let arenaCache: {
+  key: string
+  canvas: HTMLCanvasElement
+} | null = null
 
 function getBackgroundImage(): HTMLImageElement | null {
   if (typeof Image === 'undefined') return null
@@ -155,7 +161,8 @@ export function screenToWorld(
 export function drawBattleCanvas(
   canvas: HTMLCanvasElement,
   snapshot: BattleSnapshot | null,
-  emptyLabel: string
+  emptyLabel: string,
+  invalidLabel: string
 ): void {
   resizeCanvas(canvas)
   const ctx = canvas.getContext('2d')
@@ -184,9 +191,20 @@ export function drawBattleCanvas(
   const bullets = Array.isArray(snapshot.bullets) ? snapshot.bullets : []
   const players = Array.isArray(snapshot.players) ? snapshot.players : []
   const powerups = Array.isArray(snapshot.powerups) ? snapshot.powerups : []
+  const heavyScene = bullets.length > HEAVY_BULLET_COUNT
+  const invalidTargetIds = new Set(
+    snapshot.events
+      .filter(
+        (event) =>
+          event.type === 'cap_invalid_insufficient_quota' &&
+          snapshot.server_time - event.created_at < 1200 &&
+          event.target_user_id
+      )
+      .map((event) => event.target_user_id)
+  )
 
   powerups.forEach((powerup) => drawPowerup(ctx, powerup, metrics))
-  bullets.forEach((bullet) => drawFlyingCap(ctx, bullet, metrics))
+  bullets.forEach((bullet) => drawFlyingCap(ctx, bullet, metrics, heavyScene))
 
   const throwingPlayerIds = new Set(bullets.map((bullet) => bullet.owner_id))
   players.forEach((player) => {
@@ -195,7 +213,8 @@ export function drawBattleCanvas(
       player,
       metrics,
       throwingPlayerIds.has(player.user_id),
-      (player.cap_storm_until ?? 0) > snapshot.server_time
+      (player.cap_storm_until ?? 0) > snapshot.server_time,
+      invalidTargetIds.has(player.user_id) ? invalidLabel : ''
     )
   })
 }
@@ -207,16 +226,70 @@ function drawArena(
   mapHeight: number,
   platforms?: BattlePlatform[]
 ): void {
-  ctx.save()
-  ctx.translate(metrics.offsetX, metrics.offsetY)
-  drawBackground(ctx, metrics)
-
   const platformList =
     platforms && platforms.length > 0
       ? platforms
       : createFallbackPlatforms(mapWidth, mapHeight)
-  platformList.forEach((platform) => drawBrickPlatform(ctx, platform, metrics))
+  const cacheWidth = Math.max(1, Math.ceil(metrics.width))
+  const cacheHeight = Math.max(1, Math.ceil(metrics.height))
+  const cacheKey = arenaCacheKey(
+    cacheWidth,
+    cacheHeight,
+    mapWidth,
+    mapHeight,
+    platformList
+  )
+  if (
+    !arenaCache ||
+    arenaCache.key !== cacheKey ||
+    arenaCache.canvas.width !== cacheWidth ||
+    arenaCache.canvas.height !== cacheHeight
+  ) {
+    const cacheCanvas = document.createElement('canvas')
+    cacheCanvas.width = cacheWidth
+    cacheCanvas.height = cacheHeight
+    const cacheCtx = cacheCanvas.getContext('2d')
+    if (cacheCtx) {
+      const cacheMetrics = {
+        ...metrics,
+        offsetX: 0,
+        offsetY: 0,
+        width: cacheWidth,
+        height: cacheHeight,
+      }
+      drawBackground(cacheCtx, cacheMetrics)
+      platformList.forEach((platform) =>
+        drawBrickPlatform(cacheCtx, platform, cacheMetrics)
+      )
+    }
+    arenaCache = { key: cacheKey, canvas: cacheCanvas }
+  }
+  ctx.save()
+  ctx.translate(metrics.offsetX, metrics.offsetY)
+  ctx.drawImage(arenaCache.canvas, 0, 0, metrics.width, metrics.height)
   ctx.restore()
+}
+
+function arenaCacheKey(
+  width: number,
+  height: number,
+  mapWidth: number,
+  mapHeight: number,
+  platforms: BattlePlatform[]
+): string {
+  const backgroundReady = Boolean(
+    backgroundImage?.complete && backgroundImage.naturalWidth > 0
+  )
+  const brickReady = Boolean(
+    brickImage?.complete && brickImage.naturalWidth > 0
+  )
+  const platformKey = platforms
+    .map(
+      (platform) =>
+        `${platform.id}:${platform.x}:${platform.y}:${platform.w}:${platform.h}:${platform.one_way ? 1 : 0}`
+    )
+    .join('|')
+  return `${width}x${height}:${mapWidth}x${mapHeight}:${backgroundReady ? 1 : 0}:${brickReady ? 1 : 0}:${platformKey}`
 }
 
 function drawBackground(
@@ -321,7 +394,8 @@ function createFallbackPlatforms(
 function drawFlyingCap(
   ctx: CanvasRenderingContext2D,
   bullet: BattleBullet,
-  metrics: CanvasMetrics
+  metrics: CanvasMetrics,
+  heavyScene: boolean
 ): void {
   const point = toScreen(bullet.x, bullet.y, metrics)
   const isStormCap = bullet.kind === 'cap_storm'
@@ -333,10 +407,12 @@ function drawFlyingCap(
   const arcTilt = Math.atan2(bullet.vy || 0, bullet.vx || 1) * 0.2
 
   ctx.save()
-  ctx.shadowColor = isStormCap
-    ? 'rgba(250, 204, 21, 0.82)'
-    : 'rgba(34, 197, 94, 0.65)'
-  ctx.shadowBlur = (isStormCap ? 24 : 16) * metrics.scale
+  ctx.shadowColor = heavyScene
+    ? 'transparent'
+    : isStormCap
+      ? 'rgba(250, 204, 21, 0.82)'
+      : 'rgba(34, 197, 94, 0.65)'
+  ctx.shadowBlur = heavyScene ? 0 : (isStormCap ? 24 : 16) * metrics.scale
   drawCapSprite(
     ctx,
     point.x,
@@ -400,7 +476,8 @@ function drawPlayer(
   player: BattlePlayer,
   metrics: CanvasMetrics,
   isThrowing: boolean,
-  hasCapStorm: boolean
+  hasCapStorm: boolean,
+  invalidLabel: string
 ): void {
   const point = toScreen(player.x, player.y, metrics)
   const radius = PLAYER_RADIUS * metrics.scale
@@ -457,6 +534,33 @@ function drawPlayer(
       spriteTop - Math.min(capCount, 10) * CAP_STACK_GAP * metrics.scale
     )
   }
+  if (invalidLabel) {
+    drawInvalidLabel(
+      ctx,
+      point.x,
+      spriteTop - 18 * metrics.scale,
+      invalidLabel,
+      metrics
+    )
+  }
+  ctx.restore()
+}
+
+function drawInvalidLabel(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  label: string,
+  metrics: CanvasMetrics
+): void {
+  ctx.save()
+  ctx.font = `800 ${Math.max(13, 16 * metrics.scale)}px system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.lineWidth = Math.max(3, 4 * metrics.scale)
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.88)'
+  ctx.fillStyle = 'rgba(248, 113, 113, 0.98)'
+  ctx.strokeText(label, x, y)
+  ctx.fillText(label, x, y)
   ctx.restore()
 }
 
@@ -511,10 +615,15 @@ function drawCapStack(
   const gap = CAP_STACK_GAP * metrics.scale
   const now =
     typeof performance !== 'undefined' ? performance.now() : Date.now()
-  for (let index = 0; index < capCount; index += 1) {
-    const y = headY - index * gap
-    const sway = Math.sin((now + index * 137) / 280) * 1.5 * metrics.scale
-    const rotation = -0.1 + Math.sin((now + index * 83) / 420) * 0.08
+  const renderedCount = Math.min(capCount, MAX_RENDERED_STACK_CAPS)
+  for (let drawIndex = 0; drawIndex < renderedCount; drawIndex += 1) {
+    const stackIndex =
+      capCount <= MAX_RENDERED_STACK_CAPS
+        ? drawIndex
+        : Math.round((drawIndex * (capCount - 1)) / (renderedCount - 1))
+    const y = headY - stackIndex * gap
+    const sway = Math.sin((now + stackIndex * 137) / 280) * 1.5 * metrics.scale
+    const rotation = -0.1 + Math.sin((now + stackIndex * 83) / 420) * 0.08
     drawCapSprite(ctx, x + sway, y, capWidth, rotation, 1)
   }
 }
