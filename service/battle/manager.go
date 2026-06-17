@@ -941,12 +941,13 @@ func (r *Room) settlePlayerCaps(target *player, settings operation_setting.Battl
 			continue
 		}
 		_, err := model.TransferBattleQuota(model.BattleQuotaTransferParams{
-			RoomId:     r.id,
-			EventId:    newBattleObjectId("cap-settle"),
-			FromUserId: target.UserId,
-			ToUserId:   settlement.UserId,
-			Quota:      settlement.Amount,
-			Reason:     "cap_settle",
+			RoomId:            r.id,
+			EventId:           newBattleObjectId("cap-settle"),
+			FromUserId:        target.UserId,
+			ToUserId:          settlement.UserId,
+			Quota:             settlement.Amount,
+			Reason:            "cap_settle",
+			AllowNegativeFrom: true,
 			FromUsageLimit: &model.BattleQuotaLimit{
 				Since: dailyStart,
 				Max:   settings.MaxDailyLossQuota,
@@ -972,11 +973,6 @@ func (r *Room) settlePlayerCaps(target *player, settings operation_setting.Battl
 
 func (r *Room) maxCapSettlementAmount(target *player, totalCaps int, settings operation_setting.BattleSetting) int {
 	amount := totalCaps * settings.CapQuota
-	balance, err := model.GetUserQuota(target.UserId, true)
-	if err != nil {
-		return 0
-	}
-	amount = minPositive(amount, balance)
 	amount = minPositive(amount, settings.MaxRoundLossQuota-r.roundLosses[target.UserId])
 
 	dailyStart := model.BattleDailyUsageStart()

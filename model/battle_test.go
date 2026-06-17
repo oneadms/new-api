@@ -31,6 +31,7 @@ func createBattleTestUser(t *testing.T, id int, quota int) {
 		Password: "battle-test-password",
 		Status:   common.UserStatusEnabled,
 		Quota:    quota,
+		AffCode:  fmt.Sprintf("battle-aff-%d", id),
 	}).Error)
 }
 
@@ -221,6 +222,56 @@ func TestBattleCreditLimitUsesWonQuota(t *testing.T) {
 	usage, err := GetBattleQuotaUsageSince(2, start)
 	require.NoError(t, err)
 	assert.Equal(t, BattleQuotaUsage{Lost: 0, Won: 80}, usage)
+}
+
+func TestTransferBattleQuotaInsufficientBalanceRollsBackByDefault(t *testing.T) {
+	resetBattleTestTables(t)
+	createBattleTestUser(t, 1, 100)
+	createBattleTestUser(t, 2, 50)
+
+	_, err := TransferBattleQuota(BattleQuotaTransferParams{
+		RoomId:     "room-a",
+		EventId:    "transfer-too-large",
+		FromUserId: 1,
+		ToUserId:   2,
+		Quota:      101,
+		Reason:     "cap_settle",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrBattleQuotaInsufficient))
+	assert.Equal(t, 100, battleTestUserQuota(t, 1))
+	assert.Equal(t, 50, battleTestUserQuota(t, 2))
+
+	var recordCount int64
+	require.NoError(t, DB.Model(&BattleRecord{}).Count(&recordCount).Error)
+	assert.Zero(t, recordCount)
+}
+
+func TestTransferBattleQuotaAllowsNegativeFromBalance(t *testing.T) {
+	resetBattleTestTables(t)
+	createBattleTestUser(t, 1, 100)
+	createBattleTestUser(t, 2, 50)
+
+	record, err := TransferBattleQuota(BattleQuotaTransferParams{
+		RoomId:            "room-a",
+		EventId:           "transfer-negative",
+		FromUserId:        1,
+		ToUserId:          2,
+		Quota:             250,
+		Reason:            "cap_settle",
+		AllowNegativeFrom: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	assert.Equal(t, -150, battleTestUserQuota(t, 1))
+	assert.Equal(t, 300, battleTestUserQuota(t, 2))
+	assert.Equal(t, 1, record.FromUserId)
+	assert.Equal(t, 2, record.ToUserId)
+	assert.Equal(t, 250, record.Quota)
+
+	usage, err := GetBattleQuotaUsageSince(1, BattleDailyUsageStart())
+	require.NoError(t, err)
+	assert.Equal(t, BattleQuotaUsage{Lost: 250, Won: 0}, usage)
 }
 
 func TestGetBattleDailyQuotaUsage(t *testing.T) {

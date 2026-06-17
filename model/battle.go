@@ -50,14 +50,15 @@ type BattleQuotaMutationParams struct {
 }
 
 type BattleQuotaTransferParams struct {
-	RoomId         string
-	EventId        string
-	FromUserId     int
-	ToUserId       int
-	Quota          int
-	Reason         string
-	FromUsageLimit *BattleQuotaLimit
-	ToUsageLimit   *BattleQuotaLimit
+	RoomId            string
+	EventId           string
+	FromUserId        int
+	ToUserId          int
+	Quota             int
+	Reason            string
+	AllowNegativeFrom bool
+	FromUsageLimit    *BattleQuotaLimit
+	ToUsageLimit      *BattleQuotaLimit
 }
 
 func DebitBattleQuota(params BattleQuotaMutationParams) (*BattleRecord, error) {
@@ -173,7 +174,7 @@ func TransferBattleQuota(params BattleQuotaTransferParams) (*BattleRecord, error
 		if firstUser.Id != params.FromUserId {
 			fromUser = secondUser
 		}
-		if fromUser.Quota < params.Quota {
+		if !params.AllowNegativeFrom && fromUser.Quota < params.Quota {
 			return ErrBattleQuotaInsufficient
 		}
 		if err := enforceBattleQuotaLimit(tx, "from_user_id", params.FromUserId, params.Quota, params.FromUsageLimit); err != nil {
@@ -185,13 +186,18 @@ func TransferBattleQuota(params BattleQuotaTransferParams) (*BattleRecord, error
 		if err := tx.Create(record).Error; err != nil {
 			return err
 		}
-		result := tx.Model(&User{}).
-			Where("id = ? AND quota >= ?", params.FromUserId, params.Quota).
-			Update("quota", gorm.Expr("quota - ?", params.Quota))
+		fromUpdate := tx.Model(&User{}).Where("id = ?", params.FromUserId)
+		if !params.AllowNegativeFrom {
+			fromUpdate = fromUpdate.Where("quota >= ?", params.Quota)
+		}
+		result := fromUpdate.Update("quota", gorm.Expr("quota - ?", params.Quota))
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
+			if params.AllowNegativeFrom {
+				return ErrBattleUserNotFound
+			}
 			return ErrBattleQuotaInsufficient
 		}
 		result = tx.Model(&User{}).
