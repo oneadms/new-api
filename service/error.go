@@ -83,6 +83,57 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 	return claudeErr
 }
 
+const (
+	upstreamErrorPublicMessage          = "上游服务暂时不可用，请稍后重试"
+	upstreamRateLimitErrorPublicMessage = "上游服务繁忙，请稍后重试"
+)
+
+func HideUpstreamErrorMessage(newApiErr *types.NewAPIError, enabled bool) {
+	if !enabled || !shouldHideUpstreamErrorMessage(newApiErr) {
+		return
+	}
+	newApiErr.SetPublicMessage(upstreamErrorMessageForStatus(newApiErr.StatusCode))
+}
+
+func shouldHideUpstreamErrorMessage(newApiErr *types.NewAPIError) bool {
+	if newApiErr == nil {
+		return false
+	}
+	if types.IsSkipRetryError(newApiErr) {
+		return false
+	}
+
+	switch newApiErr.GetErrorType() {
+	case types.ErrorTypeOpenAIError,
+		types.ErrorTypeClaudeError,
+		types.ErrorTypeGeminiError,
+		types.ErrorTypeRerankError,
+		types.ErrorTypeUpstreamError:
+		return true
+	}
+
+	switch newApiErr.GetErrorCode() {
+	case types.ErrorCodeDoRequestFailed,
+		types.ErrorCodeReadResponseBodyFailed,
+		types.ErrorCodeBadResponseStatusCode,
+		types.ErrorCodeBadResponse,
+		types.ErrorCodeBadResponseBody,
+		types.ErrorCodeEmptyResponse,
+		types.ErrorCodeAwsInvokeError,
+		types.ErrorCodeChannelResponseTimeExceeded:
+		return true
+	}
+
+	return false
+}
+
+func upstreamErrorMessageForStatus(statusCode int) string {
+	if statusCode == http.StatusTooManyRequests {
+		return upstreamRateLimitErrorPublicMessage
+	}
+	return upstreamErrorPublicMessage
+}
+
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 

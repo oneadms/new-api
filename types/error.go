@@ -96,6 +96,7 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+	publicMessage  string
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -174,7 +175,20 @@ func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
 }
 
 func (e *NewAPIError) SetMessage(message string) {
+	if e.publicMessage != "" && e.Err != nil {
+		originMessage := e.Err.Error()
+		if suffix := strings.TrimPrefix(message, originMessage); suffix != message {
+			e.publicMessage += suffix
+		}
+	}
 	e.Err = errors.New(message)
+}
+
+func (e *NewAPIError) SetPublicMessage(message string) {
+	if e == nil {
+		return
+	}
+	e.publicMessage = message
 }
 
 func (e *NewAPIError) ToOpenAIError() OpenAIError {
@@ -200,6 +214,9 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 			Param:   "",
 			Code:    e.errorCode,
 		}
+	}
+	if e.publicMessage != "" {
+		result.Message = e.publicMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = common.MaskSensitiveInfo(result.Message)
@@ -229,6 +246,9 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			Message: e.Error(),
 			Type:    string(e.errorType),
 		}
+	}
+	if e.publicMessage != "" {
+		result.Message = e.publicMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = common.MaskSensitiveInfo(result.Message)
@@ -402,6 +422,12 @@ func ErrOptionWithHideErrMsg(replaceStr string) NewAPIErrorOptions {
 			fmt.Printf("ErrOptionWithHideErrMsg: %s, origin error: %s", replaceStr, e.Err)
 		}
 		e.Err = errors.New(replaceStr)
+	}
+}
+
+func ErrOptionWithPublicMessage(message string) NewAPIErrorOptions {
+	return func(e *NewAPIError) {
+		e.SetPublicMessage(message)
 	}
 }
 

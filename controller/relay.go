@@ -241,6 +241,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
+		hideUpstreamError := false
+		if relayInfo.ChannelMeta != nil {
+			hideUpstreamError = relayInfo.ChannelSetting.HideUpstreamError
+		} else if channelSetting, ok := common.GetContextKeyType[dto.ChannelSettings](
+			c,
+			constant.ContextKeyChannelSetting,
+		); ok {
+			hideUpstreamError = channelSetting.HideUpstreamError
+		}
+		service.HideUpstreamErrorMessage(newAPIError, hideUpstreamError)
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})

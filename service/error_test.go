@@ -150,6 +150,40 @@ func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
 	require.Contains(t, logBuffer.String(), body)
 }
 
+func TestHideUpstreamErrorMessageMasksPublicResponseOnly(t *testing.T) {
+	body := `{"error":{"message":"公益站暂时不可用","type":"server_error","code":"server_error"}}`
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+	HideUpstreamErrorMessage(newAPIError, true)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, "公益站暂时不可用", newAPIError.Error())
+	require.Equal(t, upstreamErrorPublicMessage, newAPIError.ToOpenAIError().Message)
+	require.Equal(t, upstreamErrorPublicMessage, newAPIError.ToClaudeError().Message)
+
+	newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), "req_public_mask"))
+	require.Equal(t, "公益站暂时不可用 (request id: req_public_mask)", newAPIError.Error())
+	require.Equal(t, upstreamErrorPublicMessage+" (request id: req_public_mask)", newAPIError.ToOpenAIError().Message)
+	require.Equal(t, upstreamErrorPublicMessage+" (request id: req_public_mask)", newAPIError.ToClaudeError().Message)
+}
+
+func TestHideUpstreamErrorMessageSkipsLocalSkipRetryError(t *testing.T) {
+	newAPIError := types.NewErrorWithStatusCode(
+		fmt.Errorf("local validation failed"),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusInternalServerError,
+		types.ErrOptionWithSkipRetry(),
+	)
+
+	HideUpstreamErrorMessage(newAPIError, true)
+
+	require.Equal(t, "local validation failed", newAPIError.ToOpenAIError().Message)
+}
+
 func withDebugEnabled(t *testing.T, enabled bool) {
 	t.Helper()
 
