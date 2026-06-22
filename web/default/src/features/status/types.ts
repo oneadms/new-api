@@ -17,11 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+export interface UptimeHeartbeat {
+  status: number
+  time?: string
+}
+
 export interface UptimeMonitor {
   name: string
   uptime: number
+  uptime24?: number
+  uptime30?: number
   status: number
   group?: string
+  heartbeats?: UptimeHeartbeat[]
 }
 
 export interface UptimeGroupResult {
