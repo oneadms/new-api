@@ -364,7 +364,7 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
                       </FormLabel>
                       <FormDescription>
                         {t(
-                          'When disabled, cap hits require enough balance coverage and invalid hits do not stack or settle.'
+                          'When disabled, cap hits require enough balance coverage and invalid hits do not stack.'
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>

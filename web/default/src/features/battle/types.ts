@@ -92,6 +92,7 @@ export type BattleEvent = {
   target_user_id?: number
   quota?: number
   cap_count?: number
+  reason?: string
   created_at: number
 }
 

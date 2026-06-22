@@ -34,6 +34,10 @@ const (
 	eventTypeMatchEnded       = "match_ended"
 	eventTypePlayerForfeit    = "player_forfeit"
 
+	capInvalidReasonTarget  = "target_insufficient_quota"
+	capInvalidReasonThrower = "thrower_insufficient_quota"
+	capInvalidReasonBoth    = "both_insufficient_quota"
+
 	bulletKindCap       = "cap"
 	bulletKindCapStorm  = "cap_storm"
 	powerupTypeCapStorm = "cap_storm"
@@ -390,6 +394,7 @@ type BattleEvent struct {
 	TargetUserId int    `json:"target_user_id,omitempty"`
 	Quota        int    `json:"quota,omitempty"`
 	CapCount     int    `json:"cap_count,omitempty"`
+	Reason       string `json:"reason,omitempty"`
 	CreatedAt    int64  `json:"created_at"`
 }
 
@@ -460,6 +465,11 @@ type capSettlement struct {
 	CapCount  int
 	Amount    int
 	Remainder int
+}
+
+type capCoverage struct {
+	Count  int
+	Reason string
 }
 
 func newRoom(id string, manager *Manager) *Room {
@@ -786,8 +796,9 @@ func (r *Room) updateCaps(now time.Time, dt float64, settings operation_setting.
 }
 
 func (r *Room) handleHit(b *bullet, target *player, settings operation_setting.BattleSetting) {
-	if r.affordableCapCount(b.OwnerId, target, 1, settings) < 1 {
-		r.addEvent(eventTypeCapInvalid, b.OwnerId, target.UserId, 0, 1)
+	coverage := r.affordableCapCoverage(b.OwnerId, target, 1, settings)
+	if coverage.Count < 1 {
+		r.addCapInvalidEvent(b.OwnerId, target.UserId, 1, coverage.Reason)
 		return
 	}
 	if target.CapSources == nil {
@@ -806,22 +817,22 @@ func (r *Room) handleCapStormHit(b *bullet, target *player, settings operation_s
 	}
 	capCount := owner.CapStack
 	r.deleteCapStormAttempt(b)
-	affordableCount := r.affordableCapCount(owner.UserId, target, capCount, settings)
-	if affordableCount <= 0 {
+	coverage := r.affordableCapCoverage(owner.UserId, target, capCount, settings)
+	if coverage.Count <= 0 {
 		owner.CapStormUntil = time.Time{}
-		r.addEvent(eventTypeCapInvalid, owner.UserId, target.UserId, 0, capCount)
+		r.addCapInvalidEvent(owner.UserId, target.UserId, capCount, coverage.Reason)
 		return
 	}
-	removePlayerCaps(owner, affordableCount)
+	removePlayerCaps(owner, coverage.Count)
 	owner.CapStormUntil = time.Time{}
 	if target.CapSources == nil {
 		target.CapSources = make(map[int]int)
 	}
-	target.CapSources[owner.UserId] += affordableCount
-	target.CapStack += affordableCount
-	r.addEvent(eventTypeCapStormHit, owner.UserId, target.UserId, 0, affordableCount)
-	if invalidCount := capCount - affordableCount; invalidCount > 0 {
-		r.addEvent(eventTypeCapInvalid, owner.UserId, target.UserId, 0, invalidCount)
+	target.CapSources[owner.UserId] += coverage.Count
+	target.CapStack += coverage.Count
+	r.addEvent(eventTypeCapStormHit, owner.UserId, target.UserId, 0, coverage.Count)
+	if invalidCount := capCount - coverage.Count; invalidCount > 0 {
+		r.addCapInvalidEvent(owner.UserId, target.UserId, invalidCount, coverage.Reason)
 	}
 }
 
@@ -1322,24 +1333,47 @@ func removePlayerCaps(p *player, count int) int {
 	return removed
 }
 
-func (r *Room) affordableCapCount(ownerId int, target *player, requested int, settings operation_setting.BattleSetting) int {
+func (r *Room) affordableCapCoverage(ownerId int, target *player, requested int, settings operation_setting.BattleSetting) capCoverage {
 	if ownerId <= 0 || target == nil || requested <= 0 {
-		return 0
+		return capCoverage{}
 	}
 	if settings.CapQuota <= 0 || settings.AllowNegativeBalance {
-		return requested
+		return capCoverage{Count: requested}
 	}
-	count := requested
-	if targetCount := r.payableCapCount(target, settings); targetCount < count {
-		count = targetCount
-	}
-	if ownerCount := r.offensiveCapCount(ownerId, settings); ownerCount < count {
+	targetCount := r.payableCapCount(target, settings)
+	ownerCount := r.offensiveCapCount(ownerId, settings)
+	count := minInt(requested, targetCount)
+	if ownerCount < count {
 		count = ownerCount
 	}
 	if count < 0 {
-		return 0
+		count = 0
 	}
-	return count
+	return capCoverage{
+		Count:  count,
+		Reason: capCoverageReason(targetCount, ownerCount, requested),
+	}
+}
+
+func capCoverageReason(targetCount int, ownerCount int, requested int) string {
+	targetLimited := targetCount < requested
+	ownerLimited := ownerCount < requested
+	switch {
+	case targetLimited && ownerLimited:
+		if targetCount == ownerCount {
+			return capInvalidReasonBoth
+		}
+		if targetCount < ownerCount {
+			return capInvalidReasonTarget
+		}
+		return capInvalidReasonThrower
+	case targetLimited:
+		return capInvalidReasonTarget
+	case ownerLimited:
+		return capInvalidReasonThrower
+	default:
+		return ""
+	}
 }
 
 func (r *Room) payableCapCount(target *player, settings operation_setting.BattleSetting) int {
@@ -1614,6 +1648,17 @@ func (r *Room) snapshotMatchPhase(settings operation_setting.BattleSetting) stri
 }
 
 func (r *Room) addEvent(eventType string, userId int, targetUserId int, quota int, capCount ...int) {
+	r.addEventWithReason(eventType, userId, targetUserId, quota, "", capCount...)
+}
+
+func (r *Room) addCapInvalidEvent(userId int, targetUserId int, capCount int, reason string) {
+	if reason == "" {
+		reason = capInvalidReasonBoth
+	}
+	r.addEventWithReason(eventTypeCapInvalid, userId, targetUserId, 0, reason, capCount)
+}
+
+func (r *Room) addEventWithReason(eventType string, userId int, targetUserId int, quota int, reason string, capCount ...int) {
 	r.nextId++
 	event := BattleEvent{
 		Id:           fmt.Sprintf("%s-event-%d", r.id, r.nextId),
@@ -1621,6 +1666,7 @@ func (r *Room) addEvent(eventType string, userId int, targetUserId int, quota in
 		UserId:       userId,
 		TargetUserId: targetUserId,
 		Quota:        quota,
+		Reason:       reason,
 		CreatedAt:    time.Now().UnixMilli(),
 	}
 	if len(capCount) > 0 {

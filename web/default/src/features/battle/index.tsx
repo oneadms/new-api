@@ -223,6 +223,7 @@ function normalizeEvent(value: unknown): BattleEvent | null {
     target_user_id: optionalPositiveNumber(value.target_user_id),
     quota: optionalPositiveNumber(value.quota),
     cap_count: optionalPositiveNumber(value.cap_count),
+    reason: stringValue(value.reason) || undefined,
     created_at: createdAt,
   }
 }
@@ -593,7 +594,7 @@ export function Battle() {
         event.user_id === snapshot.me ||
         event.target_user_id === snapshot.me
       ) {
-        toast.info(t('Cap invalid: quota insufficient'))
+        toast.info(battleInvalidCapToast(event, snapshot.me, t))
       }
     }
     if (eventToastSeenRef.current.size > 80) {
@@ -660,7 +661,7 @@ export function Battle() {
       status?.allow_negative_balance
         ? t('This room allows battle settlement to take balances negative.')
         : t(
-            'Hits only count when both players have enough balance coverage; otherwise the cap shows Invalid and does not stack or settle.'
+            'Hits only count when both players have enough balance coverage; otherwise the hit is marked Invalid and the cap does not stack.'
           ),
       t('Each cap is currently worth {{quota}}.', { quota: capQuotaText }),
       t(
@@ -1108,6 +1109,71 @@ function matchStatusText(
   return t('Free play')
 }
 
+function battleInvalidCapToast(
+  event: BattleEvent,
+  currentUserId: number,
+  t: TFunction
+): string {
+  if (
+    event.reason === 'thrower_insufficient_quota' &&
+    event.user_id === currentUserId
+  ) {
+    return t(
+      'This hit did not stack: your balance coverage is insufficient. Recharge to continue the match.'
+    )
+  }
+  if (
+    event.reason === 'target_insufficient_quota' &&
+    event.target_user_id === currentUserId
+  ) {
+    return t(
+      'This hit did not stack: your payable balance is insufficient. Recharge to continue the match.'
+    )
+  }
+  if (event.reason === 'both_insufficient_quota') {
+    if (
+      event.user_id === currentUserId ||
+      event.target_user_id === currentUserId
+    ) {
+      return t(
+        'This hit did not stack: both players have insufficient balance coverage. Recharge to continue the match.'
+      )
+    }
+  }
+  if (event.reason === 'target_insufficient_quota') {
+    return t(
+      "This hit did not stack: opponent's payable balance is insufficient."
+    )
+  }
+  if (event.reason === 'thrower_insufficient_quota') {
+    return t(
+      "This hit did not stack: thrower's balance coverage is insufficient."
+    )
+  }
+  return t('This hit did not stack: balance coverage is insufficient.')
+}
+
+function invalidCapReasonText(
+  event: BattleEvent,
+  currentUserId: number,
+  t: TFunction
+): string {
+  if (event.reason === 'target_insufficient_quota') {
+    return event.target_user_id === currentUserId
+      ? t('your payable balance is insufficient')
+      : t("opponent's payable balance is insufficient")
+  }
+  if (event.reason === 'thrower_insufficient_quota') {
+    return event.user_id === currentUserId
+      ? t('your balance coverage is insufficient')
+      : t("thrower's balance coverage is insufficient")
+  }
+  if (event.reason === 'both_insufficient_quota') {
+    return t('both players have insufficient balance coverage')
+  }
+  return t('balance coverage is insufficient')
+}
+
 function battleEventText(
   event: BattleEvent,
   snapshot: BattleSnapshot,
@@ -1129,11 +1195,16 @@ function battleEventText(
     })
   }
   if (event.type === 'cap_invalid_insufficient_quota') {
-    return t('{{count}} cap(s) from {{user}} were invalid on {{target}}', {
-      user,
-      target,
-      count: event.cap_count ?? 1,
-    })
+    const reason = invalidCapReasonText(event, snapshot.me, t)
+    return t(
+      '{{count}} cap(s) from {{user}} did not stack on {{target}}: {{reason}}',
+      {
+        user,
+        target,
+        count: event.cap_count ?? 1,
+        reason,
+      }
+    )
   }
   if (event.type === 'cap_settlement') {
     return t('{{user}} settled {{quota}} from {{target}}', {

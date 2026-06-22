@@ -326,6 +326,7 @@ func TestUpdateCapsMarksInvalidWhenTargetCannotCoverCap(t *testing.T) {
 	assert.Equal(t, attacker.UserId, room.events[0].UserId)
 	assert.Equal(t, target.UserId, room.events[0].TargetUserId)
 	assert.Equal(t, 1, room.events[0].CapCount)
+	assert.Equal(t, capInvalidReasonTarget, room.events[0].Reason)
 }
 
 func TestUpdateCapsMarksInvalidWhenThrowerCannotCoverPendingRewards(t *testing.T) {
@@ -357,6 +358,7 @@ func TestUpdateCapsMarksInvalidWhenThrowerCannotCoverPendingRewards(t *testing.T
 	assert.Zero(t, target.CapStack)
 	require.Len(t, room.events, 1)
 	assert.Equal(t, eventTypeCapInvalid, room.events[0].Type)
+	assert.Equal(t, capInvalidReasonThrower, room.events[0].Reason)
 }
 
 func TestUpdatePowerupPickupsActivatesCapStorm(t *testing.T) {
@@ -520,6 +522,7 @@ func TestCapStormHitLeavesUnaffordableCapsOnOwner(t *testing.T) {
 	assert.Equal(t, 2, room.events[0].CapCount)
 	assert.Equal(t, eventTypeCapInvalid, room.events[1].Type)
 	assert.Equal(t, 3, room.events[1].CapCount)
+	assert.Equal(t, capInvalidReasonTarget, room.events[1].Reason)
 }
 
 func battleTestPlatform(t *testing.T, settings operation_setting.BattleSetting, id string) platform {
