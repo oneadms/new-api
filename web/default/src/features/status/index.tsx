@@ -236,10 +236,13 @@ function buildAggregateTimelineBuckets(
     return buckets
   }
 
-  const impactedStatus =
-    currentStatus === 0 || currentStatus === 3 ? currentStatus : 2
+  const isCurrentlyImpacted =
+    currentStatus === 0 || currentStatus === 2 || currentStatus === 3
+  const impactedStatus = isCurrentlyImpacted ? currentStatus : 2
+  const startIndex = isCurrentlyImpacted ? count - impactedCount : 0
+
   for (let i = 0; i < impactedCount; i += 1) {
-    buckets[count - 1 - i] = impactedStatus
+    buckets[startIndex + i] = impactedStatus
   }
   return buckets
 }
