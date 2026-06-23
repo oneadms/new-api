@@ -82,6 +82,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'battle_setting.respawn_seconds': 3,
   'battle_setting.drop_expire_seconds': 18,
   'battle_setting.match_mode_enabled': false,
+  'battle_setting.match_entry_quota': 5000,
   'battle_setting.match_min_players': 4,
   'battle_setting.match_duration_seconds': 300,
   'battle_setting.match_start_at': 0,

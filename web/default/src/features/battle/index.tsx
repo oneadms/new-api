@@ -71,6 +71,7 @@ import type {
   BattlePowerup,
   BattleServerMessage,
   BattleSnapshot,
+  BattleStatus,
 } from './types'
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'closed'
@@ -81,6 +82,8 @@ type RuleControl = {
 
 const defaultRoomId = 'lobby'
 const battleJoinBalanceMessage = 'Balance must be positive to join'
+const battleJoinDepositMessage =
+  'Balance must cover the match deposit to join. Recharge to enter this match.'
 const hudUpdateIntervalMs = 150
 const inputSendIntervalMs = 50
 const snapshotInterpolationDelayMs = 120
@@ -398,9 +401,10 @@ export function Battle() {
   const connect = useCallback(() => {
     const statusData = battleStatus.data
     if (!statusData?.enabled) return
-    if (statusData.quota <= 0) {
-      setLastError(battleJoinBalanceMessage)
-      toast.error(t(battleJoinBalanceMessage))
+    const joinMessage = battleJoinBlockMessage(statusData)
+    if (joinMessage) {
+      setLastError(joinMessage)
+      toast.error(t(joinMessage))
       return
     }
     wsRef.current?.close()
@@ -609,14 +613,15 @@ export function Battle() {
   const connected = connectionState === 'connected'
   const showPreJoinRules = !connected
   const hideRoomInput = Boolean(status?.hide_room_input)
-  const hasPositiveBalance = (status?.quota ?? 0) > 0
-  const joinBlockReason =
-    status && status.quota <= 0 ? t(battleJoinBalanceMessage) : undefined
+  const joinBlockMessage = status ? battleJoinBlockMessage(status) : undefined
+  const canAffordJoin = !joinBlockMessage
+  const joinBlockReason = joinBlockMessage ? t(joinBlockMessage) : undefined
   const joinDisabled =
     connectionState === 'connecting' ||
     (!connected &&
-      (battleStatus.isLoading || !status?.enabled || !hasPositiveBalance))
+      (battleStatus.isLoading || !status?.enabled || !canAffordJoin))
   const capQuotaText = formatQuota(status?.cap_quota ?? 0)
+  const matchDepositText = formatQuota(status?.match_entry_quota ?? 0)
   const capStormSeconds = Math.max(
     0,
     Math.ceil(
@@ -663,6 +668,14 @@ export function Battle() {
         : t(
             'Hits only count when both players have enough balance coverage; otherwise the hit is marked Invalid and the cap does not stack.'
           ),
+      ...(status?.match_mode_enabled && (status.match_entry_quota ?? 0) > 0
+        ? [
+            t(
+              'In match mode, every player uses the same {{quota}} match deposit as the in-match loss cap.',
+              { quota: matchDepositText }
+            ),
+          ]
+        : []),
       t('Each cap is currently worth {{quota}}.', { quota: capQuotaText }),
       t(
         'When a match ends normally, players lose quota for caps on their own head and the throwers receive that quota.'
@@ -671,7 +684,14 @@ export function Battle() {
         'If you force quit, caps on your own head still settle as losses, but your pending rewards from caps on other players are cleared.'
       ),
     ],
-    [capQuotaText, status?.allow_negative_balance, t]
+    [
+      capQuotaText,
+      matchDepositText,
+      status?.allow_negative_balance,
+      status?.match_entry_quota,
+      status?.match_mode_enabled,
+      t,
+    ]
   )
   const connectionLabel = {
     idle: t('Idle'),
@@ -800,6 +820,13 @@ export function Battle() {
               {status?.match_mode_enabled && (
                 <Stat label={t('Match')} value={matchLabel} />
               )}
+              {status?.match_mode_enabled &&
+                (status.match_entry_quota ?? 0) > 0 && (
+                  <Stat
+                    label={t('Match deposit')}
+                    value={formatQuota(status.match_entry_quota)}
+                  />
+                )}
               <Stat
                 label={t('Movement')}
                 value={
@@ -820,6 +847,13 @@ export function Battle() {
                 label={t('Quota per cap')}
                 value={formatQuota(status?.cap_quota ?? 0)}
               />
+              {status?.match_mode_enabled &&
+                (status.match_entry_quota ?? 0) > 0 && (
+                  <LimitRow
+                    label={t('Match deposit')}
+                    value={formatQuota(status.match_entry_quota)}
+                  />
+                )}
               <LimitRow
                 label={t('Round loss')}
                 value={formatQuota(status?.max_round_loss ?? 0)}
@@ -1107,6 +1141,20 @@ function matchStatusText(
     return t('Match ended')
   }
   return t('Free play')
+}
+
+function battleJoinBlockMessage(status: BattleStatus): string | undefined {
+  if (
+    status.match_mode_enabled &&
+    (status.join_required_quota ?? 0) > 1 &&
+    status.quota < status.join_required_quota
+  ) {
+    return battleJoinDepositMessage
+  }
+  if (status.quota <= 0) {
+    return battleJoinBalanceMessage
+  }
+  return undefined
 }
 
 function battleInvalidCapToast(

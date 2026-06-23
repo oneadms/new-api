@@ -525,6 +525,180 @@ func TestCapStormHitLeavesUnaffordableCapsOnOwner(t *testing.T) {
 	assert.Equal(t, capInvalidReasonTarget, room.events[1].Reason)
 }
 
+func TestMatchDepositLetsLowBalancePlayerLandCaps(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	settings.MatchModeEnabled = true
+	settings.MatchEntryQuota = 500
+	settings.MaxRoundGainQuota = 500
+	stubBattleQuota(t, map[int]int{1: 1, 2: 10000})
+	now := time.Now()
+	attacker := &player{UserId: 1, X: 500, Y: 500, Alive: true}
+	target := &player{UserId: 2, X: 560, Y: 500, Alive: true}
+	room.players[attacker.UserId] = attacker
+	room.players[target.UserId] = target
+	room.matchPhase = matchPhaseRunning
+	room.matchDeposits[attacker.UserId] = settings.MatchEntryQuota
+	room.matchDeposits[target.UserId] = settings.MatchEntryQuota
+
+	room.bullets["cap"] = &bullet{
+		Id:        "cap",
+		OwnerId:   attacker.UserId,
+		X:         target.X,
+		Y:         target.Y - playerHeight/2 + 8,
+		ExpiresAt: now.Add(time.Second),
+	}
+	room.updateCaps(now, 0.01, settings)
+
+	assert.Equal(t, 1, target.CapStack)
+	assert.Equal(t, 1, target.CapSources[attacker.UserId])
+	require.Len(t, room.events, 1)
+	assert.Equal(t, eventTypeHit, room.events[0].Type)
+}
+
+func TestMatchDepositCapsPayableHitsForRichPlayer(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	settings.MatchModeEnabled = true
+	settings.MatchEntryQuota = 200
+	settings.MaxRoundGainQuota = 1000
+	stubBattleQuota(t, map[int]int{1: 10000, 2: 10000})
+	attacker := &player{UserId: 1, X: 500, Y: 500, Alive: true}
+	target := &player{
+		UserId:     2,
+		X:          560,
+		Y:          500,
+		Alive:      true,
+		CapStack:   2,
+		CapSources: map[int]int{1: 2},
+	}
+	room.players[attacker.UserId] = attacker
+	room.players[target.UserId] = target
+	room.matchPhase = matchPhaseRunning
+	room.matchDeposits[attacker.UserId] = settings.MatchEntryQuota
+	room.matchDeposits[target.UserId] = settings.MatchEntryQuota
+
+	room.handleHit(&bullet{OwnerId: attacker.UserId}, target, settings)
+
+	assert.Equal(t, 2, target.CapStack)
+	require.Len(t, room.events, 1)
+	assert.Equal(t, eventTypeCapInvalid, room.events[0].Type)
+	assert.Equal(t, capInvalidReasonTarget, room.events[0].Reason)
+}
+
+func TestMatchSettlementDoesNotExceedEntryDeposit(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	settings.MatchModeEnabled = true
+	settings.MatchEntryQuota = 250
+	settings.MaxRoundGainQuota = 1000
+	settings.MaxDailyGainQuota = 1000
+	room.matchPhase = matchPhaseRunning
+	room.matchDeposits[1] = settings.MatchEntryQuota
+	room.matchDeposits[2] = settings.MatchEntryQuota
+	target := &player{
+		UserId:     2,
+		CapStack:   5,
+		CapSources: map[int]int{1: 5},
+	}
+	room.players[target.UserId] = target
+
+	originalTransfer := transferBattleQuota
+	var transfers []model.BattleQuotaTransferParams
+	transferBattleQuota = func(params model.BattleQuotaTransferParams) (*model.BattleRecord, error) {
+		transfers = append(transfers, params)
+		return &model.BattleRecord{}, nil
+	}
+	t.Cleanup(func() {
+		transferBattleQuota = originalTransfer
+	})
+
+	room.settlePlayerCaps(target, settings)
+
+	require.Len(t, transfers, 1)
+	assert.Equal(t, 2, transfers[0].FromUserId)
+	assert.Equal(t, 1, transfers[0].ToUserId)
+	assert.Equal(t, 250, transfers[0].Quota)
+	assert.Equal(t, 250, room.roundLosses[2])
+	assert.Equal(t, 250, room.roundGains[1])
+	assert.Zero(t, target.CapStack)
+}
+
+func TestMatchForfeitSettlesCapsWithEntryDeposit(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	settings.MatchModeEnabled = true
+	settings.MatchEntryQuota = 500
+	settings.MaxRoundGainQuota = 1000
+	settings.MaxDailyGainQuota = 1000
+	setting := operation_setting.GetBattleSetting()
+	originalSetting := *setting
+	*setting = settings
+	t.Cleanup(func() {
+		*setting = originalSetting
+	})
+	stubBattleQuota(t, map[int]int{1: 500, 2: 500})
+
+	room.matchPhase = matchPhaseRunning
+	room.matchDeposits[1] = settings.MatchEntryQuota
+	room.matchDeposits[2] = settings.MatchEntryQuota
+	room.players[1] = &player{UserId: 1, Alive: true}
+	target := &player{
+		UserId:     2,
+		Alive:      true,
+		CapStack:   3,
+		CapSources: map[int]int{1: 3},
+	}
+	room.players[target.UserId] = target
+	client := &Client{room: room, userId: target.UserId, send: make(chan []byte, 1)}
+	room.clients[target.UserId] = client
+
+	originalTransfer := transferBattleQuota
+	var transfers []model.BattleQuotaTransferParams
+	transferBattleQuota = func(params model.BattleQuotaTransferParams) (*model.BattleRecord, error) {
+		transfers = append(transfers, params)
+		return &model.BattleRecord{}, nil
+	}
+	t.Cleanup(func() {
+		transferBattleQuota = originalTransfer
+	})
+
+	room.handleUnregister(client)
+
+	require.Len(t, transfers, 1)
+	assert.Equal(t, 2, transfers[0].FromUserId)
+	assert.Equal(t, 1, transfers[0].ToUserId)
+	assert.Equal(t, 300, transfers[0].Quota)
+	assert.Equal(t, 300, room.roundLosses[2])
+	assert.Equal(t, 300, room.roundGains[1])
+	assert.NotContains(t, room.players, 2)
+	assert.NotContains(t, room.matchDeposits, 2)
+	require.Len(t, room.events, 2)
+	assert.Equal(t, eventTypeCapSettlement, room.events[0].Type)
+	assert.Equal(t, eventTypePlayerForfeit, room.events[1].Type)
+}
+
+func TestStartMatchRejectsPlayerBelowEntryDeposit(t *testing.T) {
+	room := newRoom("test", NewManager())
+	settings := battleSimulationSettings()
+	settings.MatchModeEnabled = true
+	settings.MatchEntryQuota = 500
+	settings.MatchMinPlayers = 2
+	settings.MatchDurationSecs = 90
+	stubBattleQuota(t, map[int]int{1: 1000, 2: 100})
+	room.players[1] = &player{UserId: 1, Alive: true}
+	room.players[2] = &player{UserId: 2, Alive: true}
+	room.prepareMatchWaiting(settings)
+
+	started := room.startMatch(time.Now(), settings, true)
+
+	assert.False(t, started)
+	assert.Equal(t, matchPhaseWaiting, room.matchPhase)
+	assert.Contains(t, room.players, 1)
+	assert.NotContains(t, room.players, 2)
+	assert.Empty(t, room.matchDeposits)
+}
+
 func battleTestPlatform(t *testing.T, settings operation_setting.BattleSetting, id string) platform {
 	t.Helper()
 	for _, item := range battlePlatforms(settings) {

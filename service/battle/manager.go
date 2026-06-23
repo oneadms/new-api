@@ -74,6 +74,7 @@ const (
 var ErrBattleDisabled = errors.New("battle is disabled")
 var getBattleUserQuota = model.GetUserQuota
 var getBattleQuotaUsageSince = model.GetBattleQuotaUsageSince
+var transferBattleQuota = model.TransferBattleQuota
 
 type Manager struct {
 	mu    sync.Mutex
@@ -316,6 +317,7 @@ type Room struct {
 	powerups           map[string]*powerup
 	roundLosses        map[int]int
 	roundGains         map[int]int
+	matchDeposits      map[int]int
 	events             []BattleEvent
 	rng                *rand.Rand
 	nextId             int64
@@ -486,6 +488,7 @@ func newRoom(id string, manager *Manager) *Room {
 		powerups:           make(map[string]*powerup),
 		roundLosses:        make(map[int]int),
 		roundGains:         make(map[int]int),
+		matchDeposits:      make(map[int]int),
 		rng:                rand.New(rand.NewSource(time.Now().UnixNano())),
 		done:               make(chan struct{}),
 	}
@@ -553,6 +556,12 @@ func (r *Room) handleRegister(client *Client) {
 	if settings.MatchModeEnabled && r.matchPhase == matchPhaseEnded && len(r.clients) == 0 {
 		r.prepareMatchWaiting(settings)
 	}
+	if settings.MatchModeEnabled && r.matchPhase == matchPhaseRunning && r.players[client.userId] == nil {
+		client.sendJSON(map[string]any{"type": messageTypeError, "message": "Match already running"})
+		close(client.send)
+		_ = client.conn.Close()
+		return
+	}
 	if _, ok := r.clients[client.userId]; !ok && len(r.clients) >= settings.MaxPlayersPerRoom {
 		client.sendJSON(map[string]any{"type": messageTypeError, "message": "room full"})
 		close(client.send)
@@ -605,6 +614,7 @@ func (r *Room) handleUnregister(client *Client) {
 	r.clearPendingRewardsForUser(client.userId)
 	delete(r.clients, client.userId)
 	delete(r.players, client.userId)
+	delete(r.matchDeposits, client.userId)
 	close(client.send)
 }
 
@@ -620,6 +630,7 @@ func (r *Room) closeAll(messageType string, message string) {
 	r.players = make(map[int]*player)
 	r.bullets = make(map[string]*bullet)
 	r.powerups = make(map[string]*powerup)
+	r.matchDeposits = make(map[int]int)
 }
 
 func (r *Room) step(dt float64, now time.Time, settings operation_setting.BattleSetting) {
@@ -1035,7 +1046,7 @@ func (r *Room) settlePlayerCaps(target *player, settings operation_setting.Battl
 		if settlement.Amount <= 0 {
 			continue
 		}
-		_, err := model.TransferBattleQuota(model.BattleQuotaTransferParams{
+		_, err := transferBattleQuota(model.BattleQuotaTransferParams{
 			RoomId:            r.id,
 			EventId:           newBattleObjectId("cap-settle"),
 			FromUserId:        target.UserId,
@@ -1068,6 +1079,10 @@ func (r *Room) settlePlayerCaps(target *player, settings operation_setting.Battl
 
 func (r *Room) maxCapSettlementAmount(target *player, totalCaps int, settings operation_setting.BattleSetting) int {
 	amount := totalCaps * settings.CapQuota
+	if r.matchDepositActive(settings) {
+		amount = minPositive(amount, r.remainingMatchDeposit(target.UserId))
+		return minPositive(amount, r.remainingDailyLossQuota(target.UserId, settings))
+	}
 	amount = minPositive(amount, settings.MaxRoundLossQuota-r.roundLosses[target.UserId])
 
 	dailyStart := model.BattleDailyUsageStart()
@@ -1206,6 +1221,9 @@ func (r *Room) startMatch(now time.Time, settings operation_setting.BattleSettin
 	}
 	r.roundLosses = make(map[int]int)
 	r.roundGains = make(map[int]int)
+	if !r.collectMatchDeposits(settings) {
+		return false
+	}
 	r.bullets = make(map[string]*bullet)
 	r.powerups = make(map[string]*powerup)
 	r.events = nil
@@ -1227,11 +1245,44 @@ func (r *Room) startMatch(now time.Time, settings operation_setting.BattleSettin
 	return true
 }
 
+func (r *Room) collectMatchDeposits(settings operation_setting.BattleSetting) bool {
+	r.matchDeposits = make(map[int]int)
+	if settings.MatchEntryQuota <= 0 {
+		return true
+	}
+
+	userIds := make([]int, 0, len(r.players))
+	for userId := range r.players {
+		userIds = append(userIds, userId)
+	}
+	sort.Ints(userIds)
+	for _, userId := range userIds {
+		quota, err := getBattleUserQuota(userId, true)
+		if err != nil || quota < settings.MatchEntryQuota {
+			r.kickMatchDepositInsufficientPlayer(userId)
+			return false
+		}
+		r.matchDeposits[userId] = settings.MatchEntryQuota
+	}
+	return true
+}
+
+func (r *Room) kickMatchDepositInsufficientPlayer(userId int) {
+	if client := r.clients[userId]; client != nil {
+		client.sendJSON(map[string]any{"type": messageTypeError, "message": "Match deposit insufficient"})
+		close(client.send)
+		_ = client.conn.Close()
+		delete(r.clients, userId)
+	}
+	delete(r.players, userId)
+}
+
 func (r *Room) endMatch(settings operation_setting.BattleSetting) {
 	if r.matchPhase != matchPhaseRunning {
 		return
 	}
 	r.settleAllPlayerCaps(settings)
+	r.matchDeposits = make(map[int]int)
 	r.bullets = make(map[string]*bullet)
 	r.powerups = make(map[string]*powerup)
 	r.matchPhase = matchPhaseEnded
@@ -1337,7 +1388,7 @@ func (r *Room) affordableCapCoverage(ownerId int, target *player, requested int,
 	if ownerId <= 0 || target == nil || requested <= 0 {
 		return capCoverage{}
 	}
-	if settings.CapQuota <= 0 || settings.AllowNegativeBalance {
+	if settings.CapQuota <= 0 || (settings.AllowNegativeBalance && !r.matchDepositActive(settings)) {
 		return capCoverage{Count: requested}
 	}
 	targetCount := r.payableCapCount(target, settings)
@@ -1380,6 +1431,11 @@ func (r *Room) payableCapCount(target *player, settings operation_setting.Battle
 	if target == nil {
 		return 0
 	}
+	if r.matchDepositActive(settings) {
+		remaining := r.remainingMatchDeposit(target.UserId) - target.CapStack*settings.CapQuota
+		remaining = minInt(remaining, r.remainingDailyLossQuota(target.UserId, settings)-target.CapStack*settings.CapQuota)
+		return quotaToCapCount(remaining, settings.CapQuota)
+	}
 	remaining := settings.MaxRoundLossQuota - r.roundLosses[target.UserId] - target.CapStack*settings.CapQuota
 
 	dailyStart := model.BattleDailyUsageStart()
@@ -1401,6 +1457,10 @@ func (r *Room) offensiveCapCount(ownerId int, settings operation_setting.BattleS
 	if ownerId <= 0 {
 		return 0
 	}
+	if r.matchDepositActive(settings) {
+		remaining := r.remainingCapGain(ownerId, settings) - r.pendingCapGain(ownerId, settings)
+		return quotaToCapCount(remaining, settings.CapQuota)
+	}
 	quota, err := getBattleUserQuota(ownerId, true)
 	if err != nil {
 		return 0
@@ -1420,6 +1480,34 @@ func (r *Room) offensiveCapCount(ownerId int, settings operation_setting.BattleS
 	}
 	remaining = minInt(remaining, settings.MaxDailyGainQuota-usage.Won-pendingReward)
 	return quotaToCapCount(remaining, settings.CapQuota)
+}
+
+func (r *Room) matchDepositActive(settings operation_setting.BattleSetting) bool {
+	return settings.MatchModeEnabled && r.matchPhase == matchPhaseRunning && settings.MatchEntryQuota > 0
+}
+
+func (r *Room) remainingMatchDeposit(userId int) int {
+	deposit := r.matchDeposits[userId]
+	if deposit <= 0 {
+		return 0
+	}
+	remaining := deposit - r.roundLosses[userId]
+	if remaining <= 0 {
+		return 0
+	}
+	if remaining > deposit {
+		return deposit
+	}
+	return remaining
+}
+
+func (r *Room) remainingDailyLossQuota(userId int, settings operation_setting.BattleSetting) int {
+	dailyStart := model.BattleDailyUsageStart()
+	usage, err := getBattleQuotaUsageSince(userId, dailyStart)
+	if err != nil {
+		return 0
+	}
+	return settings.MaxDailyLossQuota - usage.Lost
 }
 
 func quotaToCapCount(quota int, capQuota int) int {
@@ -1699,6 +1787,7 @@ func normalizedSettings() operation_setting.BattleSetting {
 	s.DropPickupRadius = clampInt(s.DropPickupRadius, 8, 160)
 	s.DropExpireSeconds = clampInt(s.DropExpireSeconds, 3, 120)
 	s.IdleRoomTTLSeconds = clampInt(s.IdleRoomTTLSeconds, 5, 600)
+	s.MatchEntryQuota = clampInt(s.MatchEntryQuota, 0, 100000000)
 	s.MatchMinPlayers = clampInt(s.MatchMinPlayers, 2, s.MaxPlayersPerRoom)
 	s.MatchDurationSecs = clampInt(s.MatchDurationSecs, 30, 86400)
 	if s.MatchStartAt < 0 {

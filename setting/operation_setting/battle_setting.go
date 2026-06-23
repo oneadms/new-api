@@ -26,6 +26,7 @@ type BattleSetting struct {
 	DropExpireSeconds    int   `json:"drop_expire_seconds"`
 	IdleRoomTTLSeconds   int   `json:"idle_room_ttl_seconds"`
 	MatchModeEnabled     bool  `json:"match_mode_enabled"`
+	MatchEntryQuota      int   `json:"match_entry_quota"`
 	MatchMinPlayers      int   `json:"match_min_players"`
 	MatchDurationSecs    int   `json:"match_duration_seconds"`
 	MatchStartAt         int64 `json:"match_start_at"`
@@ -55,6 +56,7 @@ var battleSetting = BattleSetting{
 	DropExpireSeconds:    18,
 	IdleRoomTTLSeconds:   30,
 	MatchModeEnabled:     false,
+	MatchEntryQuota:      5000,
 	MatchMinPlayers:      4,
 	MatchDurationSecs:    300,
 	MatchStartAt:         0,

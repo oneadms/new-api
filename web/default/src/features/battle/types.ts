@@ -33,6 +33,8 @@ export type BattleStatus = {
   map_height: number
   player_speed: number
   match_mode_enabled: boolean
+  match_entry_quota: number
+  join_required_quota: number
   match_min_players: number
   match_duration_seconds: number
   match_start_at: number

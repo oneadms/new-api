@@ -45,6 +45,7 @@ func GetBattleStatus(c *gin.Context) {
 		return
 	}
 	setting := operation_setting.GetBattleSetting()
+	requiredQuota := battleJoinRequiredQuota(setting)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -66,6 +67,8 @@ func GetBattleStatus(c *gin.Context) {
 			"map_height":               setting.MapHeight,
 			"player_speed":             setting.PlayerSpeed,
 			"match_mode_enabled":       setting.MatchModeEnabled,
+			"match_entry_quota":        setting.MatchEntryQuota,
+			"join_required_quota":      requiredQuota,
 			"match_min_players":        setting.MatchMinPlayers,
 			"match_duration_seconds":   setting.MatchDurationSecs,
 			"match_start_at":           setting.MatchStartAt,
@@ -105,10 +108,12 @@ func BattleWebSocket(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
-	if quota <= 0 {
+	setting := operation_setting.GetBattleSetting()
+	requiredQuota := battleJoinRequiredQuota(setting)
+	if quota < requiredQuota {
 		c.JSON(http.StatusPaymentRequired, gin.H{
 			"success": false,
-			"message": "Balance must be positive to join",
+			"message": battleJoinInsufficientMessage(setting),
 		})
 		return
 	}
@@ -120,6 +125,20 @@ func BattleWebSocket(c *gin.Context) {
 	}
 
 	battlesvc.DefaultManager.Join(ws, userId, username, c.Query("room"))
+}
+
+func battleJoinRequiredQuota(setting *operation_setting.BattleSetting) int {
+	if setting != nil && setting.MatchModeEnabled && setting.MatchEntryQuota > 0 {
+		return setting.MatchEntryQuota
+	}
+	return 1
+}
+
+func battleJoinInsufficientMessage(setting *operation_setting.BattleSetting) string {
+	if setting != nil && setting.MatchModeEnabled && setting.MatchEntryQuota > 0 {
+		return "Balance must cover the match deposit to join"
+	}
+	return "Balance must be positive to join"
 }
 
 func getBattleSessionUser(c *gin.Context) (int, string, bool) {

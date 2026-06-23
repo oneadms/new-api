@@ -65,6 +65,7 @@ const createSchema = () =>
     playerSpeed: z.coerce.number().int().min(80).max(900),
     bulletSpeed: z.coerce.number().int().min(100).max(1800),
     fireCooldownMs: z.coerce.number().int().min(80).max(2000),
+    matchEntryQuota: z.coerce.number().int().min(0),
     matchMinPlayers: z.coerce.number().int().min(2).max(32),
     matchDurationSeconds: z.coerce.number().int().min(30).max(86400),
     matchStartAt: z.coerce.number().int().min(0),
@@ -99,6 +100,7 @@ const optionKeys: Record<keyof Values, string> = {
   playerSpeed: 'battle_setting.player_speed',
   bulletSpeed: 'battle_setting.bullet_speed',
   fireCooldownMs: 'battle_setting.fire_cooldown_ms',
+  matchEntryQuota: 'battle_setting.match_entry_quota',
   matchMinPlayers: 'battle_setting.match_min_players',
   matchDurationSeconds: 'battle_setting.match_duration_seconds',
   matchStartAt: 'battle_setting.match_start_at',
@@ -249,6 +251,16 @@ export function BattleSettingsSection(props: BattleSettingsSectionProps) {
       description: t('Minimum milliseconds between two cap throws.'),
       min: 80,
       max: 2000,
+    },
+    {
+      name: 'matchEntryQuota',
+      label: t('Match entry deposit'),
+      description: t(
+        'Each player must have this balance to enter a match; in-match losses are capped to this same amount.'
+      ),
+      min: 0,
+      unit: 'usd',
+      matchOnly: true,
     },
     {
       name: 'matchMinPlayers',

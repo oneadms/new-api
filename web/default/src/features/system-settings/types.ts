@@ -339,6 +339,7 @@ export type OperationsSettings = {
   'battle_setting.respawn_seconds': number
   'battle_setting.drop_expire_seconds': number
   'battle_setting.match_mode_enabled': boolean
+  'battle_setting.match_entry_quota': number
   'battle_setting.match_min_players': number
   'battle_setting.match_duration_seconds': number
   'battle_setting.match_start_at': number
