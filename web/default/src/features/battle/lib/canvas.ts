@@ -19,11 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import backgroundImageUrl from '@/assets/battle/background.jpg'
 import brickImageUrl from '@/assets/battle/brick.png'
 import capImageUrl from '@/assets/battle/cap.png'
-import playerThrow1ImageUrl from '@/assets/battle/people-throw-1.png'
-import playerThrow2ImageUrl from '@/assets/battle/people-throw-2.png'
-import playerThrow3ImageUrl from '@/assets/battle/people-throw-3.png'
-import playerThrow4ImageUrl from '@/assets/battle/people-throw-4.png'
-import playerImageUrl from '@/assets/battle/people.png'
+import playerThrow1ImageUrl from '@/assets/battle/people-throw-1-legs.png'
+import playerThrow2ImageUrl from '@/assets/battle/people-throw-2-legs.png'
+import playerThrow3ImageUrl from '@/assets/battle/people-throw-3-legs.png'
+import playerThrow4ImageUrl from '@/assets/battle/people-throw-4-legs.png'
+import playerImageUrl from '@/assets/battle/people-legs.png'
 import type {
   BattleBullet,
   BattlePlayer,
