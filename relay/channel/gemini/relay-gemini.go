@@ -1534,6 +1534,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		}
 
 		service.ResetStatusCode(newAPIError, c.GetString("status_code_mapping"))
+		service.PrepareRelayErrorForResponse(newAPIError, c.GetString(common.RequestIdKey), info.ChannelSetting.HideUpstreamError)
 
 		switch info.RelayFormat {
 		case types.RelayFormatClaude:

@@ -74,6 +74,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	var (
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
+		relayInfo   *relaycommon.RelayInfo
 	)
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
@@ -89,7 +90,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
-			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			service.PrepareRelayErrorForResponse(newAPIError, requestId, hideUpstreamError(c, relayInfo))
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -117,7 +118,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
+	relayInfo, err = relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
@@ -241,16 +242,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
-		hideUpstreamError := false
-		if relayInfo.ChannelMeta != nil {
-			hideUpstreamError = relayInfo.ChannelSetting.HideUpstreamError
-		} else if channelSetting, ok := common.GetContextKeyType[dto.ChannelSettings](
-			c,
-			constant.ContextKeyChannelSetting,
-		); ok {
-			hideUpstreamError = channelSetting.HideUpstreamError
-		}
-		service.HideUpstreamErrorMessage(newAPIError, hideUpstreamError)
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})
@@ -480,31 +471,35 @@ func RelayNotFound(c *gin.Context) {
 func RelayTaskFetch(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, &dto.TaskError{
+		taskErr := &dto.TaskError{
 			Code:       "gen_relay_info_failed",
 			Message:    err.Error(),
 			StatusCode: http.StatusInternalServerError,
-		})
+		}
+		service.PrepareTaskErrorForResponse(taskErr, hideUpstreamError(c, relayInfo))
+		c.JSON(http.StatusInternalServerError, taskErr)
 		return
 	}
 	if taskErr := relay.RelayTaskFetch(c, relayInfo.RelayMode); taskErr != nil {
-		respondTaskError(c, taskErr)
+		respondTaskError(c, relayInfo, taskErr)
 	}
 }
 
 func RelayTask(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, &dto.TaskError{
+		taskErr := &dto.TaskError{
 			Code:       "gen_relay_info_failed",
 			Message:    err.Error(),
 			StatusCode: http.StatusInternalServerError,
-		})
+		}
+		service.PrepareTaskErrorForResponse(taskErr, hideUpstreamError(c, relayInfo))
+		c.JSON(http.StatusInternalServerError, taskErr)
 		return
 	}
 
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
-		respondTaskError(c, taskErr)
+		respondTaskError(c, relayInfo, taskErr)
 		return
 	}
 
@@ -609,16 +604,24 @@ func RelayTask(c *gin.Context) {
 	}
 
 	if taskErr != nil {
-		respondTaskError(c, taskErr)
+		respondTaskError(c, relayInfo, taskErr)
 	}
 }
 
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
-func respondTaskError(c *gin.Context, taskErr *dto.TaskError) {
-	if taskErr.StatusCode == http.StatusTooManyRequests {
-		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
-	}
+func respondTaskError(c *gin.Context, relayInfo *relaycommon.RelayInfo, taskErr *dto.TaskError) {
+	service.PrepareTaskErrorForResponse(taskErr, hideUpstreamError(c, relayInfo))
 	c.JSON(taskErr.StatusCode, taskErr)
+}
+
+func hideUpstreamError(c *gin.Context, relayInfo *relaycommon.RelayInfo) bool {
+	if relayInfo != nil && relayInfo.ChannelMeta != nil {
+		return relayInfo.ChannelSetting.HideUpstreamError
+	}
+	if channelSetting, ok := common.GetContextKeyType[dto.ChannelSettings](c, constant.ContextKeyChannelSetting); ok {
+		return channelSetting.HideUpstreamError
+	}
+	return false
 }
 
 func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError, retryTimes int) bool {

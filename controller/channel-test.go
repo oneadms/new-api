@@ -860,9 +860,14 @@ func TestChannel(c *gin.Context) {
 	tik := time.Now()
 	result := testChannel(channel, testUserID, testModel, endpointType, isStream)
 	if result.localErr != nil {
+		message := result.localErr.Error()
+		if result.newAPIError != nil {
+			service.PrepareRelayErrorForResponse(result.newAPIError, c.GetString(common.RequestIdKey), hideUpstreamError(c, nil))
+			message = result.newAPIError.ToOpenAIError().Message
+		}
 		resp := gin.H{
 			"success": false,
-			"message": result.localErr.Error(),
+			"message": message,
 			"time":    0.0,
 		}
 		if result.newAPIError != nil {
@@ -876,9 +881,10 @@ func TestChannel(c *gin.Context) {
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
+		service.PrepareRelayErrorForResponse(result.newAPIError, c.GetString(common.RequestIdKey), hideUpstreamError(c, nil))
 		c.JSON(http.StatusOK, gin.H{
 			"success":    false,
-			"message":    result.newAPIError.Error(),
+			"message":    result.newAPIError.ToOpenAIError().Message,
 			"time":       consumedTime,
 			"error_code": result.newAPIError.GetErrorCode(),
 		})

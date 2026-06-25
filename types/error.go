@@ -175,13 +175,24 @@ func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
 }
 
 func (e *NewAPIError) SetMessage(message string) {
-	if e.publicMessage != "" && e.Err != nil {
-		originMessage := e.Err.Error()
-		if suffix := strings.TrimPrefix(message, originMessage); suffix != message {
-			e.publicMessage += suffix
-		}
-	}
 	e.Err = errors.New(message)
+}
+
+func (e *NewAPIError) PublicMessage() string {
+	if e == nil {
+		return ""
+	}
+	return e.publicMessage
+}
+
+func (e *NewAPIError) DisplayMessage() string {
+	if e == nil {
+		return ""
+	}
+	if e.publicMessage != "" {
+		return e.publicMessage
+	}
+	return e.Error()
 }
 
 func (e *NewAPIError) SetPublicMessage(message string) {
@@ -215,8 +226,8 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 			Code:    e.errorCode,
 		}
 	}
-	if e.publicMessage != "" {
-		result.Message = e.publicMessage
+	if msg := e.DisplayMessage(); msg != "" {
+		result.Message = msg
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = common.MaskSensitiveInfo(result.Message)
@@ -247,8 +258,8 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			Type:    string(e.errorType),
 		}
 	}
-	if e.publicMessage != "" {
-		result.Message = e.publicMessage
+	if msg := e.DisplayMessage(); msg != "" {
+		result.Message = msg
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = common.MaskSensitiveInfo(result.Message)

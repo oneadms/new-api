@@ -276,6 +276,12 @@ func Max(a int, b int) int {
 }
 
 func MessageWithRequestId(message string, id string) string {
+	if strings.TrimSpace(id) == "" {
+		return message
+	}
+	if strings.TrimSpace(message) == "" {
+		return fmt.Sprintf("(request id: %s)", id)
+	}
 	return fmt.Sprintf("%s (request id: %s)", message, id)
 }
 
