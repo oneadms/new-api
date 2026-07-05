@@ -702,6 +702,9 @@ func (r *Room) updatePlayer(p *player, dt float64, now time.Time, settings opera
 				p.LastShot = now
 			}
 		} else if now.Sub(p.LastShot) >= time.Duration(settings.FireCooldownMs)*time.Millisecond {
+			if !r.canThrowEffectiveCap(p.UserId, settings) {
+				return
+			}
 			p.LastShot = now
 			r.spawnBullet(p, now, settings)
 		}
@@ -818,6 +821,7 @@ func (r *Room) handleHit(b *bullet, target *player, settings operation_setting.B
 	target.CapStack++
 	target.CapSources[b.OwnerId]++
 	r.addEvent(eventTypeHit, b.OwnerId, target.UserId, 0)
+	r.settleMatchDepositIfReached(target, settings)
 }
 
 func (r *Room) handleCapStormHit(b *bullet, target *player, settings operation_setting.BattleSetting) {
@@ -845,6 +849,7 @@ func (r *Room) handleCapStormHit(b *bullet, target *player, settings operation_s
 	if invalidCount := capCount - coverage.Count; invalidCount > 0 {
 		r.addCapInvalidEvent(owner.UserId, target.UserId, invalidCount, coverage.Reason)
 	}
+	r.settleMatchDepositIfReached(target, settings)
 }
 
 func (r *Room) deleteCapStormAttempt(b *bullet) {
@@ -883,6 +888,9 @@ func (r *Room) spawnBullet(p *player, now time.Time, settings operation_setting.
 
 func (r *Room) trySpawnCapStorm(p *player, now time.Time, settings operation_setting.BattleSetting) bool {
 	if p == nil || !p.capStormActive(now) || p.CapStack <= 0 {
+		return false
+	}
+	if !r.canThrowEffectiveCap(p.UserId, settings) {
 		return false
 	}
 	if !p.LastStormThrow.IsZero() && now.Sub(p.LastStormThrow) < capStormThrowCooldown {
@@ -1099,6 +1107,25 @@ func (r *Room) maxCapSettlementAmount(target *player, totalCaps int, settings op
 		amount = minPositive(amount, quota)
 	}
 	return amount
+}
+
+func (r *Room) settleMatchDepositIfReached(target *player, settings operation_setting.BattleSetting) {
+	if target == nil || target.CapStack <= 0 || settings.CapQuota <= 0 || !r.matchDepositActive(settings) {
+		return
+	}
+	limit := r.remainingMatchDeposit(target.UserId)
+	if limit <= 0 {
+		return
+	}
+	if dailyRemaining := r.remainingDailyLossQuota(target.UserId, settings); dailyRemaining < limit {
+		limit = dailyRemaining
+	}
+	if limit <= 0 {
+		return
+	}
+	if target.CapStack*settings.CapQuota >= limit {
+		r.settlePlayerCaps(target, settings)
+	}
 }
 
 func (r *Room) allocateCapSettlements(target *player, totalCaps int, totalAmount int, settings operation_setting.BattleSetting) []capSettlement {
@@ -1459,6 +1486,7 @@ func (r *Room) offensiveCapCount(ownerId int, settings operation_setting.BattleS
 	}
 	if r.matchDepositActive(settings) {
 		remaining := r.remainingCapGain(ownerId, settings) - r.pendingCapGain(ownerId, settings)
+		remaining = minInt(remaining, r.remainingMatchDeposit(ownerId))
 		return quotaToCapCount(remaining, settings.CapQuota)
 	}
 	quota, err := getBattleUserQuota(ownerId, true)
@@ -1480,6 +1508,13 @@ func (r *Room) offensiveCapCount(ownerId int, settings operation_setting.BattleS
 	}
 	remaining = minInt(remaining, settings.MaxDailyGainQuota-usage.Won-pendingReward)
 	return quotaToCapCount(remaining, settings.CapQuota)
+}
+
+func (r *Room) canThrowEffectiveCap(userId int, settings operation_setting.BattleSetting) bool {
+	if !r.matchDepositActive(settings) {
+		return true
+	}
+	return r.offensiveCapCount(userId, settings) > 0
 }
 
 func (r *Room) matchDepositActive(settings operation_setting.BattleSetting) bool {

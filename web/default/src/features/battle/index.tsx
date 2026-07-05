@@ -86,6 +86,7 @@ const battleJoinDepositMessage =
   'Balance must cover the match deposit to join. Recharge to enter this match.'
 const hudUpdateIntervalMs = 150
 const inputSendIntervalMs = 50
+const inputHeartbeatIntervalMs = 250
 const snapshotInterpolationDelayMs = 120
 const snapshotBufferLimit = 16
 const defaultPlayerSpeed = 260
@@ -101,6 +102,19 @@ function createEmptyInput(): BattleInput {
     aim_x: 1,
     aim_y: 0,
   }
+}
+
+function battleInputEquals(a: BattleInput, b: BattleInput): boolean {
+  return (
+    a.up === b.up &&
+    a.down === b.down &&
+    a.left === b.left &&
+    a.right === b.right &&
+    a.shoot === b.shoot &&
+    a.jump === b.jump &&
+    a.aim_x === b.aim_x &&
+    a.aim_y === b.aim_y
+  )
 }
 
 const battleEventTypes = new Set<BattleEvent['type']>([
@@ -282,6 +296,8 @@ export function Battle() {
   const wsRef = useRef<WebSocket | null>(null)
   const inputRef = useRef<BattleInput>(createEmptyInput())
   const inputSeqRef = useRef(0)
+  const lastInputSentAtRef = useRef(0)
+  const lastInputSentRef = useRef<BattleInput | null>(null)
   const inputHistoryRef = useRef<BattleInputFrame[]>([])
   const snapshotRef = useRef<BattleSnapshot | null>(null)
   const snapshotFrameRef = useRef<BattleSnapshotFrame | null>(null)
@@ -365,9 +381,21 @@ export function Battle() {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     const now = window.performance?.now() ?? Date.now()
-    const seq = inputSeqRef.current + 1
     const input = cloneBattleInput(inputRef.current)
+    const inputChanged =
+      !lastInputSentRef.current ||
+      !battleInputEquals(input, lastInputSentRef.current)
+    if (
+      !inputChanged &&
+      now - lastInputSentAtRef.current < inputHeartbeatIntervalMs
+    ) {
+      return
+    }
+
+    const seq = inputSeqRef.current + 1
     inputSeqRef.current = seq
+    lastInputSentAtRef.current = now
+    lastInputSentRef.current = input
     inputHistoryRef.current = trimBattleInputHistory(
       [...inputHistoryRef.current, { seq, input, sentAt: now }],
       now,
@@ -384,6 +412,8 @@ export function Battle() {
     wsRef.current = null
     inputRef.current = createEmptyInput()
     inputSeqRef.current = 0
+    lastInputSentAtRef.current = 0
+    lastInputSentRef.current = null
     inputHistoryRef.current = []
     snapshotFrameRef.current = null
     snapshotBufferRef.current = []
@@ -422,6 +452,8 @@ export function Battle() {
     wsRef.current = ws
     inputRef.current = createEmptyInput()
     inputSeqRef.current = 0
+    lastInputSentAtRef.current = 0
+    lastInputSentRef.current = null
     inputHistoryRef.current = []
     snapshotRef.current = null
     snapshotFrameRef.current = null
@@ -476,6 +508,8 @@ export function Battle() {
     return () => {
       wsRef.current?.close()
       inputRef.current = createEmptyInput()
+      lastInputSentAtRef.current = 0
+      lastInputSentRef.current = null
       inputHistoryRef.current = []
       snapshotFrameRef.current = null
       snapshotBufferRef.current = []

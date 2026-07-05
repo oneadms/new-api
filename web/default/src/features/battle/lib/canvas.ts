@@ -52,8 +52,9 @@ const PLAYER_SPRITE_WIDTH = 58
 const CAP_STACK_GAP = 11
 const BRICK_IMAGE_WIDTH = 60
 const BRICK_IMAGE_HEIGHT = 20
-const MAX_RENDERED_STACK_CAPS = 36
+const MAX_RENDERED_STACK_CAPS = 24
 const HEAVY_BULLET_COUNT = 40
+const HEAVY_STACK_CAP_COUNT = 80
 
 let backgroundImage: HTMLImageElement | null = null
 let brickImage: HTMLImageElement | null = null
@@ -191,7 +192,12 @@ export function drawBattleCanvas(
   const bullets = Array.isArray(snapshot.bullets) ? snapshot.bullets : []
   const players = Array.isArray(snapshot.players) ? snapshot.players : []
   const powerups = Array.isArray(snapshot.powerups) ? snapshot.powerups : []
-  const heavyScene = bullets.length > HEAVY_BULLET_COUNT
+  const stackCapCount = players.reduce(
+    (total, player) => total + Math.max(0, Math.floor(player.cap_stack || 0)),
+    0
+  )
+  const heavyScene =
+    bullets.length > HEAVY_BULLET_COUNT || stackCapCount > HEAVY_STACK_CAP_COUNT
   const invalidTargetIds = new Set(
     snapshot.events
       .filter(
@@ -203,8 +209,15 @@ export function drawBattleCanvas(
       .map((event) => event.target_user_id)
   )
 
-  powerups.forEach((powerup) => drawPowerup(ctx, powerup, metrics))
-  bullets.forEach((bullet) => drawFlyingCap(ctx, bullet, metrics, heavyScene))
+  const renderNow =
+    typeof performance !== 'undefined' ? performance.now() : Date.now()
+
+  powerups.forEach((powerup) =>
+    drawPowerup(ctx, powerup, metrics, renderNow, heavyScene)
+  )
+  bullets.forEach((bullet) =>
+    drawFlyingCap(ctx, bullet, metrics, renderNow, heavyScene)
+  )
 
   const throwingPlayerIds = new Set(bullets.map((bullet) => bullet.owner_id))
   players.forEach((player) => {
@@ -214,7 +227,9 @@ export function drawBattleCanvas(
       metrics,
       throwingPlayerIds.has(player.user_id),
       (player.cap_storm_until ?? 0) > snapshot.server_time,
-      invalidTargetIds.has(player.user_id) ? invalidLabel : ''
+      invalidTargetIds.has(player.user_id) ? invalidLabel : '',
+      renderNow,
+      heavyScene
     )
   })
 }
@@ -395,14 +410,13 @@ function drawFlyingCap(
   ctx: CanvasRenderingContext2D,
   bullet: BattleBullet,
   metrics: CanvasMetrics,
+  now: number,
   heavyScene: boolean
 ): void {
   const point = toScreen(bullet.x, bullet.y, metrics)
   const isStormCap = bullet.kind === 'cap_storm'
   const spin =
-    ((typeof performance !== 'undefined' ? performance.now() : Date.now()) /
-      (isStormCap ? 58 : 95) +
-      hashString(bullet.id)) %
+    (now / (isStormCap ? 58 : 95) + hashString(bullet.id)) %
     (Math.PI * 2)
   const arcTilt = Math.atan2(bullet.vy || 0, bullet.vx || 1) * 0.2
 
@@ -434,17 +448,17 @@ function drawFlyingCap(
 function drawPowerup(
   ctx: CanvasRenderingContext2D,
   powerup: BattlePowerup,
-  metrics: CanvasMetrics
+  metrics: CanvasMetrics,
+  now: number,
+  heavyScene: boolean
 ): void {
   const point = toScreen(powerup.x, powerup.y, metrics)
-  const now =
-    typeof performance !== 'undefined' ? performance.now() : Date.now()
   const pulse = 0.5 + Math.sin(now / 220 + hashString(powerup.id)) * 0.5
   const radius = (28 + pulse * 5) * metrics.scale
 
   ctx.save()
-  ctx.shadowColor = 'rgba(250, 204, 21, 0.72)'
-  ctx.shadowBlur = 24 * metrics.scale
+  ctx.shadowColor = heavyScene ? 'transparent' : 'rgba(250, 204, 21, 0.72)'
+  ctx.shadowBlur = heavyScene ? 0 : 24 * metrics.scale
   ctx.fillStyle = 'rgba(20, 83, 45, 0.72)'
   ctx.beginPath()
   ctx.arc(point.x, point.y, radius, 0, Math.PI * 2)
@@ -477,7 +491,9 @@ function drawPlayer(
   metrics: CanvasMetrics,
   isThrowing: boolean,
   hasCapStorm: boolean,
-  invalidLabel: string
+  invalidLabel: string,
+  now: number,
+  heavyScene: boolean
 ): void {
   const point = toScreen(player.x, player.y, metrics)
   const radius = PLAYER_RADIUS * metrics.scale
@@ -506,7 +522,7 @@ function drawPlayer(
   ctx.shadowColor = hasCapStorm
     ? 'rgba(250, 204, 21, 0.42)'
     : 'rgba(34, 197, 94, 0.24)'
-  ctx.shadowBlur = player.alive ? (hasCapStorm ? 24 : 16) : 0
+  ctx.shadowBlur = player.alive && !heavyScene ? (hasCapStorm ? 24 : 16) : 0
   drawPlayerSprite(
     ctx,
     point.x,
@@ -515,11 +531,20 @@ function drawPlayer(
     spriteHeight,
     player.alive,
     isThrowing,
-    player.direction
+    player.direction,
+    now
   )
   ctx.shadowBlur = 0
 
-  drawCapStack(ctx, point.x, spriteTop + spriteHeight * 0.16, capCount, metrics)
+  drawCapStack(
+    ctx,
+    point.x,
+    spriteTop + spriteHeight * 0.16,
+    capCount,
+    metrics,
+    now,
+    heavyScene
+  )
 
   ctx.fillStyle = 'rgba(241, 245, 249, 0.92)'
   ctx.font = `${Math.max(11, 12 * metrics.scale)}px system-ui, sans-serif`
@@ -572,9 +597,10 @@ function drawPlayerSprite(
   height: number,
   alive: boolean,
   isThrowing: boolean,
-  direction: number
+  direction: number,
+  now: number
 ): void {
-  const image = getPlayerSpriteImage(isThrowing)
+  const image = getPlayerSpriteImage(isThrowing, now)
   if (image?.complete && image.naturalWidth > 0) {
     ctx.save()
     ctx.translate(x, y)
@@ -608,13 +634,13 @@ function drawCapStack(
   x: number,
   headY: number,
   capCount: number,
-  metrics: CanvasMetrics
+  metrics: CanvasMetrics,
+  now: number,
+  heavyScene: boolean
 ): void {
   if (capCount <= 0) return
   const capWidth = PLAYER_SPRITE_WIDTH * 0.72 * metrics.scale
   const gap = CAP_STACK_GAP * metrics.scale
-  const now =
-    typeof performance !== 'undefined' ? performance.now() : Date.now()
   const renderedCount = Math.min(capCount, MAX_RENDERED_STACK_CAPS)
   for (let drawIndex = 0; drawIndex < renderedCount; drawIndex += 1) {
     const stackIndex =
@@ -622,24 +648,27 @@ function drawCapStack(
         ? drawIndex
         : Math.round((drawIndex * (capCount - 1)) / (renderedCount - 1))
     const y = headY - stackIndex * gap
-    const sway = Math.sin((now + stackIndex * 137) / 280) * 1.5 * metrics.scale
-    const rotation = -0.1 + Math.sin((now + stackIndex * 83) / 420) * 0.08
+    const sway = heavyScene
+      ? 0
+      : Math.sin((now + stackIndex * 137) / 280) * 1.5 * metrics.scale
+    const rotation = heavyScene
+      ? -0.1
+      : -0.1 + Math.sin((now + stackIndex * 83) / 420) * 0.08
     drawCapSprite(ctx, x + sway, y, capWidth, rotation, 1)
   }
 }
 
-function getPlayerSpriteImage(isThrowing: boolean): HTMLImageElement | null {
+function getPlayerSpriteImage(
+  isThrowing: boolean,
+  now: number
+): HTMLImageElement | null {
   if (!isThrowing) return getPlayerImage()
-  const throwImages = getPlayerThrowImages().filter(
-    (image) => image.complete && image.naturalWidth > 0
-  )
+  const throwImages = getPlayerThrowImages()
   if (throwImages.length === 0) return getPlayerImage()
 
-  const frame =
-    Math.floor(
-      (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 90
-    ) % throwImages.length
-  return throwImages[frame]
+  const frame = Math.floor(now / 90) % throwImages.length
+  const image = throwImages[frame]
+  return image?.complete && image.naturalWidth > 0 ? image : getPlayerImage()
 }
 
 function drawCapSprite(
