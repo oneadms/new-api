@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -146,15 +147,17 @@ func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaS
 
 	if tieredResult != nil {
 		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
-			return int(decimal.NewFromFloat(tieredResult.ActualQuotaBeforeGroup).
+			if math.IsNaN(tieredResult.ActualQuotaBeforeGroup) || math.IsInf(tieredResult.ActualQuotaBeforeGroup, 0) {
+				return common.SaturatingAddInt(tieredQuota, quotaDecimalRound(summary.ToolCallSurchargeQuota))
+			}
+			return quotaDecimalRound(decimal.NewFromFloat(tieredResult.ActualQuotaBeforeGroup).
 				Mul(decimal.NewFromFloat(snap.GroupRatio)).
 				Add(summary.ToolCallSurchargeQuota).
-				Round(0).
-				IntPart())
+				Round(0))
 		}
 	}
 
-	return tieredQuota + int(summary.ToolCallSurchargeQuota.Round(0).IntPart())
+	return common.SaturatingAddInt(tieredQuota, quotaDecimalRound(summary.ToolCallSurchargeQuota))
 }
 
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
@@ -186,7 +189,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	summary.PromptTokens = usage.PromptTokens
 	summary.CompletionTokens = usage.CompletionTokens
-	summary.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	summary.TotalTokens = common.SaturatingAddInt(usage.PromptTokens, usage.CompletionTokens)
 	summary.CacheTokens = usage.PromptTokensDetails.CachedTokens
 	summary.CacheCreationTokens = usage.PromptTokensDetails.CachedCreationTokens
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
@@ -289,7 +292,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
-		summary.Quota = int(quotaCalculateDecimal.Round(0).IntPart())
+		summary.Quota = quotaDecimalRound(quotaCalculateDecimal)
 	} else {
 		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(summary.ToolCallSurchargeQuota)
@@ -299,7 +302,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
-		summary.Quota = int(quotaCalculateDecimal.Round(0).IntPart())
+		summary.Quota = quotaDecimalRound(quotaCalculateDecimal)
 	}
 
 	if summary.TotalTokens == 0 {

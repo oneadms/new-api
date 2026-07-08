@@ -287,11 +287,14 @@ func TestQuotaRound(t *testing.T) {
 		{0.5, 1},
 		{0.6, 1},
 		{1.5, 2},
-		{-0.5, -1},
-		{-0.6, -1},
+		{-0.5, 0},
+		{-0.6, 0},
 		{999.4999, 999},
 		{999.5, 1000},
 		{1e9 + 0.5, 1e9 + 1},
+		{math.NaN(), 0},
+		{math.Inf(1), math.MaxInt},
+		{float64(math.MaxInt), math.MaxInt},
 	}
 	for _, tt := range tests {
 		got := billingexpr.QuotaRound(tt.in)

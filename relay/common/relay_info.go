@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
+	"math"
 	"strings"
 	"time"
 
@@ -20,6 +20,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tidwall/gjson"
 )
+
+const MaxBillingRequestParam = math.MaxInt32 / 2
 
 type ThinkingContentInfo struct {
 	IsFirstThinkingContent  bool
@@ -717,16 +719,12 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	}
 
 	if len(aux.Duration) > 0 {
-		var durationInt int
-		if err := common.Unmarshal(aux.Duration, &durationInt); err == nil {
-			t.Duration = durationInt
-		} else {
-			var durationStr string
-			if err := common.Unmarshal(aux.Duration, &durationStr); err == nil && durationStr != "" {
-				if v, err := strconv.Atoi(durationStr); err == nil {
-					t.Duration = v
-				}
-			}
+		duration, ok, err := parseTaskBillingRawDuration("duration", aux.Duration)
+		if err != nil {
+			return err
+		}
+		if ok {
+			t.Duration = duration
 		}
 	}
 

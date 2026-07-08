@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,10 +12,30 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/types"
-	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 )
+
+const maxBillingRequestParam = math.MaxInt32 / 2
+
+func validateBillingUintParam(name string, value *uint) error {
+	if value != nil && *value > uint(maxBillingRequestParam) {
+		return fmt.Errorf("%s is invalid", name)
+	}
+	return nil
+}
+
+func parseBillingUintParam(name string, raw string) (*uint, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value > uint64(maxBillingRequestParam) {
+		return nil, fmt.Errorf("%s is invalid", name)
+	}
+	return common.GetPointer(uint(value)), nil
+}
 
 func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dto.Request, err error) {
 	relayMode := relayconstant.Path2RelayMode(c.Request.URL.Path)
@@ -124,6 +145,9 @@ func GetAndValidateResponsesRequest(c *gin.Context) (*dto.OpenAIResponsesRequest
 	if request.Input == nil {
 		return nil, errors.New("input is required")
 	}
+	if err := validateBillingUintParam("max_output_tokens", request.MaxOutputTokens); err != nil {
+		return nil, err
+	}
 	return request, nil
 }
 
@@ -151,7 +175,10 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			formData := c.Request.PostForm
 			imageRequest.Prompt = formData.Get("prompt")
 			imageRequest.Model = formData.Get("model")
-			imageRequest.N = common.GetPointer(uint(common.String2Int(formData.Get("n"))))
+			imageRequest.N, err = parseBillingUintParam("n", formData.Get("n"))
+			if err != nil {
+				return nil, err
+			}
 			imageRequest.Quality = formData.Get("quality")
 			imageRequest.Size = formData.Get("size")
 			if imageValue := formData.Get("image"); imageValue != "" {
@@ -165,6 +192,9 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			}
 			if imageRequest.N == nil || *imageRequest.N == 0 {
 				imageRequest.N = common.GetPointer(uint(1))
+			}
+			if err := validateBillingUintParam("n", imageRequest.N); err != nil {
+				return nil, err
 			}
 
 			hasWatermark := formData.Has("watermark")
@@ -221,6 +251,9 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		if imageRequest.N == nil || *imageRequest.N == 0 {
 			imageRequest.N = common.GetPointer(uint(1))
 		}
+		if err := validateBillingUintParam("n", imageRequest.N); err != nil {
+			return nil, err
+		}
 	}
 
 	return imageRequest, nil
@@ -237,6 +270,12 @@ func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest
 	}
 	if textRequest.Model == "" {
 		return nil, errors.New("field model is required")
+	}
+	if err := validateBillingUintParam("max_tokens", textRequest.MaxTokens); err != nil {
+		return nil, err
+	}
+	if err := validateBillingUintParam("max_tokens_to_sample", textRequest.MaxTokensToSample); err != nil {
+		return nil, err
 	}
 
 	//if textRequest.Stream {
@@ -260,8 +299,11 @@ func GetAndValidateTextRequest(c *gin.Context, relayMode int) (*dto.GeneralOpenA
 		textRequest.Model = c.Param("model")
 	}
 
-	if lo.FromPtrOr(textRequest.MaxTokens, uint(0)) > math.MaxInt32/2 {
-		return nil, errors.New("max_tokens is invalid")
+	if err := validateBillingUintParam("max_tokens", textRequest.MaxTokens); err != nil {
+		return nil, err
+	}
+	if err := validateBillingUintParam("max_completion_tokens", textRequest.MaxCompletionTokens); err != nil {
+		return nil, err
 	}
 	if textRequest.Model == "" {
 		return nil, errors.New("model is required")
@@ -308,6 +350,9 @@ func GetAndValidateGeminiRequest(c *gin.Context) (*dto.GeminiChatRequest, error)
 	request := &dto.GeminiChatRequest{}
 	err := common.UnmarshalBodyReusable(c, request)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateBillingUintParam("max_output_tokens", request.GenerationConfig.MaxOutputTokens); err != nil {
 		return nil, err
 	}
 	if len(request.Contents) == 0 && len(request.Requests) == 0 {

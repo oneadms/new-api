@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,96 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )
+
+func validateTaskBillingIntParam(name string, value int) error {
+	if value < 0 || value > MaxBillingRequestParam {
+		return fmt.Errorf("%s is invalid", name)
+	}
+	return nil
+}
+
+func normalizeTaskBillingFloatParam(name string, value float64) (int, error) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > float64(MaxBillingRequestParam) {
+		return 0, fmt.Errorf("%s is invalid", name)
+	}
+	return int(math.Ceil(value)), nil
+}
+
+func parseTaskBillingStringParam(name string, raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s is invalid", name)
+	}
+	return normalizeTaskBillingFloatParam(name, value)
+}
+
+func parseTaskBillingRawDuration(name string, raw []byte) (int, bool, error) {
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "null" {
+		return 0, false, nil
+	}
+	var durationInt int
+	if err := common.Unmarshal(raw, &durationInt); err == nil {
+		return durationInt, true, validateTaskBillingIntParam(name, durationInt)
+	}
+	var durationFloat float64
+	if err := common.Unmarshal(raw, &durationFloat); err == nil {
+		duration, err := normalizeTaskBillingFloatParam(name, durationFloat)
+		return duration, true, err
+	}
+	var durationStr string
+	if err := common.Unmarshal(raw, &durationStr); err == nil {
+		duration, err := parseTaskBillingStringParam(name, durationStr)
+		return duration, true, err
+	}
+	return 0, true, fmt.Errorf("%s is invalid", name)
+}
+
+func validateTaskDurationSecondsMetadata(metadata map[string]interface{}) error {
+	if metadata == nil {
+		return nil
+	}
+	value, exists := metadata["durationSeconds"]
+	if !exists {
+		return nil
+	}
+	switch v := value.(type) {
+	case float64:
+		_, err := normalizeTaskBillingFloatParam("durationSeconds", v)
+		return err
+	case int:
+		return validateTaskBillingIntParam("durationSeconds", v)
+	case string:
+		_, err := parseTaskBillingStringParam("durationSeconds", v)
+		return err
+	default:
+		return fmt.Errorf("durationSeconds is invalid")
+	}
+}
+
+func validateTaskBillingParams(req TaskSubmitReq) *dto.TaskError {
+	if err := validateTaskBillingIntParam("duration", req.Duration); err != nil {
+		return createTaskError(err, "invalid_duration", http.StatusBadRequest, true)
+	}
+	if _, err := parseTaskBillingStringParam("seconds", req.Seconds); err != nil {
+		return createTaskError(err, "invalid_seconds", http.StatusBadRequest, true)
+	}
+	if err := validateTaskDurationSecondsMetadata(req.Metadata); err != nil {
+		return createTaskError(err, "invalid_duration", http.StatusBadRequest, true)
+	}
+	return nil
+}
+
+func taskEffectiveSeconds(req TaskSubmitReq) int {
+	seconds, _ := parseTaskBillingStringParam("seconds", req.Seconds)
+	if seconds > 0 {
+		return seconds
+	}
+	return req.Duration
+}
 
 type HasPrompt interface {
 	GetPrompt() string
@@ -95,9 +186,19 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 	}
 
 	if durationStr := formData.Get("seconds"); durationStr != "" {
-		if duration, err := strconv.Atoi(durationStr); err == nil {
-			req.Duration = duration
+		req.Seconds = durationStr
+		duration, err := parseTaskBillingStringParam("seconds", durationStr)
+		if err != nil {
+			return req, err
 		}
+		req.Duration = duration
+	}
+	if durationStr := formData.Get("duration"); durationStr != "" {
+		duration, err := parseTaskBillingStringParam("duration", durationStr)
+		if err != nil {
+			return req, err
+		}
+		req.Duration = duration
 	}
 
 	if images := formData["images"]; len(images) > 0 {
@@ -133,12 +234,13 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	prompt = req.Prompt
 	model = req.Model
 	size = req.Size
-	seconds, _ = strconv.Atoi(req.Seconds)
-	if seconds == 0 {
-		seconds = req.Duration
-	}
+	seconds = taskEffectiveSeconds(req)
 	if req.InputReference != "" {
 		req.Images = []string{req.InputReference}
+	}
+
+	if taskErr := validateTaskBillingParams(req); taskErr != nil {
+		return taskErr
 	}
 
 	if strings.TrimSpace(req.Model) == "" {
@@ -208,6 +310,10 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 	// 为了metadata字段的兼容性，统一UnmarshalBodyReusable
 	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
+	}
+
+	if taskErr := validateTaskBillingParams(req); taskErr != nil {
+		return taskErr
 	}
 
 	if taskErr := validatePrompt(req.Prompt); taskErr != nil {
