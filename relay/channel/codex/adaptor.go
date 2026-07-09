@@ -96,12 +96,6 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		request.Instructions = json.RawMessage(`""`)
 	}
 
-	var err error
-	request.Input, err = normalizeCodexResponsesInputArguments(request.Input)
-	if err != nil {
-		return nil, err
-	}
-
 	if isCompact {
 		return request, nil
 	}
@@ -111,76 +105,6 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	request.MaxOutputTokens = nil
 	request.Temperature = nil
 	return request, nil
-}
-
-func normalizeCodexResponsesInputArguments(input json.RawMessage) (json.RawMessage, error) {
-	if len(input) == 0 {
-		return input, nil
-	}
-
-	var value any
-	if err := common.Unmarshal(input, &value); err != nil {
-		return nil, err
-	}
-
-	normalized, changed, err := normalizeCodexResponsesInputValue(value)
-	if err != nil {
-		return nil, err
-	}
-	if !changed {
-		return input, nil
-	}
-
-	return common.Marshal(normalized)
-}
-
-func normalizeCodexResponsesInputValue(value any) (any, bool, error) {
-	switch v := value.(type) {
-	case []any:
-		changed := false
-		for i, item := range v {
-			normalized, itemChanged, err := normalizeCodexResponsesInputValue(item)
-			if err != nil {
-				return nil, false, err
-			}
-			if itemChanged {
-				v[i] = normalized
-				changed = true
-			}
-		}
-		return v, changed, nil
-	case map[string]any:
-		if typ, _ := v["type"].(string); typ != "function_call" {
-			return v, false, nil
-		}
-		rawArgs, ok := v["arguments"].(string)
-		if !ok {
-			return v, false, nil
-		}
-		args, err := parseCodexFunctionCallArguments(rawArgs)
-		if err != nil {
-			return nil, false, err
-		}
-		v["arguments"] = args
-		return v, true, nil
-	default:
-		return value, false, nil
-	}
-}
-
-func parseCodexFunctionCallArguments(raw string) (map[string]any, error) {
-	if strings.TrimSpace(raw) == "" {
-		return map[string]any{}, nil
-	}
-
-	var args map[string]any
-	if err := common.Unmarshal([]byte(raw), &args); err != nil {
-		return nil, errors.New("codex channel: function_call arguments must be a JSON object string")
-	}
-	if args == nil {
-		return nil, errors.New("codex channel: function_call arguments must be a JSON object string")
-	}
-	return args, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
