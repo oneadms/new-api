@@ -11,7 +11,6 @@ import (
 	battlesvc "github.com/QuantumNous/new-api/service/battle"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
-	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -93,7 +92,7 @@ func BattleWebSocket(c *gin.Context) {
 		return
 	}
 
-	userId, username, ok := getBattleSessionUser(c)
+	userId, username, ok := getBattleAuthenticatedUser(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
@@ -141,25 +140,13 @@ func battleJoinInsufficientMessage(setting *operation_setting.BattleSetting) str
 	return "Balance must be positive to join"
 }
 
-func getBattleSessionUser(c *gin.Context) (int, string, bool) {
-	session := sessions.Default(c)
-	idValue := session.Get("id")
-	usernameValue := session.Get("username")
-	statusValue := session.Get("status")
-	if idValue == nil || usernameValue == nil || statusValue == nil {
+func getBattleAuthenticatedUser(c *gin.Context) (int, string, bool) {
+	userId := c.GetInt("id")
+	if userId <= 0 {
 		return 0, "", false
 	}
-
-	userId, ok := idValue.(int)
-	if !ok || userId <= 0 {
-		return 0, "", false
-	}
-	username, ok := usernameValue.(string)
-	if !ok || username == "" {
-		return 0, "", false
-	}
-	status, ok := statusValue.(int)
-	if !ok || status == common.UserStatusDisabled {
+	username := c.GetString("username")
+	if username == "" {
 		return 0, "", false
 	}
 	return userId, username, true

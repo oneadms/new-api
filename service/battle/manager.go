@@ -1287,6 +1287,7 @@ func (r *Room) collectMatchDeposits(settings operation_setting.BattleSetting) bo
 		quota, err := getBattleUserQuota(userId, true)
 		if err != nil || quota < settings.MatchEntryQuota {
 			r.kickMatchDepositInsufficientPlayer(userId)
+			r.matchDeposits = make(map[int]int)
 			return false
 		}
 		r.matchDeposits[userId] = settings.MatchEntryQuota

@@ -10,7 +10,6 @@ import (
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var (
@@ -300,10 +299,7 @@ func validateBattleQuotaLimit(limit *BattleQuotaLimit) error {
 
 func lockBattleUser(tx *gorm.DB, userId int) (*User, error) {
 	var user User
-	query := tx.Select("id", "quota").Where("id = ?", userId)
-	if !common.UsingSQLite {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
+	query := lockForUpdate(tx.Select("id", "quota").Where("id = ?", userId))
 	if err := query.First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrBattleUserNotFound

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -12,30 +13,10 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 )
-
-const maxBillingRequestParam = math.MaxInt32 / 2
-
-func validateBillingUintParam(name string, value *uint) error {
-	if value != nil && *value > uint(maxBillingRequestParam) {
-		return fmt.Errorf("%s is invalid", name)
-	}
-	return nil
-}
-
-func parseBillingUintParam(name string, raw string) (*uint, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, nil
-	}
-	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil || value > uint64(maxBillingRequestParam) {
-		return nil, fmt.Errorf("%s is invalid", name)
-	}
-	return common.GetPointer(uint(value)), nil
-}
 
 func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dto.Request, err error) {
 	relayMode := relayconstant.Path2RelayMode(c.Request.URL.Path)
@@ -133,6 +114,20 @@ func GetAndValidateEmbeddingRequest(c *gin.Context, relayMode int) (*dto.Embeddi
 	return embeddingRequest, nil
 }
 
+// maxTokensLimit bounds user-supplied max token fields. These values feed
+// pre-consume quota math (preConsumedTokens * ratio); an unbounded value can
+// overflow the conversion and corrupt billing.
+const maxTokensLimit = math.MaxInt32 / 2
+
+func exceedsMaxTokensLimit(values ...*uint) bool {
+	for _, v := range values {
+		if lo.FromPtrOr(v, uint(0)) > maxTokensLimit {
+			return true
+		}
+	}
+	return false
+}
+
 func GetAndValidateResponsesRequest(c *gin.Context) (*dto.OpenAIResponsesRequest, error) {
 	request := &dto.OpenAIResponsesRequest{}
 	err := common.UnmarshalBodyReusable(c, request)
@@ -145,8 +140,8 @@ func GetAndValidateResponsesRequest(c *gin.Context) (*dto.OpenAIResponsesRequest
 	if request.Input == nil {
 		return nil, errors.New("input is required")
 	}
-	if err := validateBillingUintParam("max_output_tokens", request.MaxOutputTokens); err != nil {
-		return nil, err
+	if exceedsMaxTokensLimit(request.MaxOutputTokens) {
+		return nil, errors.New("max_output_tokens is invalid")
 	}
 	return request, nil
 }
@@ -168,19 +163,31 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 	switch relayMode {
 	case relayconstant.RelayModeImagesEdits:
 		if strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
-			_, err := c.MultipartForm()
+			form, err := common.ParseMultipartFormReusable(c)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse image edit form request: %w", err)
 			}
-			formData := c.Request.PostForm
+			formData := url.Values(form.Value)
+			c.Request.MultipartForm = form
+			c.Request.PostForm = formData
 			imageRequest.Prompt = formData.Get("prompt")
 			imageRequest.Model = formData.Get("model")
-			imageRequest.N, err = parseBillingUintParam("n", formData.Get("n"))
-			if err != nil {
-				return nil, err
+			if nValue := strings.TrimSpace(formData.Get("n")); nValue != "" {
+				n, err := strconv.Atoi(nValue)
+				if err != nil || n < 0 || n > dto.MaxImageN {
+					return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
+				}
+				imageRequest.N = common.GetPointer(uint(n))
 			}
 			imageRequest.Quality = formData.Get("quality")
 			imageRequest.Size = formData.Get("size")
+			if streamValue := strings.TrimSpace(formData.Get("stream")); streamValue != "" {
+				stream, err := strconv.ParseBool(streamValue)
+				if err != nil {
+					return nil, fmt.Errorf("invalid stream value: %w", err)
+				}
+				imageRequest.Stream = common.GetPointer(stream)
+			}
 			if imageValue := formData.Get("image"); imageValue != "" {
 				imageRequest.Image, _ = common.Marshal(imageValue)
 			}
@@ -192,9 +199,6 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			}
 			if imageRequest.N == nil || *imageRequest.N == 0 {
 				imageRequest.N = common.GetPointer(uint(1))
-			}
-			if err := validateBillingUintParam("n", imageRequest.N); err != nil {
-				return nil, err
 			}
 
 			hasWatermark := formData.Has("watermark")
@@ -218,6 +222,10 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 
 		if strings.Contains(imageRequest.Size, "×") {
 			return nil, errors.New("size an unexpected error occurred in the parameter, please use 'x' instead of the multiplication sign '×'")
+		}
+
+		if imageRequest.N != nil && *imageRequest.N > dto.MaxImageN {
+			return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
 		}
 
 		// Not "256x256", "512x512", or "1024x1024"
@@ -251,9 +259,6 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		if imageRequest.N == nil || *imageRequest.N == 0 {
 			imageRequest.N = common.GetPointer(uint(1))
 		}
-		if err := validateBillingUintParam("n", imageRequest.N); err != nil {
-			return nil, err
-		}
 	}
 
 	return imageRequest, nil
@@ -271,11 +276,8 @@ func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest
 	if textRequest.Model == "" {
 		return nil, errors.New("field model is required")
 	}
-	if err := validateBillingUintParam("max_tokens", textRequest.MaxTokens); err != nil {
-		return nil, err
-	}
-	if err := validateBillingUintParam("max_tokens_to_sample", textRequest.MaxTokensToSample); err != nil {
-		return nil, err
+	if exceedsMaxTokensLimit(textRequest.MaxTokens, textRequest.MaxTokensToSample) {
+		return nil, errors.New("max_tokens is invalid")
 	}
 
 	//if textRequest.Stream {
@@ -299,11 +301,8 @@ func GetAndValidateTextRequest(c *gin.Context, relayMode int) (*dto.GeneralOpenA
 		textRequest.Model = c.Param("model")
 	}
 
-	if err := validateBillingUintParam("max_tokens", textRequest.MaxTokens); err != nil {
-		return nil, err
-	}
-	if err := validateBillingUintParam("max_completion_tokens", textRequest.MaxCompletionTokens); err != nil {
-		return nil, err
+	if exceedsMaxTokensLimit(textRequest.MaxTokens, textRequest.MaxCompletionTokens) {
+		return nil, errors.New("max_tokens is invalid")
 	}
 	if textRequest.Model == "" {
 		return nil, errors.New("model is required")
@@ -352,11 +351,11 @@ func GetAndValidateGeminiRequest(c *gin.Context) (*dto.GeminiChatRequest, error)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateBillingUintParam("max_output_tokens", request.GenerationConfig.MaxOutputTokens); err != nil {
-		return nil, err
-	}
 	if len(request.Contents) == 0 && len(request.Requests) == 0 {
 		return nil, errors.New("contents is required")
+	}
+	if exceedsMaxTokensLimit(request.GenerationConfig.MaxOutputTokens) {
+		return nil, errors.New("maxOutputTokens is invalid")
 	}
 
 	//if c.Query("alt") == "sse" {

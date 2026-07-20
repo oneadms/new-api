@@ -593,6 +593,7 @@ func TestMatchSettlementDoesNotExceedEntryDeposit(t *testing.T) {
 	settings.MatchEntryQuota = 250
 	settings.MaxRoundGainQuota = 1000
 	settings.MaxDailyGainQuota = 1000
+	stubBattleQuota(t, map[int]int{1: 10000, 2: 10000})
 	room.matchPhase = matchPhaseRunning
 	room.matchDeposits[1] = settings.MatchEntryQuota
 	room.matchDeposits[2] = settings.MatchEntryQuota

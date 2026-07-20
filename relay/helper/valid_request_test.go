@@ -27,7 +27,7 @@ func TestGetAndValidateTextRequestRejectsHugeMaxCompletionTokens(t *testing.T) {
 	_, err := GetAndValidateTextRequest(ctx, relayconstant.RelayModeChatCompletions)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "max_completion_tokens is invalid")
+	require.Contains(t, err.Error(), "max_tokens is invalid")
 }
 
 func TestGetAndValidateResponsesRequestRejectsHugeMaxOutputTokens(t *testing.T) {
@@ -45,7 +45,7 @@ func TestGetAndValidOpenAIImageRequestRejectsHugeN(t *testing.T) {
 	_, err := GetAndValidOpenAIImageRequest(ctx, relayconstant.RelayModeImagesGenerations)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "n is invalid")
+	require.Contains(t, err.Error(), "n must be an integer")
 }
 
 func TestGetAndValidateGeminiRequestRejectsHugeMaxOutputTokens(t *testing.T) {
@@ -54,5 +54,5 @@ func TestGetAndValidateGeminiRequestRejectsHugeMaxOutputTokens(t *testing.T) {
 	_, err := GetAndValidateGeminiRequest(ctx)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "max_output_tokens is invalid")
+	require.Contains(t, err.Error(), "maxOutputTokens is invalid")
 }

@@ -50,9 +50,9 @@ func TestWriteAndReadTrace(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.SSETrace{}))
 
-	oldLogDB := model.LOG_DB
-	model.LOG_DB = db
-	t.Cleanup(func() { model.LOG_DB = oldLogDB })
+	oldDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = oldDB })
 
 	content := "data: {\"id\":1}\n\ndata: [DONE]\n\n"
 	err = writeTrace(writeJob{

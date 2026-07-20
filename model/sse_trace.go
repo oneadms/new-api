@@ -30,7 +30,7 @@ func UpsertSSETrace(trace *SSETrace) error {
 	if trace == nil {
 		return errors.New("sse trace is nil")
 	}
-	return LOG_DB.Clauses(clause.OnConflict{
+	return DB.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "request_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"file_path",
@@ -47,7 +47,7 @@ func UpsertSSETrace(trace *SSETrace) error {
 
 func GetSSETraceByRequestID(requestID string) (*SSETrace, error) {
 	var trace SSETrace
-	err := LOG_DB.Where("request_id = ?", requestID).First(&trace).Error
+	err := DB.Where("request_id = ?", requestID).First(&trace).Error
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func GetSSETraceByRequestID(requestID string) (*SSETrace, error) {
 }
 
 func DeleteSSETraceByRequestID(requestID string) error {
-	return LOG_DB.Where("request_id = ?", requestID).Delete(&SSETrace{}).Error
+	return DB.Where("request_id = ?", requestID).Delete(&SSETrace{}).Error
 }
 
 func GetExpiredSSETraces(limit int) ([]SSETrace, error) {
@@ -63,7 +63,7 @@ func GetExpiredSSETraces(limit int) ([]SSETrace, error) {
 		limit = 500
 	}
 	var traces []SSETrace
-	err := LOG_DB.Where("expires_at <= ?", time.Now().Unix()).Limit(limit).Find(&traces).Error
+	err := DB.Where("expires_at <= ?", time.Now().Unix()).Limit(limit).Find(&traces).Error
 	return traces, err
 }
 
@@ -71,18 +71,18 @@ func DeleteSSETracesByIDs(ids []int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	return LOG_DB.Where("id IN ?", ids).Delete(&SSETrace{}).Error
+	return DB.Where("id IN ?", ids).Delete(&SSETrace{}).Error
 }
 
 func GetSSETraceStats() (SSETraceStats, error) {
 	var stats SSETraceStats
-	if err := LOG_DB.Model(&SSETrace{}).Count(&stats.FileCount).Error; err != nil {
+	if err := DB.Model(&SSETrace{}).Count(&stats.FileCount).Error; err != nil {
 		return stats, err
 	}
 	var row struct {
 		TotalSize *int64
 	}
-	if err := LOG_DB.Model(&SSETrace{}).Select("SUM(compressed_size) AS total_size").Scan(&row).Error; err != nil {
+	if err := DB.Model(&SSETrace{}).Select("SUM(compressed_size) AS total_size").Scan(&row).Error; err != nil {
 		return stats, err
 	}
 	if row.TotalSize != nil {

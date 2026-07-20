@@ -14,6 +14,6 @@ func SetBattleRouter(router *gin.Engine) {
 	{
 		battleRoute.GET("/status", middleware.UserAuth(), controller.GetBattleStatus)
 		battleRoute.POST("/match/start", middleware.AdminAuth(), controller.StartBattleMatch)
-		battleRoute.GET("/ws", controller.BattleWebSocket)
+		battleRoute.GET("/ws", middleware.WebSocketUserAuth("new-api-bearer."), controller.BattleWebSocket)
 	}
 }

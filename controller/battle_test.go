@@ -12,8 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	battlesvc "github.com/QuantumNous/new-api/service/battle"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/gorilla/websocket"
@@ -62,9 +60,9 @@ func setupBattleControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
-	common.UsingSQLite = true
-	common.UsingMySQL = false
-	common.UsingPostgreSQL = false
+	originalMainDatabaseType := common.MainDatabaseType()
+	originalLogDatabaseType := common.LogDatabaseType()
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	common.RedisEnabled = false
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
@@ -76,6 +74,7 @@ func setupBattleControllerTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(&model.User{}))
 
 	t.Cleanup(func() {
+		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 		sqlDB, err := db.DB()
 		if err == nil {
 			_ = sqlDB.Close()
@@ -83,6 +82,14 @@ func setupBattleControllerTestDB(t *testing.T) *gorm.DB {
 	})
 
 	return db
+}
+
+func battleWebSocketTestAuth(userId int, username string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("id", userId)
+		c.Set("username", username)
+		c.Next()
+	}
 }
 
 func createBattleControllerTestUser(t *testing.T, id int, quota int) {
@@ -143,34 +150,14 @@ func TestBattleWebSocketJoinsRoomAndAppliesServerMovement(t *testing.T) {
 	createBattleControllerTestUser(t, 7, 1000)
 
 	router := gin.New()
-	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("battle-test-secret"))))
-	router.GET("/test-session", func(c *gin.Context) {
-		session := sessions.Default(c)
-		session.Set("id", 7)
-		session.Set("username", "battle-test-user")
-		session.Set("status", common.UserStatusEnabled)
-		if err := session.Save(); err != nil {
-			c.String(http.StatusInternalServerError, err.Error())
-			return
-		}
-		c.Status(http.StatusNoContent)
-	})
+	router.Use(battleWebSocketTestAuth(7, "battle-test-user"))
 	router.GET("/api/battle/ws", BattleWebSocket)
 
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	response, err := http.Get(server.URL + "/test-session")
-	require.NoError(t, err)
-	require.NoError(t, response.Body.Close())
-	require.Equal(t, http.StatusNoContent, response.StatusCode)
-	require.NotEmpty(t, response.Cookies())
-
 	headers := http.Header{}
 	headers.Set("Origin", server.URL)
-	for _, sessionCookie := range response.Cookies() {
-		headers.Add("Cookie", sessionCookie.String())
-	}
 
 	wsUrl := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/battle/ws?room=ws-test"
 	conn, _, err := websocket.DefaultDialer.Dial(wsUrl, headers)
@@ -239,33 +226,14 @@ func TestBattleWebSocketRejectsNonPositiveBalance(t *testing.T) {
 			createBattleControllerTestUser(t, tc.userId, tc.quota)
 
 			router := gin.New()
-			router.Use(sessions.Sessions("session", cookie.NewStore([]byte("battle-test-secret"))))
-			router.GET("/test-session", func(c *gin.Context) {
-				session := sessions.Default(c)
-				session.Set("id", tc.userId)
-				session.Set("username", fmt.Sprintf("battle-controller-user-%d", tc.userId))
-				session.Set("status", common.UserStatusEnabled)
-				if err := session.Save(); err != nil {
-					c.String(http.StatusInternalServerError, err.Error())
-					return
-				}
-				c.Status(http.StatusNoContent)
-			})
+			router.Use(battleWebSocketTestAuth(tc.userId, fmt.Sprintf("battle-controller-user-%d", tc.userId)))
 			router.GET("/api/battle/ws", BattleWebSocket)
 
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			response, err := http.Get(server.URL + "/test-session")
-			require.NoError(t, err)
-			require.NoError(t, response.Body.Close())
-			require.Equal(t, http.StatusNoContent, response.StatusCode)
-
 			headers := http.Header{}
 			headers.Set("Origin", server.URL)
-			for _, sessionCookie := range response.Cookies() {
-				headers.Add("Cookie", sessionCookie.String())
-			}
 
 			wsUrl := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/battle/ws?room=ws-test"
 			conn, upgradeResponse, err := websocket.DefaultDialer.Dial(wsUrl, headers)
@@ -296,33 +264,14 @@ func TestBattleWebSocketRejectsBalanceBelowMatchDeposit(t *testing.T) {
 	createBattleControllerTestUser(t, 10, 100)
 
 	router := gin.New()
-	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("battle-test-secret"))))
-	router.GET("/test-session", func(c *gin.Context) {
-		session := sessions.Default(c)
-		session.Set("id", 10)
-		session.Set("username", "battle-controller-user-10")
-		session.Set("status", common.UserStatusEnabled)
-		if err := session.Save(); err != nil {
-			c.String(http.StatusInternalServerError, err.Error())
-			return
-		}
-		c.Status(http.StatusNoContent)
-	})
+	router.Use(battleWebSocketTestAuth(10, "battle-controller-user-10"))
 	router.GET("/api/battle/ws", BattleWebSocket)
 
 	server := httptest.NewServer(router)
 	defer server.Close()
 
-	response, err := http.Get(server.URL + "/test-session")
-	require.NoError(t, err)
-	require.NoError(t, response.Body.Close())
-	require.Equal(t, http.StatusNoContent, response.StatusCode)
-
 	headers := http.Header{}
 	headers.Set("Origin", server.URL)
-	for _, sessionCookie := range response.Cookies() {
-		headers.Add("Cookie", sessionCookie.String())
-	}
 
 	wsUrl := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/battle/ws?room=ws-test"
 	conn, upgradeResponse, err := websocket.DefaultDialer.Dial(wsUrl, headers)
