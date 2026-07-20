@@ -320,6 +320,11 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'sse_trace_setting.enabled': boolean
+  'sse_trace_setting.max_request_mb': number
+  'sse_trace_setting.queue_max_mb': number
+  'sse_trace_setting.retention_hours': number
+  'sse_trace_setting.storage_path': string
   'battle_setting.enabled': boolean
   'battle_setting.hide_room_input': boolean
   'battle_setting.min_drop_quota': number

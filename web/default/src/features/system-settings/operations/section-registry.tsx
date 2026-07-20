@@ -164,6 +164,16 @@ const OPERATIONS_SECTIONS = [
             settings['perf_metrics_setting.bucket_time'] ?? 'hour',
           'perf_metrics_setting.retention_days':
             settings['perf_metrics_setting.retention_days'] ?? 0,
+          'sse_trace_setting.enabled':
+            settings['sse_trace_setting.enabled'] ?? false,
+          'sse_trace_setting.max_request_mb':
+            settings['sse_trace_setting.max_request_mb'] ?? 1,
+          'sse_trace_setting.queue_max_mb':
+            settings['sse_trace_setting.queue_max_mb'] ?? 256,
+          'sse_trace_setting.retention_hours':
+            settings['sse_trace_setting.retention_hours'] ?? 24,
+          'sse_trace_setting.storage_path':
+            settings['sse_trace_setting.storage_path'] ?? 'data/sse-traces',
         }}
       />
     ),

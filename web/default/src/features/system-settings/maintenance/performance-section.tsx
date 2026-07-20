@@ -38,6 +38,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
   Form,
   FormControl,
   FormDescription,
@@ -95,6 +102,13 @@ const perfSchema = z.object({
     bucket_time: z.enum(['minute', '5min', 'hour']),
     retention_days: z.coerce.number().min(0),
   }),
+  sse_trace_setting: z.object({
+    enabled: z.boolean(),
+    max_request_mb: z.coerce.number().int().min(1).max(64),
+    queue_max_mb: z.coerce.number().int().min(16).max(4096),
+    retention_hours: z.coerce.number().int().min(1).max(720),
+    storage_path: z.string(),
+  }),
 })
 
 type PerfFormInput = z.input<typeof perfSchema>
@@ -113,6 +127,11 @@ type FlatPerfDefaults = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'minute' | '5min' | 'hour'
   'perf_metrics_setting.retention_days': number
+  'sse_trace_setting.enabled': boolean
+  'sse_trace_setting.max_request_mb': number
+  'sse_trace_setting.queue_max_mb': number
+  'sse_trace_setting.retention_hours': number
+  'sse_trace_setting.storage_path': string
 }
 
 const buildFormDefaults = (defaults: FlatPerfDefaults): PerfFormInput => ({
@@ -136,6 +155,13 @@ const buildFormDefaults = (defaults: FlatPerfDefaults): PerfFormInput => ({
     flush_interval: defaults['perf_metrics_setting.flush_interval'],
     bucket_time: defaults['perf_metrics_setting.bucket_time'],
     retention_days: defaults['perf_metrics_setting.retention_days'],
+  },
+  sse_trace_setting: {
+    enabled: defaults['sse_trace_setting.enabled'],
+    max_request_mb: defaults['sse_trace_setting.max_request_mb'],
+    queue_max_mb: defaults['sse_trace_setting.queue_max_mb'],
+    retention_hours: defaults['sse_trace_setting.retention_hours'],
+    storage_path: defaults['sse_trace_setting.storage_path'] ?? '',
   },
 })
 
@@ -162,6 +188,11 @@ const normalizeFormValues = (values: PerfFormValues): FlatPerfDefaults => ({
   'perf_metrics_setting.bucket_time': values.perf_metrics_setting.bucket_time,
   'perf_metrics_setting.retention_days':
     values.perf_metrics_setting.retention_days,
+  'sse_trace_setting.enabled': values.sse_trace_setting.enabled,
+  'sse_trace_setting.max_request_mb': values.sse_trace_setting.max_request_mb,
+  'sse_trace_setting.queue_max_mb': values.sse_trace_setting.queue_max_mb,
+  'sse_trace_setting.retention_hours': values.sse_trace_setting.retention_hours,
+  'sse_trace_setting.storage_path': values.sse_trace_setting.storage_path ?? '',
 })
 
 function formatBytes(bytes: number, decimals = 2): string {
@@ -221,11 +252,26 @@ type PerformanceStats = {
   }
 }
 
+type SSETraceStats = {
+  enabled: boolean
+  storage_path: string
+  max_request_mb: number
+  queue_max_mb: number
+  retention_hours: number
+  queued_bytes: number
+  dropped: number
+  written: number
+  write_errors: number
+  file_count: number
+  total_size: number
+}
+
 export function PerformanceSection(props: Props) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const [stats, setStats] = useState<PerformanceStats | null>(null)
   const [logInfo, setLogInfo] = useState<LogInfo | null>(null)
+  const [sseTraceStats, setSSETraceStats] = useState<SSETraceStats | null>(null)
   const [logCleanupMode, setLogCleanupMode] = useState('by_count')
   const [logCleanupValue, setLogCleanupValue] = useState(10)
   const [logCleanupLoading, setLogCleanupLoading] = useState(false)
@@ -271,10 +317,20 @@ export function PerformanceSection(props: Props) {
     }
   }, [])
 
+  const fetchSSETraceStats = useCallback(async () => {
+    try {
+      const res = await api.get('/api/performance/sse_traces')
+      if (res.data.success) setSSETraceStats(res.data.data)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
   useEffect(() => {
     fetchStats()
     fetchLogInfo()
-  }, [fetchStats, fetchLogInfo])
+    fetchSSETraceStats()
+  }, [fetchStats, fetchLogInfo, fetchSSETraceStats])
 
   const onSubmit = async (values: PerfFormValues) => {
     const normalized = normalizeFormValues(values)
@@ -298,6 +354,7 @@ export function PerformanceSection(props: Props) {
     baselineSerializedRef.current = JSON.stringify(normalized)
     form.reset(buildFormDefaults(normalized))
     fetchStats()
+    fetchSSETraceStats()
   }
 
   const clearDiskCache = async () => {
@@ -368,6 +425,7 @@ export function PerformanceSection(props: Props) {
   const diskEnabled = form.watch('performance_setting.disk_cache_enabled')
   const monitorEnabled = form.watch('performance_setting.monitor_enabled')
   const perfMetricsEnabled = form.watch('perf_metrics_setting.enabled')
+  const sseTraceEnabled = form.watch('sse_trace_setting.enabled')
   const maxCacheSizeRaw = form.watch(
     'performance_setting.disk_cache_max_size_mb'
   )
@@ -714,6 +772,189 @@ export function PerformanceSection(props: Props) {
               )}
             />
           </div>
+
+          <Separator />
+
+          <div>
+            <h4 className='font-medium'>{t('Raw SSE trace capture')}</h4>
+            <p className='text-muted-foreground mt-1 text-xs'>
+              {t(
+                'Capture upstream SSE response bytes up to the configured per-request limit, compress them asynchronously, and make them available by request ID.'
+              )}
+            </p>
+          </div>
+
+          <Alert>
+            <AlertDescription>
+              {t(
+                'SSE traces may contain sensitive conversation content. Keep retention short and restrict access to trusted administrators.'
+              )}
+            </AlertDescription>
+          </Alert>
+
+          <div className='grid grid-cols-1 gap-4 md:grid-cols-4'>
+            <FormField
+              control={form.control}
+              name='sse_trace_setting.enabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Enable raw SSE tracing')}</FormLabel>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='sse_trace_setting.max_request_mb'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Maximum per request (MB)')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      max={64}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                      disabled={!sseTraceEnabled}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Recording stops at this limit; relay streaming continues'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='sse_trace_setting.queue_max_mb'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Maximum queue size (MB)')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={16}
+                      max={4096}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                      disabled={!sseTraceEnabled}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'New traces are dropped when the asynchronous queue is full'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='sse_trace_setting.retention_hours'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Retention time (hours)')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      max={720}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                      disabled={!sseTraceEnabled}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <FormField
+            control={form.control}
+            name='sse_trace_setting.storage_path'
+            render={({ field }) => (
+              <FormItem className='max-w-2xl'>
+                <FormLabel>{t('SSE trace storage directory')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder='data/sse-traces'
+                    value={field.value ?? ''}
+                    onChange={(event) => field.onChange(event.target.value)}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                    disabled={!sseTraceEnabled}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Use a dedicated or shared persistent volume when running multiple nodes.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {sseTraceStats && (
+            <Card>
+              <CardHeader>
+                <CardTitle>{t('SSE trace storage status')}</CardTitle>
+                <CardDescription className='font-mono text-xs break-all'>
+                  {sseTraceStats.storage_path}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className='grid grid-cols-2 gap-4 text-sm md:grid-cols-5'>
+                <div>
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Stored traces')}
+                  </p>
+                  <p className='font-medium'>{sseTraceStats.file_count}</p>
+                </div>
+                <div>
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Compressed size')}
+                  </p>
+                  <p className='font-medium'>
+                    {formatBytes(sseTraceStats.total_size)}
+                  </p>
+                </div>
+                <div>
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Queued data')}
+                  </p>
+                  <p className='font-medium'>
+                    {formatBytes(sseTraceStats.queued_bytes)}
+                  </p>
+                </div>
+                <div>
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Dropped traces')}
+                  </p>
+                  <p className='font-medium'>{sseTraceStats.dropped}</p>
+                </div>
+                <div>
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Write errors')}
+                  </p>
+                  <p className='font-medium'>{sseTraceStats.write_errors}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </SettingsForm>
       </Form>
 

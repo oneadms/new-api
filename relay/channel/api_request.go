@@ -13,6 +13,7 @@ import (
 
 	common2 "github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/ssetrace"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -525,6 +526,10 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	info.SetUpstreamHeadersTime()
 	if resp == nil {
 		return nil, errors.New("resp is nil")
+	}
+	isEventStream := strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
+	if (info.IsStream || isEventStream) && resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		resp.Body = ssetrace.WrapReadCloser(resp.Body, info.RequestId)
 	}
 
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {

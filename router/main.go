@@ -15,6 +15,7 @@ import (
 func SetRouter(router *gin.Engine, assets ThemeAssets) {
 	SetBattleRouter(router)
 	SetApiRouter(router)
+	SetSSETraceRouter(router)
 	SetDashboardRouter(router)
 	SetRelayRouter(router)
 	SetVideoRouter(router)

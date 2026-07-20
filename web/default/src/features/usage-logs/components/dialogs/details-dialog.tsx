@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect, useState } from 'react'
 import {
   Copy,
   Check,
@@ -31,6 +32,7 @@ import {
   Info,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { api } from '@/lib/api'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -45,6 +47,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import type { UsageLog } from '../../data/schema'
@@ -133,6 +136,30 @@ function DetailSection(props: {
 function formatRatio(ratio: number | undefined): string {
   if (ratio == null) return '-'
   return ratio.toFixed(4)
+}
+
+function formatByteSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  )
+  return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 2)} ${units[index]}`
+}
+
+type SSETraceResponse = {
+  metadata: {
+    request_id: string
+    original_size: number
+    captured_size: number
+    compressed_size: number
+    event_count: number
+    truncated: boolean
+    created_at: number
+    expires_at: number
+  }
+  content: string
 }
 
 function BillingBreakdown(props: {
@@ -410,6 +437,35 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
+  const [sseTrace, setSSETrace] = useState<SSETraceResponse | null>(null)
+  const [sseTraceLoading, setSSETraceLoading] = useState(false)
+  const [sseTraceUnavailable, setSSETraceUnavailable] = useState(false)
+
+  useEffect(() => {
+    setSSETrace(null)
+    setSSETraceUnavailable(false)
+    setSSETraceLoading(false)
+  }, [props.log.request_id, props.open])
+
+  const loadSSETrace = async () => {
+    if (!props.log.request_id || sseTraceLoading) return
+    setSSETraceLoading(true)
+    setSSETraceUnavailable(false)
+    try {
+      const response = await api.get(
+        `/api/log/sse_trace/${encodeURIComponent(props.log.request_id)}`
+      )
+      if (response.data.success) {
+        setSSETrace(response.data.data)
+      } else {
+        setSSETraceUnavailable(true)
+      }
+    } catch {
+      setSSETraceUnavailable(true)
+    } finally {
+      setSSETraceLoading(false)
+    }
+  }
 
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
@@ -655,6 +711,108 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   />
                 )}
             </div>
+
+            {props.isAdmin &&
+              isConsume &&
+              props.log.is_stream &&
+              props.log.request_id && (
+                <DetailSection label={t('Raw SSE trace')}>
+                  {!sseTrace && !sseTraceUnavailable && (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      disabled={sseTraceLoading}
+                      onClick={loadSSETrace}
+                    >
+                      {sseTraceLoading && <Spinner data-icon='inline-start' />}
+                      {sseTraceLoading
+                        ? t('Loading SSE trace...')
+                        : t('Load raw SSE trace')}
+                    </Button>
+                  )}
+
+                  {sseTraceUnavailable && (
+                    <div className='flex flex-col items-start gap-2'>
+                      <p className='text-muted-foreground text-xs'>
+                        {t(
+                          'No SSE trace is available. It may be disabled, dropped, or expired.'
+                        )}
+                      </p>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        disabled={sseTraceLoading}
+                        onClick={loadSSETrace}
+                      >
+                        {sseTraceLoading && (
+                          <Spinner data-icon='inline-start' />
+                        )}
+                        {t('Refresh')}
+                      </Button>
+                    </div>
+                  )}
+
+                  {sseTrace && (
+                    <div className='flex min-w-0 flex-col gap-3'>
+                      <div className='grid grid-cols-1 gap-2 sm:grid-cols-2'>
+                        <DetailRow
+                          label={t('Original size')}
+                          value={formatByteSize(
+                            sseTrace.metadata.original_size
+                          )}
+                          mono
+                        />
+                        <DetailRow
+                          label={t('Captured size')}
+                          value={formatByteSize(
+                            sseTrace.metadata.captured_size
+                          )}
+                          mono
+                        />
+                        <DetailRow
+                          label={t('Compressed size')}
+                          value={formatByteSize(
+                            sseTrace.metadata.compressed_size
+                          )}
+                          mono
+                        />
+                        <DetailRow
+                          label={t('SSE event count')}
+                          value={sseTrace.metadata.event_count.toLocaleString()}
+                          mono
+                        />
+                      </div>
+
+                      {sseTrace.metadata.truncated && (
+                        <StatusBadge
+                          label={t('Trace truncated at configured limit')}
+                          variant='warning'
+                          copyable={false}
+                        />
+                      )}
+
+                      <div className='flex justify-end'>
+                        <Button
+                          type='button'
+                          variant='ghost'
+                          size='sm'
+                          onClick={() => copyToClipboard(sseTrace.content)}
+                        >
+                          {t('Copy SSE trace')}
+                        </Button>
+                      </div>
+
+                      <ScrollArea className='bg-background h-80 rounded-md border'>
+                        <pre className='p-3 font-mono text-xs break-words whitespace-pre-wrap'>
+                          {sseTrace.content}
+                        </pre>
+                      </ScrollArea>
+                    </div>
+                  )}
+                </DetailSection>
+              )}
 
             {/* Request conversion (admin only, not for refund) */}
             {showConversion && (
