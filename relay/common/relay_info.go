@@ -97,7 +97,13 @@ type RelayInfo struct {
 	TokenUnlimited    bool
 	StartTime         time.Time
 	FirstResponseTime time.Time
-	isFirstResponse   bool
+	// UpstreamStartTime marks when the current/final upstream attempt starts.
+	// UpstreamHeadersTime marks when that attempt returns response headers.
+	// They intentionally use separate timestamps from StartTime so logs can
+	// distinguish gateway preprocessing from actual upstream latency.
+	UpstreamStartTime   time.Time
+	UpstreamHeadersTime time.Time
+	isFirstResponse     bool
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
@@ -661,6 +667,19 @@ func (info *RelayInfo) SetFirstResponseTime() {
 	if info.isFirstResponse {
 		info.FirstResponseTime = time.Now()
 		info.isFirstResponse = false
+	}
+}
+
+func (info *RelayInfo) SetUpstreamStartTime() {
+	info.UpstreamStartTime = time.Now()
+	// A retry reuses RelayInfo. Clear the previous attempt's checkpoint so the
+	// persisted timing breakdown always describes the final/current attempt.
+	info.UpstreamHeadersTime = time.Time{}
+}
+
+func (info *RelayInfo) SetUpstreamHeadersTime() {
+	if !info.UpstreamStartTime.IsZero() && info.UpstreamHeadersTime.IsZero() {
+		info.UpstreamHeadersTime = time.Now()
 	}
 }
 

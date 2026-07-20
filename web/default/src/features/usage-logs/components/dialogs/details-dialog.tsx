@@ -615,13 +615,45 @@ export function DetailsDialog(props: DetailsDialogProps) {
                             )}
                           >
                             {' '}
-                            (FRT: {formatUseTime(other.frt / 1000)})
+                            ({t('End-to-end FRT')}:{' '}
+                            {formatUseTime(other.frt / 1000)})
                           </span>
                         )}
                     </span>
                   }
                 />
               )}
+
+              {showTiming &&
+                other?.pre_upstream_ms != null &&
+                other.pre_upstream_ms >= 0 && (
+                  <DetailRow
+                    label={t('Pre-upstream processing')}
+                    value={formatUseTime(other.pre_upstream_ms / 1000)}
+                    mono
+                  />
+                )}
+
+              {showTiming &&
+                other?.upstream_header_ms != null &&
+                other.upstream_header_ms >= 0 && (
+                  <DetailRow
+                    label={t('Upstream response headers')}
+                    value={formatUseTime(other.upstream_header_ms / 1000)}
+                    mono
+                  />
+                )}
+
+              {showTiming &&
+                props.log.is_stream &&
+                other?.upstream_frt_ms != null &&
+                other.upstream_frt_ms >= 0 && (
+                  <DetailRow
+                    label={t('Upstream FRT')}
+                    value={formatUseTime(other.upstream_frt_ms / 1000)}
+                    mono
+                  />
+                )}
             </div>
 
             {/* Request conversion (admin only, not for refund) */}

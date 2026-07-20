@@ -67,10 +67,12 @@ func EmbeddingHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	info.UpstreamRequestBodySize = size
 	var requestBody io.Reader = body
 	statusCodeMappingStr := c.GetString("status_code_mapping")
+	info.SetUpstreamStartTime()
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
+	info.SetUpstreamHeadersTime()
 
 	var httpResp *http.Response
 	if resp != nil {

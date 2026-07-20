@@ -190,10 +190,12 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 	var httpResp *http.Response
+	info.SetUpstreamStartTime()
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
+	info.SetUpstreamHeadersTime()
 
 	if resp != nil {
 		httpResp = resp.(*http.Response)

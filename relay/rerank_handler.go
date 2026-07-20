@@ -78,10 +78,12 @@ func RerankHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		requestBody = body
 	}
 
+	info.SetUpstreamStartTime()
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
+	info.SetUpstreamHeadersTime()
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 	var httpResp *http.Response

@@ -514,11 +514,15 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	// Refresh the generic handler's checkpoint at the actual HTTP dispatch.
+	// Custom/SDK adaptors still use the outer checkpoint as a fallback.
+	info.SetUpstreamStartTime()
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
+	info.SetUpstreamHeadersTime()
 	if resp == nil {
 		return nil, errors.New("resp is nil")
 	}

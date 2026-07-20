@@ -44,10 +44,12 @@ func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}
 
+	info.SetUpstreamStartTime()
 	resp, err := adaptor.DoRequest(c, info, ioReader)
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
+	info.SetUpstreamHeadersTime()
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
 	var httpResp *http.Response

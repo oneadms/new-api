@@ -55,6 +55,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["model_price"] = modelPrice
 	other["user_group_ratio"] = userGroupRatio
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
+	appendRelayTimingInfo(relayInfo, other)
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
 	}
@@ -91,6 +92,26 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
 	return other
+}
+
+func appendRelayTimingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+	if relayInfo == nil || other == nil || relayInfo.UpstreamStartTime.IsZero() {
+		return
+	}
+
+	preUpstreamMs := relayInfo.UpstreamStartTime.Sub(relayInfo.StartTime).Milliseconds()
+	if preUpstreamMs >= 0 {
+		other["pre_upstream_ms"] = preUpstreamMs
+	}
+	if !relayInfo.UpstreamHeadersTime.IsZero() {
+		upstreamHeaderMs := relayInfo.UpstreamHeadersTime.Sub(relayInfo.UpstreamStartTime).Milliseconds()
+		if upstreamHeaderMs >= 0 {
+			other["upstream_header_ms"] = upstreamHeaderMs
+		}
+	}
+	if relayInfo.FirstResponseTime.After(relayInfo.UpstreamStartTime) {
+		other["upstream_frt_ms"] = relayInfo.FirstResponseTime.Sub(relayInfo.UpstreamStartTime).Milliseconds()
+	}
 }
 
 func appendParamOverrideInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
