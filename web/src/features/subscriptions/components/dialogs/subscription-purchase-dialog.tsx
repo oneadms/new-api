@@ -44,6 +44,7 @@ import {
 } from '../../api'
 import { formatDuration, formatResetPeriod } from '../../lib'
 import type { PlanRecord } from '../../types'
+import { RestrictedGroupsNotice } from '../restricted-groups-notice'
 
 interface PaymentMethod {
   type: string
@@ -271,6 +272,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
               <GroupBadge group={plan.upgrade_group} />
             </div>
           )}
+          <RestrictedGroupsNotice groups={plan.restricted_groups} />
           <Separator />
           <div className='flex items-center justify-between'>
             <span className='text-sm font-medium'>{t('Amount Due')}</span>

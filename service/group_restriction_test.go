@@ -1,0 +1,77 @@
+package service
+
+import (
+	"testing"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSubscriptionRestrictionsFilterSelectableAndAutomaticGroups(t *testing.T) {
+	truncate(t)
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"auto":"Automatic","default":"Default","vip":"VIP"}`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["vip","default"]`))
+
+	now := common.GetTimestamp()
+	plan := model.SubscriptionPlan{
+		Title:            "restricted auto plan",
+		DurationUnit:     model.SubscriptionDurationMonth,
+		DurationValue:    1,
+		RestrictedGroups: []string{"vip"},
+	}
+	require.NoError(t, model.DB.Create(&plan).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId:    2301,
+		PlanId:    plan.Id,
+		Status:    "active",
+		StartTime: now - 60,
+		EndTime:   now + 3600,
+	}).Error)
+
+	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Set("id", 2301)
+	groups, err := ResolveUserUsableGroups(ctx, "default")
+	require.NoError(t, err)
+	assert.Contains(t, groups, "default")
+	assert.Contains(t, groups, "auto")
+	assert.NotContains(t, groups, "vip")
+	assert.Equal(t, []string{"default"}, GetUserAutoGroupFromUsableGroups(groups))
+}
+
+func TestSubscriptionRestrictionsCanDisableAutoSelection(t *testing.T) {
+	truncate(t)
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"auto":"Automatic","default":"Default"}`))
+
+	plan := model.SubscriptionPlan{
+		Title:            "disable automatic selection plan",
+		DurationUnit:     model.SubscriptionDurationMonth,
+		DurationValue:    1,
+		RestrictedGroups: []string{"auto"},
+	}
+	require.NoError(t, model.DB.Create(&plan).Error)
+	now := common.GetTimestamp()
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId: 2302, PlanId: plan.Id, Status: "active", StartTime: now - 60, EndTime: now + 3600,
+	}).Error)
+
+	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Set("id", 2302)
+	groups, err := ResolveUserUsableGroups(ctx, "default")
+	require.NoError(t, err)
+	assert.Contains(t, groups, "default")
+	assert.NotContains(t, groups, "auto")
+}

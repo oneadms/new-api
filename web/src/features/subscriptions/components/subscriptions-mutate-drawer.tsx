@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -31,6 +31,7 @@ import {
   sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
+import { MultiSelect } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -104,6 +105,15 @@ export function SubscriptionsMutateDrawer({
   const [pancakeProducts, setPancakeProducts] = useState<
     { id: string; name: string; status: string }[]
   >([])
+  const restrictedGroupOptions = useMemo(
+    () => [
+      { value: 'auto', label: 'auto' },
+      ...groupOptions
+        .filter((group) => group !== 'auto')
+        .map((group) => ({ value: group, label: group })),
+    ],
+    [groupOptions]
+  )
 
   const schema = getPlanFormSchema(t)
   const form = useForm<PlanFormValues>({
@@ -501,6 +511,31 @@ export function SubscriptionsMutateDrawer({
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name='restricted_groups'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Restricted Groups')}</FormLabel>
+                    <FormControl>
+                      <MultiSelect
+                        options={restrictedGroupOptions}
+                        selected={field.value}
+                        onChange={field.onChange}
+                        placeholder={t('Select restricted groups')}
+                        maxVisibleChips={6}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Users with an active subscription to this plan cannot use the selected groups. Changes apply immediately to existing active subscriptions.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

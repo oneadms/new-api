@@ -3,9 +3,12 @@ package service
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/gin-gonic/gin"
 )
 
 func GetUserUsableGroups(userGroup string) map[string]string {
@@ -37,6 +40,31 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 	return groupsCopy
 }
 
+// ResolveUserUsableGroups reuses a request-scoped result so relay authentication,
+// playground overrides, model listing, and automatic group selection enforce the
+// same subscription restrictions without repeating database work.
+func ResolveUserUsableGroups(c *gin.Context, userGroup string) (map[string]string, error) {
+	if groups, ok := common.GetContextKeyType[map[string]string](c, constant.ContextKeyUserUsableGroups); ok {
+		return groups, nil
+	}
+	userId := c.GetInt("id")
+	groups := GetUserUsableGroups(userGroup)
+	if userId <= 0 {
+		common.SetContextKey(c, constant.ContextKeyUserUsableGroups, groups)
+		return groups, nil
+	}
+	access, err := model.GetActiveSubscriptionGroupAccess(userId)
+	if err != nil {
+		return nil, err
+	}
+	for group := range access.RestrictedGroups {
+		delete(groups, group)
+	}
+	common.SetContextKey(c, constant.ContextKeyUserHasActiveSubscription, access.HasActiveSubscription)
+	common.SetContextKey(c, constant.ContextKeyUserUsableGroups, groups)
+	return groups, nil
+}
+
 func GroupInUserUsableGroups(userGroup, groupName string) bool {
 	_, ok := GetUserUsableGroups(userGroup)[groupName]
 	return ok
@@ -44,7 +72,10 @@ func GroupInUserUsableGroups(userGroup, groupName string) bool {
 
 // GetUserAutoGroup 根据用户分组获取自动分组设置
 func GetUserAutoGroup(userGroup string) []string {
-	groups := GetUserUsableGroups(userGroup)
+	return GetUserAutoGroupFromUsableGroups(GetUserUsableGroups(userGroup))
+}
+
+func GetUserAutoGroupFromUsableGroups(groups map[string]string) []string {
 	autoGroups := make([]string, 0)
 	for _, group := range setting.GetAutoGroups() {
 		if _, ok := groups[group]; ok {
@@ -52,6 +83,14 @@ func GetUserAutoGroup(userGroup string) []string {
 		}
 	}
 	return autoGroups
+}
+
+func ResolveUserAutoGroup(c *gin.Context, userGroup string) ([]string, error) {
+	groups, err := ResolveUserUsableGroups(c, userGroup)
+	if err != nil {
+		return nil, err
+	}
+	return GetUserAutoGroupFromUsableGroups(groups), nil
 }
 
 // GetGroupsEnabledModels 按 groups 顺序获取各分组启用的模型并去重

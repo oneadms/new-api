@@ -38,7 +38,7 @@ var (
 )
 
 const (
-	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v1"
+	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v2"
 	subscriptionPlanInfoCacheNamespace = "new-api:subscription_plan_info:v1"
 )
 
@@ -177,6 +177,10 @@ type SubscriptionPlan struct {
 	// Downgrade user group on expiry (empty = revert to the group held before purchase)
 	DowngradeGroup string `json:"downgrade_group" gorm:"type:varchar(64);default:''"`
 
+	// Groups unavailable while the user has an active subscription to this plan.
+	// This remains on the plan so updates also apply to existing subscriptions.
+	RestrictedGroups []string `json:"restricted_groups" gorm:"type:text;serializer:json"`
+
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
@@ -206,6 +210,9 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	}
 	if p.AllowWalletOverflow == nil {
 		p.AllowWalletOverflow = common.GetPointer(true)
+	}
+	if p.RestrictedGroups == nil {
+		p.RestrictedGroups = []string{}
 	}
 }
 
@@ -757,6 +764,53 @@ func HasActiveUserSubscription(userId int) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+type ActiveSubscriptionGroupAccess struct {
+	HasActiveSubscription bool
+	RestrictedGroups      map[string]struct{}
+}
+
+// GetActiveSubscriptionGroupAccess returns the union of group restrictions
+// configured on all active subscription plans for a user. Restrictions are read
+// from the current plans so plan changes also affect subscriptions bought earlier.
+func GetActiveSubscriptionGroupAccess(userId int) (ActiveSubscriptionGroupAccess, error) {
+	access := ActiveSubscriptionGroupAccess{RestrictedGroups: make(map[string]struct{})}
+	if userId <= 0 {
+		return access, nil
+	}
+	var rows []struct {
+		RestrictedGroups *string `gorm:"column:restricted_groups"`
+	}
+	if err := DB.Table("user_subscriptions AS user_subscription").
+		Select("subscription_plan.restricted_groups").
+		Joins("LEFT JOIN subscription_plans AS subscription_plan ON subscription_plan.id = user_subscription.plan_id").
+		Where("user_subscription.user_id = ? AND user_subscription.status = ? AND user_subscription.end_time > ?",
+			userId, "active", common.GetTimestamp()).
+		Scan(&rows).Error; err != nil {
+		return ActiveSubscriptionGroupAccess{}, err
+	}
+	access.HasActiveSubscription = len(rows) > 0
+	if !access.HasActiveSubscription {
+		return access, nil
+	}
+
+	for _, row := range rows {
+		if row.RestrictedGroups == nil || strings.TrimSpace(*row.RestrictedGroups) == "" {
+			continue
+		}
+		var groups []string
+		if err := common.UnmarshalJsonStr(*row.RestrictedGroups, &groups); err != nil {
+			return ActiveSubscriptionGroupAccess{}, fmt.Errorf("invalid subscription plan group restrictions: %w", err)
+		}
+		for _, group := range groups {
+			group = strings.TrimSpace(group)
+			if group != "" {
+				access.RestrictedGroups[group] = struct{}{}
+			}
+		}
+	}
+	return access, nil
 }
 
 // UserActiveSubscriptionsAllowWalletOverflow returns whether wallet balance may be used

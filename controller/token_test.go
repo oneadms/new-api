@@ -13,9 +13,13 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -109,6 +113,9 @@ func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 
 	db := openTokenControllerTestDB(t)
 	migrateTokenControllerTestDB(t, db)
+	if err := db.AutoMigrate(&model.SubscriptionPlan{}, &model.UserSubscription{}); err != nil {
+		t.Fatalf("failed to migrate subscription tables: %v", err)
+	}
 	return db
 }
 
@@ -537,4 +544,57 @@ func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	if strings.Contains(unauthorizedRecorder.Body.String(), token.Key) {
 		t.Fatalf("unauthorized key response leaked raw token key: %s", unauthorizedRecorder.Body.String())
 	}
+}
+
+func TestAddTokenRejectsGroupRestrictedByActiveSubscription(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
+
+	plan := model.SubscriptionPlan{
+		Title:            "token restriction plan",
+		DurationUnit:     model.SubscriptionDurationMonth,
+		DurationValue:    1,
+		RestrictedGroups: []string{"default", "vip"},
+	}
+	require.NoError(t, db.Create(&plan).Error)
+	model.InvalidateSubscriptionPlanCache(plan.Id)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&model.UserSubscription{
+		UserId: 1, PlanId: plan.Id, Status: "active", StartTime: now - 60, EndTime: now + 3600,
+	}).Error)
+	body := map[string]any{
+		"name":            "restricted-token",
+		"expired_time":    -1,
+		"unlimited_quota": true,
+		"group":           "vip",
+	}
+
+	restrictedContext, restrictedRecorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 1)
+	common.SetContextKey(restrictedContext, constant.ContextKeyUserGroup, "default")
+	AddToken(restrictedContext)
+
+	restrictedResponse := decodeAPIResponse(t, restrictedRecorder)
+	assert.False(t, restrictedResponse.Success)
+	assert.Contains(t, restrictedResponse.Message, "无权访问 vip 分组")
+
+	body["group"] = ""
+	inheritedContext, inheritedRecorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 1)
+	common.SetContextKey(inheritedContext, constant.ContextKeyUserGroup, "default")
+	AddToken(inheritedContext)
+
+	inheritedResponse := decodeAPIResponse(t, inheritedRecorder)
+	assert.False(t, inheritedResponse.Success)
+	assert.Contains(t, inheritedResponse.Message, "无权访问 default 分组")
+
+	body["group"] = "vip"
+	allowedContext, allowedRecorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 2)
+	common.SetContextKey(allowedContext, constant.ContextKeyUserGroup, "default")
+	AddToken(allowedContext)
+
+	allowedResponse := decodeAPIResponse(t, allowedRecorder)
+	assert.True(t, allowedResponse.Success)
 }

@@ -51,6 +51,7 @@ import {
   updateBillingPreference,
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
+import { RestrictedGroupsNotice } from '@/features/subscriptions/components/restricted-groups-notice'
 import { formatDuration, formatResetPeriod } from '@/features/subscriptions/lib'
 import type {
   PlanRecord,
@@ -591,6 +592,11 @@ export function SubscriptionPlansCard({
                         </div>
                       ))}
                     </div>
+
+                    <RestrictedGroupsNotice
+                      groups={plan.restricted_groups}
+                      className='mb-3'
+                    />
 
                     <Separator className='mb-3' />
 

@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +31,25 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 		maskedTokens = append(maskedTokens, buildMaskedTokenResponse(token))
 	}
 	return maskedTokens
+}
+
+func validateTokenGroupAccess(c *gin.Context, group string) error {
+	group = strings.TrimSpace(group)
+	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	if group == "" {
+		group = userGroup
+	}
+	if group == "" {
+		return nil
+	}
+	usableGroups, err := service.ResolveUserUsableGroups(c, userGroup)
+	if err != nil {
+		return err
+	}
+	if _, ok := usableGroups[group]; !ok {
+		return fmt.Errorf("无权访问 %s 分组", group)
+	}
+	return nil
 }
 
 func GetAllTokens(c *gin.Context) {
@@ -187,6 +208,10 @@ func AddToken(c *gin.Context) {
 			return
 		}
 	}
+	if err := validateTokenGroupAccess(c, token.Group); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
 	count, err := model.CountUserTokens(c.GetInt("id"))
@@ -268,6 +293,12 @@ func UpdateToken(c *gin.Context) {
 		maxQuotaValue := int((1000000000 * common.QuotaPerUnit))
 		if token.RemainQuota > maxQuotaValue {
 			common.ApiErrorI18n(c, i18n.MsgTokenQuotaExceedMax, map[string]any{"Max": maxQuotaValue})
+			return
+		}
+	}
+	if statusOnly == "" {
+		if err := validateTokenGroupAccess(c, token.Group); err != nil {
+			common.ApiError(c, err)
 			return
 		}
 	}

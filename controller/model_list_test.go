@@ -49,7 +49,15 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.DB = db
 	model.LOG_DB = db
 
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.User{},
+		&model.Channel{},
+		&model.Ability{},
+		&model.Model{},
+		&model.Vendor{},
+		&model.SubscriptionPlan{},
+		&model.UserSubscription{},
+	))
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -213,6 +221,46 @@ func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {
 	GetUserModels(vipContext)
 
 	require.Empty(t, decodeUserModelsResponse(t, vipRecorder))
+}
+
+func TestGetUserModelsHidesGroupsRestrictedByActiveSubscription(t *testing.T) {
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
+
+	db := setupModelListControllerTestDB(t)
+	const userId = 1004
+	require.NoError(t, db.Create(&model.User{
+		Id:       userId,
+		Username: "subscription-restricted-model-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group: "vip", Model: "zz-subscription-restricted-model", ChannelId: 1, Enabled: true,
+	}).Error)
+	plan := model.SubscriptionPlan{
+		Title:            "model restriction plan",
+		DurationUnit:     model.SubscriptionDurationMonth,
+		DurationValue:    1,
+		RestrictedGroups: []string{"vip"},
+	}
+	require.NoError(t, db.Create(&plan).Error)
+	now := common.GetTimestamp()
+	require.NoError(t, db.Create(&model.UserSubscription{
+		UserId: userId, PlanId: plan.Id, Status: "active", StartTime: now - 60, EndTime: now + 3600,
+	}).Error)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/user/models?group=vip", nil)
+	context.Set("id", userId)
+
+	GetUserModels(context)
+
+	require.Empty(t, decodeUserModelsResponse(t, recorder))
 }
 
 func TestGetUserModelsExpandsAutoGroupsInConfiguredOrder(t *testing.T) {

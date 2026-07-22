@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,30 @@ type SubscriptionPlanDTO struct {
 
 type BillingPreferenceRequest struct {
 	BillingPreference string `json:"billing_preference"`
+}
+
+func normalizeSubscriptionRestrictedGroups(groups []string) ([]string, error) {
+	restrictedGroups := make([]string, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+	groupRatios := ratio_setting.GetGroupRatioCopy()
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if group != "auto" {
+			if _, ok := groupRatios[group]; !ok {
+				return nil, fmt.Errorf("限制分组 %s 不存在", group)
+			}
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		restrictedGroups = append(restrictedGroups, group)
+	}
+	sort.Strings(restrictedGroups)
+	return restrictedGroups, nil
 }
 
 // ---- User APIs ----
@@ -176,6 +201,12 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 			return
 		}
 	}
+	restrictedGroups, validationErr := normalizeSubscriptionRestrictedGroups(req.Plan.RestrictedGroups)
+	if validationErr != nil {
+		common.ApiErrorMsg(c, validationErr.Error())
+		return
+	}
+	req.Plan.RestrictedGroups = restrictedGroups
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
@@ -205,6 +236,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
+	restrictedGroupsProvided := req.Plan.RestrictedGroups != nil
 	if strings.TrimSpace(req.Plan.Title) == "" {
 		common.ApiErrorMsg(c, "套餐标题不能为空")
 		return
@@ -250,10 +282,26 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			return
 		}
 	}
+	restrictedGroups, validationErr := normalizeSubscriptionRestrictedGroups(req.Plan.RestrictedGroups)
+	if validationErr != nil {
+		common.ApiErrorMsg(c, validationErr.Error())
+		return
+	}
+	req.Plan.RestrictedGroups = restrictedGroups
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return
+	}
+
+	var restrictedGroupsJSON []byte
+	if restrictedGroupsProvided {
+		var err error
+		restrictedGroupsJSON, err = common.Marshal(req.Plan.RestrictedGroups)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -284,6 +332,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		}
 		if req.Plan.AllowWalletOverflow != nil {
 			updateMap["allow_wallet_overflow"] = *req.Plan.AllowWalletOverflow
+		}
+		if restrictedGroupsProvided {
+			updateMap["restricted_groups"] = string(restrictedGroupsJSON)
 		}
 		if err := tx.Model(&model.SubscriptionPlan{}).Where("id = ?", id).Updates(updateMap).Error; err != nil {
 			return err

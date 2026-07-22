@@ -60,6 +60,13 @@ interface MultiSelectProps {
   emptyText?: string
   /** Optional `id` to wire labels/aria-describedby to the input. */
   id?: string
+  /** Accessibility attributes injected by form controls. */
+  'aria-describedby'?: React.AriaAttributes['aria-describedby']
+  'aria-invalid'?: React.AriaAttributes['aria-invalid']
+  /** Form-scoped attributes used for validation focus management. */
+  'data-slot'?: string
+  'data-form-root'?: string
+  ref?: React.Ref<HTMLInputElement>
   /** Disable the entire control. */
   disabled?: boolean
   /**
@@ -164,7 +171,7 @@ export function MultiSelect(props: MultiSelectProps) {
     if (canCreate) {
       set.add(trimmedInput)
     }
-    return Array.from(set)
+    return [...set]
   }, [props.options, props.selected, canCreate, trimmedInput])
 
   const addValues = React.useCallback(
@@ -339,7 +346,12 @@ export function MultiSelect(props: MultiSelectProps) {
           }}
         </ComboboxValue>
         <ComboboxChipsInput
+          ref={props.ref}
           id={props.id}
+          aria-describedby={props['aria-describedby']}
+          aria-invalid={props['aria-invalid']}
+          data-slot={props['data-slot']}
+          data-form-root={props['data-form-root']}
           placeholder={
             props.selected.length === 0 && !props.renderSelectedSummary
               ? placeholder
