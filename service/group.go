@@ -60,6 +60,13 @@ func ResolveUserUsableGroups(c *gin.Context, userGroup string) (map[string]strin
 	for group := range access.RestrictedGroups {
 		delete(groups, group)
 	}
+	groupPassAccess, err := model.GetActiveGroupPassAccess(userId)
+	if err != nil {
+		return nil, err
+	}
+	for group := range groupPassAccess {
+		groups[group] = "Temporary speed-pass access"
+	}
 	common.SetContextKey(c, constant.ContextKeyUserHasActiveSubscription, access.HasActiveSubscription)
 	common.SetContextKey(c, constant.ContextKeyUserUsableGroups, groups)
 	return groups, nil

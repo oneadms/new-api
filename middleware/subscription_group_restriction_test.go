@@ -23,7 +23,12 @@ func TestDistributorRejectsPlaygroundGroupRestrictedBySubscription(t *testing.T)
 	previousMainType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.SubscriptionPlan{}, &model.UserSubscription{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.SubscriptionPlan{},
+		&model.UserSubscription{},
+		&model.RechargeRewardConfig{},
+		&model.UserGroupPass{},
+	))
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	t.Cleanup(func() {
@@ -73,7 +78,12 @@ func TestDistributorAllowsPlaygroundOverrideWhenCurrentGroupIsRestricted(t *test
 	previousMainType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.SubscriptionPlan{}, &model.UserSubscription{}))
+	require.NoError(t, db.AutoMigrate(
+		&model.SubscriptionPlan{},
+		&model.UserSubscription{},
+		&model.RechargeRewardConfig{},
+		&model.UserGroupPass{},
+	))
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	t.Cleanup(func() {

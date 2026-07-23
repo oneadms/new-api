@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { RechargeRewardsCard } from '@/features/recharge-rewards/components/recharge-rewards-card'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
@@ -344,6 +345,8 @@ export function Wallet(props: WalletProps) {
               }
               loading={affiliateLoading}
             />
+
+            <RechargeRewardsCard onQuotaAwarded={fetchUser} />
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>

@@ -46,6 +46,10 @@ func TestMain(m *testing.M) {
 		&model.Log{},
 		&model.Channel{},
 		&model.TopUp{},
+		&model.RechargeRewardConfig{},
+		&model.UserGroupPass{},
+		&model.RechargeRewardEvent{},
+		&model.RechargeLotteryDraw{},
 		&model.SubscriptionPlan{},
 		&model.UserSubscription{},
 		&model.SystemTask{},
@@ -70,6 +74,10 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM top_ups")
+		model.DB.Exec("DELETE FROM recharge_reward_configs")
+		model.DB.Exec("DELETE FROM user_group_passes")
+		model.DB.Exec("DELETE FROM recharge_reward_events")
+		model.DB.Exec("DELETE FROM recharge_lottery_draws")
 		model.DB.Exec("DELETE FROM subscription_plans")
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM system_task_locks")

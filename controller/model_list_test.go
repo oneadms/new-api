@@ -57,6 +57,8 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 		&model.Vendor{},
 		&model.SubscriptionPlan{},
 		&model.UserSubscription{},
+		&model.RechargeRewardConfig{},
+		&model.UserGroupPass{},
 	))
 
 	t.Cleanup(func() {

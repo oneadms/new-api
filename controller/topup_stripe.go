@@ -86,8 +86,21 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	}
 
 	id := c.GetInt("id")
-	user, _ := model.GetUserById(id, false)
+	user, err := model.GetUserById(id, false)
+	if err != nil || user == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": "用户不存在"})
+		return
+	}
 	chargedMoney := GetChargedAmount(float64(req.Amount), *user)
+	creditedQuota, clamp := common.QuotaFromFloatChecked(chargedMoney * common.QuotaPerUnit)
+	if clamp != nil || creditedQuota <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": "充值数量超出安全范围"})
+		return
+	}
+	if err := model.ValidateUserQuotaCredit(id, int64(creditedQuota)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": err.Error()})
+		return
+	}
 
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))

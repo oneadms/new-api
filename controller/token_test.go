@@ -113,7 +113,7 @@ func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 
 	db := openTokenControllerTestDB(t)
 	migrateTokenControllerTestDB(t, db)
-	if err := db.AutoMigrate(&model.SubscriptionPlan{}, &model.UserSubscription{}); err != nil {
+	if err := db.AutoMigrate(&model.SubscriptionPlan{}, &model.UserSubscription{}, &model.RechargeRewardConfig{}, &model.UserGroupPass{}); err != nil {
 		t.Fatalf("failed to migrate subscription tables: %v", err)
 	}
 	return db

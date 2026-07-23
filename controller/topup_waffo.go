@@ -123,6 +123,10 @@ func RequestWaffoAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", waffoMinTopup)})
 		return
 	}
+	if err := validateTopUpCreditAmount(req.Amount); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": err.Error()})
+		return
+	}
 
 	id := c.GetInt("id")
 	group, err := model.GetUserGroup(id, true)
@@ -157,11 +161,14 @@ func RequestWaffoPay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", waffoMinTopup)})
 		return
 	}
-
 	id := c.GetInt("id")
 	user, err := model.GetUserById(id, false)
 	if err != nil || user == nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "用户不存在"})
+		return
+	}
+	if err := validateUserTopUpCreditAmount(id, req.Amount); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": err.Error()})
 		return
 	}
 

@@ -62,6 +62,22 @@ func SetApiRouter(router *gin.Engine) {
 		// in Pancake's matching webhook slot; handler enforces env match.
 		apiRouter.POST("/waffo-pancake/webhook/:env", anonymousRequestBodyLimit, controller.WaffoPancakeWebhook)
 
+		rechargeRewardRoute := apiRouter.Group("/recharge-reward")
+		rechargeRewardRoute.Use(middleware.UserAuth())
+		{
+			rechargeRewardRoute.GET("/self", controller.GetRechargeRewardSelf)
+			rechargeRewardRoute.POST("/group-passes/:id/activate", middleware.CriticalRateLimit(), controller.ActivateGroupPass)
+			rechargeRewardRoute.POST("/lottery/draw", middleware.CriticalRateLimit(), controller.DrawRechargeLottery)
+		}
+
+		rechargeRewardAdminRoute := apiRouter.Group("/recharge-reward/admin")
+		rechargeRewardAdminRoute.Use(middleware.AdminAuth())
+		{
+			rechargeRewardAdminRoute.GET("/settings", controller.AdminGetRechargeRewardSettings)
+			rechargeRewardAdminRoute.PUT("/settings", middleware.CriticalRateLimit(), controller.AdminSaveRechargeRewardSettings)
+			rechargeRewardAdminRoute.POST("/group-passes/grant", middleware.CriticalRateLimit(), controller.AdminGrantGroupPass)
+		}
+
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UniversalVerify)
 

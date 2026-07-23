@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { RechargeRewardsSettingsSection } from '@/features/recharge-rewards/components/admin/recharge-rewards-settings-section'
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
@@ -218,6 +219,26 @@ const BILLING_SECTIONS = [
             customCurrencyExchangeRate:
               settings['general_setting.custom_currency_exchange_rate'] ?? 1,
           },
+        }}
+      />
+    ),
+  },
+  {
+    id: 'recharge-rewards',
+    titleKey: 'Recharge Rewards',
+    build: (settings: BillingSettings) => (
+      <RechargeRewardsSettingsSection
+        currencyConfig={{
+          displayInCurrency: settings.DisplayInCurrencyEnabled,
+          quotaDisplayType: parseCurrencyDisplayType(
+            settings['general_setting.quota_display_type']
+          ),
+          quotaPerUnit: settings.QuotaPerUnit,
+          usdExchangeRate: settings.USDExchangeRate,
+          customCurrencySymbol:
+            settings['general_setting.custom_currency_symbol'] ?? '¤',
+          customCurrencyExchangeRate:
+            settings['general_setting.custom_currency_exchange_rate'] ?? 1,
         }}
       />
     ),
