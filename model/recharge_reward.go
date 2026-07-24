@@ -40,7 +40,7 @@ var (
 	ErrGroupPassDisabled            = errors.New("速通卡功能未启用")
 	ErrGroupPassNotFound            = errors.New("速通卡不存在")
 	ErrGroupPassUnavailable         = errors.New("速通卡已使用或已过期")
-	ErrGroupPassAlreadyActive       = errors.New("同一分组已有生效中的速通卡")
+	ErrGroupPassAlreadyActive       = errors.New("已有生效中的速通卡")
 	ErrRechargeLotteryDisabled      = errors.New("充值抽奖未启用")
 	ErrNoLotteryChance              = errors.New("暂无可用抽奖次数")
 	ErrLotteryPrizeUnavailable      = errors.New("抽奖奖品配置不可用")
@@ -155,12 +155,14 @@ type RechargeLotteryDraw struct {
 }
 
 type RechargeRewardSelf struct {
-	GroupPassEnabled bool                   `json:"group_pass_enabled"`
-	LotteryEnabled   bool                   `json:"lottery_enabled"`
-	AvailableDraws   int                    `json:"available_draws"`
-	GroupPasses      []UserGroupPass        `json:"group_passes"`
-	RecentDraws      []RechargeLotteryDraw  `json:"recent_draws"`
-	LotteryPrizes    []RechargeLotteryPrize `json:"lottery_prizes"`
+	GroupPassEnabled        bool                   `json:"group_pass_enabled"`
+	LotteryEnabled          bool                   `json:"lottery_enabled"`
+	LotteryMinRechargeQuota int64                  `json:"lottery_min_recharge_quota"` // 单笔充值获得抽奖次数的最低额度
+	LotteryDrawsPerRecharge int                    `json:"lottery_draws_per_recharge"` // 每笔达标充值赠送的抽奖次数
+	AvailableDraws          int                    `json:"available_draws"`
+	GroupPasses             []UserGroupPass        `json:"group_passes"`
+	RecentDraws             []RechargeLotteryDraw  `json:"recent_draws"`
+	LotteryPrizes           []RechargeLotteryPrize `json:"lottery_prizes"`
 }
 
 type GroupPassGrantRequest struct {
@@ -233,7 +235,7 @@ func normalizeAndValidateRechargeRewardSettings(settings RechargeRewardSettings)
 	if len(settings.GroupPassTemplates) > maxRewardConfigItems || len(settings.RechargeRewardRules) > maxRewardConfigItems || len(settings.LotteryPrizes) > maxRewardConfigItems {
 		return RechargeRewardSettings{}, errors.New("每类奖励配置最多 100 项")
 	}
-	if settings.LotteryMinRechargeQuota < 0 || settings.LotteryMinRechargeQuota > int64(common.MaxQuota) {
+	if settings.LotteryMinRechargeQuota < 0 || settings.LotteryMinRechargeQuota > int64(common.MaxWalletQuota) {
 		return RechargeRewardSettings{}, errors.New("抽奖最低充值额度超出有效范围")
 	}
 	if settings.LotteryDrawsPerRecharge < 0 || settings.LotteryDrawsPerRecharge > maxLotteryDrawsPerRecharge {
@@ -283,7 +285,7 @@ func normalizeAndValidateRechargeRewardSettings(settings RechargeRewardSettings)
 		if rule.Name == "" || len(rule.Name) > 100 {
 			return RechargeRewardSettings{}, errors.New("充值奖励规则名称长度必须为 1 到 100 个字符")
 		}
-		if rule.MinRechargeQuota < 1 || rule.MinRechargeQuota > int64(common.MaxQuota) {
+		if rule.MinRechargeQuota < 1 || rule.MinRechargeQuota > int64(common.MaxWalletQuota) {
 			return RechargeRewardSettings{}, errors.New("充值奖励门槛超出有效范围")
 		}
 		if rule.Quantity < 1 || rule.Quantity > maxRewardQuantity {
@@ -591,7 +593,7 @@ func ActivateUserGroupPass(userId, passId int) (*UserGroupPass, error) {
 		}
 		var activeCount int64
 		if err := tx.Model(&UserGroupPass{}).
-			Where("user_id = ? AND group_name = ? AND status = ? AND active_until > ?", userId, pass.GroupName, GroupPassStatusActive, now).
+			Where("user_id = ? AND status = ? AND active_until > ?", userId, GroupPassStatusActive, now).
 			Count(&activeCount).Error; err != nil {
 			return err
 		}
@@ -636,21 +638,19 @@ func GetActiveGroupPassAccess(userId int) (map[string]int64, error) {
 	if !settings.GroupPassEnabled {
 		return access, nil
 	}
-	var rows []struct {
-		GroupName   string `gorm:"column:group_name"`
-		ActiveUntil int64  `gorm:"column:active_until"`
-	}
-	if err := DB.Model(&UserGroupPass{}).
-		Select("group_name, MAX(active_until) AS active_until").
-		Where("user_id = ? AND status = ? AND active_until > ?", userId, GroupPassStatusActive, common.GetTimestamp()).
-		Group("group_name").
-		Scan(&rows).Error; err != nil {
+	now := common.GetTimestamp()
+	var pass UserGroupPass
+	// 先选最近激活的卡再判断有效期，避免兼容期内旧的多卡数据在当前卡到期后重新接管分组。
+	if err := DB.
+		Where("user_id = ? AND status = ?", userId, GroupPassStatusActive).
+		Order("activated_at DESC").
+		Order("id DESC").
+		Limit(1).
+		Find(&pass).Error; err != nil {
 		return nil, err
 	}
-	for _, row := range rows {
-		if ratio_setting.ContainsGroupRatio(row.GroupName) {
-			access[row.GroupName] = row.ActiveUntil
-		}
+	if pass.Id != 0 && pass.ActiveUntil > now && ratio_setting.ContainsGroupRatio(pass.GroupName) {
+		access[pass.GroupName] = pass.ActiveUntil
 	}
 	return access, nil
 }
@@ -804,11 +804,13 @@ func GetUserRechargeRewards(userId int) (*RechargeRewardSelf, error) {
 		return nil, err
 	}
 	response := &RechargeRewardSelf{
-		GroupPassEnabled: settings.GroupPassEnabled,
-		LotteryEnabled:   settings.LotteryEnabled,
-		GroupPasses:      []UserGroupPass{},
-		RecentDraws:      []RechargeLotteryDraw{},
-		LotteryPrizes:    []RechargeLotteryPrize{},
+		GroupPassEnabled:        settings.GroupPassEnabled,
+		LotteryEnabled:          settings.LotteryEnabled,
+		LotteryMinRechargeQuota: settings.LotteryMinRechargeQuota,
+		LotteryDrawsPerRecharge: settings.LotteryDrawsPerRecharge,
+		GroupPasses:             []UserGroupPass{},
+		RecentDraws:             []RechargeLotteryDraw{},
+		LotteryPrizes:           []RechargeLotteryPrize{},
 	}
 	for _, prize := range settings.LotteryPrizes {
 		if prize.Enabled {

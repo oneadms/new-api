@@ -25,7 +25,7 @@ func resetRechargeRewardTestData(t *testing.T, userIds ...int) {
 		require.NoError(t, DB.Unscoped().Delete(&User{}, userId).Error)
 	}
 	originalGroupRatio := ratio_setting.GroupRatio2JSONString()
-	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"speed":0.2}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"speed":0.2,"vip":0.4}`))
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatio))
 	})
@@ -83,6 +83,25 @@ func TestSaveRechargeRewardSettingsRejectsUnsafeConfigurationAndStaleWrites(t *t
 	disabledTemplate.RechargeRewardRules[0].Enabled = false
 	_, err = SaveRechargeRewardSettings(disabledTemplate)
 	assert.EqualError(t, err, `启用的抽奖奖品引用了未启用的模板 "speed-hour"`)
+}
+
+func TestGetUserRechargeRewardsExposesLotteryEarningRule(t *testing.T) {
+	const userId = 31009
+	resetRechargeRewardTestData(t, userId)
+	settings := validRechargeRewardSettings()
+	settings.LotteryMinRechargeQuota = 2_500_000
+	settings.LotteryDrawsPerRecharge = 3
+	_, err := SaveRechargeRewardSettings(settings)
+	require.NoError(t, err)
+	require.NoError(t, DB.Create(&User{
+		Id: userId, Username: "lottery-rule-user", AffCode: "reward-aff-31009",
+		Status: common.UserStatusEnabled,
+	}).Error)
+
+	rewards, err := GetUserRechargeRewards(userId)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2_500_000), rewards.LotteryMinRechargeQuota)
+	assert.Equal(t, 3, rewards.LotteryDrawsPerRecharge)
 }
 
 func TestApplyRechargeRewardsIsIdempotentPerTopUp(t *testing.T) {
@@ -147,6 +166,30 @@ func TestRechargeEpayCommitsQuotaAndRewardsExactlyOnce(t *testing.T) {
 	assert.Equal(t, int64(1), passCount)
 }
 
+func TestRechargeEpaySupportsWalletAboveLegacyInt32Limit(t *testing.T) {
+	const userId = 31008
+	const initialQuota = common.MaxQuota + 100
+	resetRechargeRewardTestData(t, userId)
+	require.NoError(t, DB.Create(&User{
+		Id: userId, Username: "epay-bigint-wallet-user", AffCode: "reward-aff-31008",
+		Quota: initialQuota, Status: common.UserStatusEnabled,
+	}).Error)
+	topUp := TopUp{
+		UserId: userId, Amount: 10_000, Money: 10_000, TradeNo: "epay-bigint-wallet-order",
+		PaymentMethod: "alipay", PaymentProvider: PaymentProviderEpay,
+		CreateTime: common.GetTimestamp(), Status: common.TopUpStatusPending,
+	}
+	require.NoError(t, DB.Create(&topUp).Error)
+	expectedCredit, err := common.WalletQuotaFromDecimal(decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
+	require.NoError(t, err)
+
+	require.NoError(t, RechargeEpay(topUp.TradeNo, "alipay", "127.0.0.1"))
+
+	var user User
+	require.NoError(t, DB.First(&user, userId).Error)
+	assert.Equal(t, int64(initialQuota)+expectedCredit, int64(user.Quota))
+}
+
 func TestRechargeEpayRollsBackWhenWalletCreditWouldOverflow(t *testing.T) {
 	const userId = 31006
 	resetRechargeRewardTestData(t, userId)
@@ -154,7 +197,7 @@ func TestRechargeEpayRollsBackWhenWalletCreditWouldOverflow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, DB.Create(&User{
 		Id: userId, Username: "epay-limit-user", AffCode: "reward-aff-31006",
-		Quota: common.MaxQuota - 100, Status: common.UserStatusEnabled,
+		Quota: common.MaxWalletQuota - 100, Status: common.UserStatusEnabled,
 	}).Error)
 	topUp := TopUp{
 		UserId: userId, Amount: 1, Money: 1, TradeNo: "epay-limit-order",
@@ -168,7 +211,7 @@ func TestRechargeEpayRollsBackWhenWalletCreditWouldOverflow(t *testing.T) {
 
 	var user User
 	require.NoError(t, DB.First(&user, userId).Error)
-	assert.Equal(t, common.MaxQuota-100, user.Quota)
+	assert.Equal(t, common.MaxWalletQuota-100, user.Quota)
 	var stored TopUp
 	require.NoError(t, DB.First(&stored, topUp.Id).Error)
 	assert.Equal(t, common.TopUpStatusPending, stored.Status)
@@ -217,7 +260,7 @@ func TestDrawRechargeLotteryPreservesChanceWhenWalletCreditWouldOverflow(t *test
 	require.NoError(t, err)
 	require.NoError(t, DB.Create(&User{
 		Id: userId, Username: "lottery-limit-user", AffCode: "reward-aff-31007",
-		Quota: common.MaxQuota - 100, Status: common.UserStatusEnabled,
+		Quota: common.MaxWalletQuota - 100, Status: common.UserStatusEnabled,
 	}).Error)
 	event := RechargeRewardEvent{
 		TopUpId: 70002, UserId: userId, RechargeQuota: 1_000_000, LotteryDraws: 1,
@@ -230,7 +273,7 @@ func TestDrawRechargeLotteryPreservesChanceWhenWalletCreditWouldOverflow(t *test
 
 	var user User
 	require.NoError(t, DB.First(&user, userId).Error)
-	assert.Equal(t, common.MaxQuota-100, user.Quota)
+	assert.Equal(t, common.MaxWalletQuota-100, user.Quota)
 	require.NoError(t, DB.First(&event, event.Id).Error)
 	assert.Zero(t, event.UsedDraws)
 	var drawCount int64
@@ -243,7 +286,7 @@ func TestDrawRechargeLotteryPreservesChanceWhenWalletCreditWouldOverflow(t *test
 	assert.Equal(t, int64(1234), result.Draw.QuotaAwarded)
 }
 
-func TestGroupPassActivationControlsTemporaryGroupAccess(t *testing.T) {
+func TestGroupPassActivationControlsAutomaticTemporaryGroupOverride(t *testing.T) {
 	const userId = 31004
 	resetRechargeRewardTestData(t, userId)
 	settings := validRechargeRewardSettings()
@@ -254,9 +297,9 @@ func TestGroupPassActivationControlsTemporaryGroupAccess(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, DB.Create(&User{Id: userId, Username: "pass-user", AffCode: "reward-aff-31004", Status: common.UserStatusEnabled}).Error)
 
-	passes, err := GrantUserGroupPasses(GroupPassGrantRequest{UserId: userId, TemplateId: "speed-hour", Quantity: 2})
+	passes, err := GrantUserGroupPasses(GroupPassGrantRequest{UserId: userId, TemplateId: "speed-hour", Quantity: 1})
 	require.NoError(t, err)
-	require.Len(t, passes, 2)
+	require.Len(t, passes, 1)
 	activated, err := ActivateUserGroupPass(userId, passes[0].Id)
 	require.NoError(t, err)
 	assert.Equal(t, GroupPassStatusActive, activated.Status)
@@ -265,12 +308,22 @@ func TestGroupPassActivationControlsTemporaryGroupAccess(t *testing.T) {
 	access, err := GetActiveGroupPassAccess(userId)
 	require.NoError(t, err)
 	assert.Greater(t, access["speed"], common.GetTimestamp())
-	_, err = ActivateUserGroupPass(userId, passes[1].Id)
+	otherPass := UserGroupPass{
+		UserId: userId, TemplateId: "vip-hour", Name: "VIP hour", GroupName: "vip",
+		DurationMinutes: 30, Status: GroupPassStatusUnused, ExpiresAt: common.GetTimestamp() + 24*60*60,
+		SourceType: "test", SourceId: "different-group-pass", CreatedAt: common.GetTimestamp(),
+	}
+	require.NoError(t, DB.Create(&otherPass).Error)
+	_, err = ActivateUserGroupPass(userId, otherPass.Id)
 	assert.ErrorIs(t, err, ErrGroupPassAlreadyActive)
 
 	require.NoError(t, DB.Model(&UserGroupPass{}).Where("id = ?", activated.Id).Update("active_until", common.GetTimestamp()-1).Error)
-	_, err = ActivateUserGroupPass(userId, passes[1].Id)
+	_, err = ActivateUserGroupPass(userId, otherPass.Id)
 	require.NoError(t, err)
+	access, err = GetActiveGroupPassAccess(userId)
+	require.NoError(t, err)
+	assert.NotContains(t, access, "speed")
+	assert.Greater(t, access["vip"], common.GetTimestamp())
 }
 
 func TestSelectLotteryPrizeUsesAbsoluteBasisPointRanges(t *testing.T) {

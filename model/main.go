@@ -261,6 +261,9 @@ func InitLogDB() (err error) {
 }
 
 func migrateDB() error {
+	if err := migrateUserQuotaColumnsToBigInt(); err != nil {
+		return err
+	}
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
 	// Migrate model_limits column from varchar to text for existing tables
@@ -331,6 +334,9 @@ func migrateDB() error {
 }
 
 func migrateDBFast() error {
+	if err := migrateUserQuotaColumnsToBigInt(); err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 
@@ -415,6 +421,55 @@ func migrateDBFast() error {
 		}
 	}
 	common.SysLog("database migrated")
+	return nil
+}
+
+// migrateUserQuotaColumnsToBigInt expands cumulative user quota fields before
+// AutoMigrate runs. A wallet balance is cumulative and must not share the
+// int32 bound used by a single billing record.
+func migrateUserQuotaColumnsToBigInt() error {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || !DB.Migrator().HasTable("users") {
+		return nil
+	}
+
+	columns := []string{"quota", "used_quota", "aff_quota", "aff_history"}
+	for _, column := range columns {
+		if !DB.Migrator().HasColumn(&User{}, column) {
+			continue
+		}
+
+		var dataType string
+		var alterSQL string
+		switch {
+		case common.UsingMainDatabase(common.DatabaseTypePostgreSQL):
+			if err := DB.Raw(`SELECT data_type FROM information_schema.columns
+				WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`,
+				"users", column).Scan(&dataType).Error; err != nil {
+				return fmt.Errorf("failed to inspect users.%s type: %w", column, err)
+			}
+			if strings.EqualFold(dataType, "bigint") {
+				continue
+			}
+			alterSQL = fmt.Sprintf(`ALTER TABLE users ALTER COLUMN "%s" TYPE bigint USING "%s"::bigint`, column, column)
+		case common.UsingMainDatabase(common.DatabaseTypeMySQL):
+			if err := DB.Raw(`SELECT DATA_TYPE FROM information_schema.columns
+				WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+				"users", column).Scan(&dataType).Error; err != nil {
+				return fmt.Errorf("failed to inspect users.%s type: %w", column, err)
+			}
+			if strings.EqualFold(dataType, "bigint") {
+				continue
+			}
+			alterSQL = fmt.Sprintf("ALTER TABLE `users` MODIFY COLUMN `%s` bigint DEFAULT 0", column)
+		default:
+			return nil
+		}
+
+		if err := DB.Exec(alterSQL).Error; err != nil {
+			return fmt.Errorf("failed to migrate users.%s to bigint: %w", column, err)
+		}
+		common.SysLog(fmt.Sprintf("Successfully migrated users.%s to bigint", column))
+	}
 	return nil
 }
 

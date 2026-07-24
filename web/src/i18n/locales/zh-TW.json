@@ -5566,7 +5566,6 @@
     "Available prizes": "可抽取的獎品",
     "No prizes are currently available.": "目前沒有可用獎品。",
     "Activate speed pass?": "要啟用速通卡嗎？",
-    "The timer starts immediately and cannot be paused. Existing API keys for the target group will work only until the timer expires.": "啟用後立即計時且無法暫停。目標分組的現有 API 金鑰僅在計時結束前有效。",
     "Unable to load recharge reward settings": "無法載入充值獎勵設定",
     "Refresh the page and try again.": "請重新整理頁面後再試。",
     "Recharge reward settings saved": "充值獎勵設定已儲存",
@@ -5610,6 +5609,15 @@
     "Grant cards directly to a user. Leave expiration empty to use the template validity period.": "直接向使用者發放卡券。到期時間留空則使用範本有效期。",
     "Activation deadline": "啟用截止時間",
     "Grant speed pass": "發放速通卡",
-    "Select an enabled speed pass template": "請選擇已啟用的速通卡範本"
+    "Select an enabled speed pass template": "請選擇已啟用的速通卡範本",
+    "Activate it before the activation deadline. The timer starts immediately and cannot be paused.": "請在啟用截止時間前啟用。啟用後立即計時，且無法暫停。",
+    "Each single recharge of {{amount}} or more grants {{count}} draw chance(s).": "單筆充值滿 {{amount}}，即可獲得 {{count}} 次抽獎機會。",
+    "Earn a speed pass from an eligible recharge, promotion, or recharge draw.": "透過符合條件的充值、活動或充值抽獎獲得速通卡。",
+    "How to use a speed pass": "速通卡使用教學",
+    "Only one speed pass can be active at a time.": "同一時間只能啟用一張速通卡。",
+    "Recharge draw is currently paused. Existing draw chances remain stored.": "充值抽獎目前已暫停，已有抽獎次數仍會保留。",
+    "Speed passes grant temporary access to discounted groups. Draw chances earned from recharges can be used independently.": "速通卡可用於暫時使用低倍率分組。充值獲得的抽獎次數可獨立使用，無需速通卡。",
+    "The timer starts immediately and cannot be paused. Requests automatically use {{group}} until the timer expires, then return to their original group.": "啟用後立即計時且無法暫停。計時期間，請求會自動使用 {{group}} 分組；計時結束後會恢復原分組。",
+    "While it is active, requests automatically use the group shown on the pass. When access expires, they automatically return to the API key's original group.": "速通卡生效期間，請求會自動使用卡片標示的分組；使用期限結束後，會自動恢復 API 金鑰的原分組。"
   }
 }

@@ -95,7 +95,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "产品不存在"})
 		return
 	}
-	if selectedProduct.Quota <= 0 || selectedProduct.Quota > int64(common.MaxQuota) || selectedProduct.Price <= 0 {
+	if selectedProduct.Quota <= 0 || selectedProduct.Quota > int64(common.MaxWalletQuota) || selectedProduct.Price <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": "产品额度或价格超出安全范围"})
 		return
 	}

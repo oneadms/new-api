@@ -8,12 +8,12 @@ import (
 )
 
 // Quota conversions are centralized here so every billing path shares one
-// saturation + logging policy. Quota columns (user/token/log) are 32-bit
-// integers in the database, so an oversized product must clamp to the int32
-// range instead of wrapping around and turning a charge into a credit.
+// saturation + logging policy. A single consume/log quota remains bounded to
+// int32; cumulative wallet balances use bigint and have a separate bound.
 const (
-	MaxQuota = math.MaxInt32
-	MinQuota = math.MinInt32
+	MaxQuota       = math.MaxInt32
+	MinQuota       = math.MinInt32
+	MaxWalletQuota = 1<<53 - 1
 )
 
 // QuotaClampKind identifies why a quota conversion had to be saturated.
@@ -145,4 +145,17 @@ func QuotaFromDecimal(d decimal.Decimal) int {
 func QuotaFromDecimalChecked(d decimal.Decimal) (int, *QuotaClamp) {
 	f, _ := d.Round(0).Float64()
 	return saturateQuota(f, "QuotaFromDecimal")
+}
+
+// WalletQuotaFromDecimal converts a cumulative wallet credit using half-away-
+// from-zero rounding. Wallet values are bounded to JavaScript's largest exact
+// integer because the dashboard and public JSON APIs represent quota as a
+// number, while the database stores the value as bigint.
+func WalletQuotaFromDecimal(d decimal.Decimal) (int64, error) {
+	rounded := d.Round(0)
+	maxWalletQuota := decimal.NewFromInt(MaxWalletQuota)
+	if rounded.GreaterThan(maxWalletQuota) || rounded.LessThan(maxWalletQuota.Neg()) {
+		return 0, fmt.Errorf("wallet quota exceeds safe integer range")
+	}
+	return rounded.IntPart(), nil
 }

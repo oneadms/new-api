@@ -187,8 +187,7 @@ func getMinTopup() int64 {
 }
 
 // validateTopUpCreditAmount rejects a purchase before the user is sent to a
-// payment provider when its eventual wallet credit cannot fit the shared
-// int32 quota domain.
+// payment provider when its eventual credit cannot fit the bigint wallet.
 func validateTopUpCreditAmount(amount int64) error {
 	_, err := calculateTopUpCreditAmount(amount)
 	return err
@@ -202,11 +201,11 @@ func calculateTopUpCreditAmount(amount int64) (int64, error) {
 	if operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens {
 		quotaValue = quotaValue.Mul(decimal.NewFromFloat(common.QuotaPerUnit))
 	}
-	quota, clamp := common.QuotaFromDecimalChecked(quotaValue)
-	if clamp != nil || quota <= 0 {
+	quota, err := common.WalletQuotaFromDecimal(quotaValue)
+	if err != nil || quota <= 0 {
 		return 0, fmt.Errorf("充值数量超出安全范围")
 	}
-	return int64(quota), nil
+	return quota, nil
 }
 
 func validateUserTopUpCreditAmount(userId int, amount int64) error {

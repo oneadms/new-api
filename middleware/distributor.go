@@ -91,7 +91,6 @@ func Distribute() func(c *gin.Context) {
 				}
 				if usingGroup == "" {
 					usingGroup = userGroup
-					common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 				}
 				if strings.HasPrefix(c.Request.URL.Path, "/pg/") {
 					playgroundRequest := &dto.PlayGroundRequest{}
@@ -101,14 +100,12 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if playgroundRequest.Group != "" {
-						if _, ok := usableGroups[playgroundRequest.Group]; !ok {
-							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
-							return
-						}
 						usingGroup = playgroundRequest.Group
-						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
+				// 速通卡分组优先于令牌和 Playground 的手动分组，过期后该覆盖自动消失。
+				usingGroup = service.ApplyActiveGroupPass(c, usingGroup)
+				common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 				if _, ok := usableGroups[usingGroup]; !ok {
 					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 					return

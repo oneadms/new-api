@@ -1178,6 +1178,10 @@ func ManageUser(c *gin.Context) {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
+			if err := model.ValidateUserQuotaCredit(user.Id, int64(req.Value)); err != nil {
+				common.ApiError(c, err)
+				return
+			}
 			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
 				common.ApiError(c, err)
 				return
@@ -1198,6 +1202,11 @@ func ManageUser(c *gin.Context) {
 				"quota": logger.LogQuota(req.Value),
 			})
 		case "override":
+			quotaValue := int64(req.Value)
+			if quotaValue > int64(common.MaxWalletQuota) || quotaValue < -int64(common.MaxWalletQuota) {
+				common.ApiError(c, model.ErrUserQuotaLimitExceeded)
+				return
+			}
 			oldQuota := user.Quota
 			if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", req.Value).Error; err != nil {
 				common.ApiError(c, err)

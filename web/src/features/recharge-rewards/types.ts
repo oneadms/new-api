@@ -96,6 +96,8 @@ export interface RechargeLotteryDraw {
 export interface RechargeRewardSelf {
   group_pass_enabled: boolean
   lottery_enabled: boolean
+  lottery_min_recharge_quota: number
+  lottery_draws_per_recharge: number
   available_draws: number
   group_passes: UserGroupPass[]
   recent_draws: RechargeLotteryDraw[]

@@ -482,7 +482,7 @@ func TokenAuth() func(c *gin.Context) {
 				common.TranslateMessage(c, i18n.MsgDatabaseError))
 			return
 		}
-		tokenGroup := token.Group
+		tokenGroup := service.ApplyActiveGroupPass(c, token.Group)
 		if tokenGroup != "" {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := userUsableGroups[tokenGroup]; !ok {
@@ -508,6 +508,8 @@ func TokenAuth() func(c *gin.Context) {
 		if err != nil {
 			return
 		}
+		// 速通卡只覆盖本次请求的有效分组，不修改令牌本身；过期后自然恢复原分组。
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, tokenGroup)
 		c.Next()
 	}
 }

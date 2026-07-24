@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
 	"github.com/stripe/stripe-go/v81/webhook"
@@ -92,12 +93,12 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		return
 	}
 	chargedMoney := GetChargedAmount(float64(req.Amount), *user)
-	creditedQuota, clamp := common.QuotaFromFloatChecked(chargedMoney * common.QuotaPerUnit)
-	if clamp != nil || creditedQuota <= 0 {
+	creditedQuota, err := common.WalletQuotaFromDecimal(decimal.NewFromFloat(chargedMoney).Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
+	if err != nil || creditedQuota <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": "充值数量超出安全范围"})
 		return
 	}
-	if err := model.ValidateUserQuotaCredit(id, int64(creditedQuota)); err != nil {
+	if err := model.ValidateUserQuotaCredit(id, creditedQuota); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "error", "data": err.Error()})
 		return
 	}

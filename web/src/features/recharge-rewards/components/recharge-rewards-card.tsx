@@ -60,6 +60,8 @@ import {
 } from '../hooks'
 import { getGroupPassDisplayStatus } from '../lib/group-pass-status'
 import type { RechargeLotteryPrize, UserGroupPass } from '../types'
+import { RechargeLotteryRuleDescription } from './recharge-lottery-rule-description'
+import { SpeedPassTutorial } from './speed-pass-tutorial'
 
 function formatPrize(
   prize: RechargeLotteryPrize,
@@ -209,7 +211,7 @@ export function RechargeRewardsCard(props: {
           </CardTitle>
           <CardDescription>
             {t(
-              'Activate a speed pass for temporary access to a discounted group, or use draw chances earned from recharges.'
+              'Speed passes grant temporary access to discounted groups. Draw chances earned from recharges can be used independently.'
             )}
           </CardDescription>
         </CardHeader>
@@ -229,6 +231,7 @@ export function RechargeRewardsCard(props: {
                   : t('Speed pass activation is currently paused.')}
               </p>
             </div>
+            {rewards.group_pass_enabled && <SpeedPassTutorial />}
             {rewards.group_passes.length === 0 ? (
               <Empty className='min-h-32 border'>
                 <EmptyHeader>
@@ -265,7 +268,12 @@ export function RechargeRewardsCard(props: {
                   <Sparkles className='size-4' aria-hidden='true' />
                   {t('Recharge draw')}
                 </h3>
-                <p className='text-muted-foreground mt-1 text-sm'>
+                <RechargeLotteryRuleDescription
+                  enabled={rewards.lottery_enabled}
+                  minRechargeQuota={rewards.lottery_min_recharge_quota}
+                  drawsPerRecharge={rewards.lottery_draws_per_recharge}
+                />
+                <p className='text-muted-foreground mt-1 text-sm font-medium'>
                   {t('{{count}} draw chance(s) available', {
                     count: rewards.available_draws,
                   })}
@@ -326,7 +334,8 @@ export function RechargeRewardsCard(props: {
             <AlertDialogTitle>{t('Activate speed pass?')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                'The timer starts immediately and cannot be paused. Existing API keys for the target group will work only until the timer expires.'
+                'The timer starts immediately and cannot be paused. Requests automatically use {{group}} until the timer expires, then return to their original group.',
+                { group: selectedPass?.group_name }
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -51,6 +51,7 @@ const (
 	ContextKeyUserGroup                 ContextKey = "user_group"
 	ContextKeyUserHasActiveSubscription ContextKey = "user_has_active_subscription"
 	ContextKeyUserUsableGroups          ContextKey = "user_usable_groups"
+	ContextKeyGroupPassGroup            ContextKey = "group_pass_group"
 	ContextKeyUsingGroup                ContextKey = "group"
 	ContextKeyUserName                  ContextKey = "username"
 

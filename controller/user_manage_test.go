@@ -159,3 +159,32 @@ func TestManageUserDeleteReturnsImmediatelyAndUnknownActionFails(t *testing.T) {
 	assert.EqualValues(t, 1, unchanged.AuthVersion)
 	assert.Equal(t, common.UserStatusEnabled, unchanged.Status)
 }
+
+func TestManageUserRejectsQuotaAboveWalletSafeLimit(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "managed-quota-limit-user", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "quota-limit-aff",
+		Quota: common.MaxWalletQuota - 10,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":11}`, user.Id))
+	assert.Contains(t, recorder.Body.String(), `"success":false`)
+	assert.Contains(t, recorder.Body.String(), model.ErrUserQuotaLimitExceeded.Error())
+
+	var unchanged model.User
+	require.NoError(t, db.First(&unchanged, user.Id).Error)
+	assert.Equal(t, common.MaxWalletQuota-10, unchanged.Quota)
+
+	recorder = performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"override","value":%d}`, user.Id, int64(common.MaxWalletQuota)+1))
+	assert.Contains(t, recorder.Body.String(), `"success":false`)
+	assert.Contains(t, recorder.Body.String(), model.ErrUserQuotaLimitExceeded.Error())
+	require.NoError(t, db.First(&unchanged, user.Id).Error)
+	assert.Equal(t, common.MaxWalletQuota-10, unchanged.Quota)
+
+	recorder = performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"override","value":%d}`, user.Id, int64(common.MaxQuota)+1))
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+	require.NoError(t, db.First(&unchanged, user.Id).Error)
+	assert.Equal(t, common.MaxQuota+1, unchanged.Quota)
+}

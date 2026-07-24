@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
@@ -117,4 +118,17 @@ func TestActiveGroupPassTemporarilyRestoresRestrictedGroup(t *testing.T) {
 	groups, err := ResolveUserUsableGroups(ctx, "default")
 	require.NoError(t, err)
 	assert.Contains(t, groups, "vip")
+	assert.Equal(t, "vip", common.GetContextKeyString(ctx, constant.ContextKeyGroupPassGroup))
+	assert.Equal(t, "vip", ApplyActiveGroupPass(ctx, "default"))
+
+	require.NoError(t, model.DB.Model(&model.UserGroupPass{}).
+		Where("user_id = ?", 2303).
+		Update("active_until", now-1).Error)
+	expiredCtx, _ := gin.CreateTestContext(nil)
+	expiredCtx.Set("id", 2303)
+	groups, err = ResolveUserUsableGroups(expiredCtx, "default")
+	require.NoError(t, err)
+	assert.NotContains(t, groups, "vip")
+	assert.Empty(t, common.GetContextKeyString(expiredCtx, constant.ContextKeyGroupPassGroup))
+	assert.Equal(t, "default", ApplyActiveGroupPass(expiredCtx, "default"))
 }

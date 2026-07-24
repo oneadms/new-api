@@ -66,10 +66,21 @@ func ResolveUserUsableGroups(c *gin.Context, userGroup string) (map[string]strin
 	}
 	for group := range groupPassAccess {
 		groups[group] = "Temporary speed-pass access"
+		common.SetContextKey(c, constant.ContextKeyGroupPassGroup, group)
 	}
 	common.SetContextKey(c, constant.ContextKeyUserHasActiveSubscription, access.HasActiveSubscription)
 	common.SetContextKey(c, constant.ContextKeyUserUsableGroups, groups)
 	return groups, nil
+}
+
+// ApplyActiveGroupPass returns the temporary group that overrides the
+// configured request group while a speed pass is active.
+func ApplyActiveGroupPass(c *gin.Context, configuredGroup string) string {
+	activeGroup := common.GetContextKeyString(c, constant.ContextKeyGroupPassGroup)
+	if activeGroup != "" {
+		return activeGroup
+	}
+	return configuredGroup
 }
 
 func GroupInUserUsableGroups(userGroup, groupName string) bool {

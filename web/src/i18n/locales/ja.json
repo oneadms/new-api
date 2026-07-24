@@ -5566,7 +5566,6 @@
     "Available prizes": "獲得可能な賞品",
     "No prizes are currently available.": "現在利用可能な賞品はありません。",
     "Activate speed pass?": "高速パスを有効化しますか？",
-    "The timer starts immediately and cannot be paused. Existing API keys for the target group will work only until the timer expires.": "有効化するとすぐに計測が始まり、一時停止できません。対象グループの既存 API キーは期限までのみ利用できます。",
     "Unable to load recharge reward settings": "チャージ特典設定を読み込めません",
     "Refresh the page and try again.": "ページを再読み込みしてもう一度お試しください。",
     "Recharge reward settings saved": "チャージ特典設定を保存しました",
@@ -5610,6 +5609,15 @@
     "Grant cards directly to a user. Leave expiration empty to use the template validity period.": "ユーザーにカードを直接付与します。有効期限を空欄にするとテンプレートの有効期間が使用されます。",
     "Activation deadline": "有効化期限",
     "Grant speed pass": "高速パスを付与",
-    "Select an enabled speed pass template": "有効な高速パステンプレートを選択してください"
+    "Select an enabled speed pass template": "有効な高速パステンプレートを選択してください",
+    "Activate it before the activation deadline. The timer starts immediately and cannot be paused.": "有効化期限までに有効化してください。有効化するとすぐに計時が始まり、一時停止はできません。",
+    "Each single recharge of {{amount}} or more grants {{count}} draw chance(s).": "1回のチャージが{{amount}}以上の場合、抽選回数を{{count}}回獲得できます。",
+    "Earn a speed pass from an eligible recharge, promotion, or recharge draw.": "対象となるチャージ、キャンペーン、またはチャージ抽選で高速パスを獲得します。",
+    "How to use a speed pass": "高速パスの使い方",
+    "Only one speed pass can be active at a time.": "同時に有効化できる高速パスは1枚だけです。",
+    "Recharge draw is currently paused. Existing draw chances remain stored.": "チャージ抽選は現在一時停止中です。獲得済みの抽選回数は保持されます。",
+    "Speed passes grant temporary access to discounted groups. Draw chances earned from recharges can be used independently.": "高速パスでは低倍率グループを一時利用できます。チャージで獲得した抽選回数は、高速パスなしで利用できます。",
+    "The timer starts immediately and cannot be paused. Requests automatically use {{group}} until the timer expires, then return to their original group.": "有効化するとすぐに計時が始まり、一時停止はできません。終了まではリクエストで{{group}}グループが自動的に使用され、その後は元のグループに戻ります。",
+    "While it is active, requests automatically use the group shown on the pass. When access expires, they automatically return to the API key's original group.": "有効期間中は、リクエストでパスに表示されたグループが自動的に使用されます。アクセス期限が切れると、APIキーの元のグループに自動で戻ります。"
   }
 }

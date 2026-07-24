@@ -120,39 +120,32 @@ func logHelper(ctx context.Context, level string, msg string) {
 }
 
 func LogQuota(quota int) string {
-	// 新逻辑：根据额度展示类型输出
-	q := float64(quota)
-	switch operation_setting.GetQuotaDisplayType() {
-	case operation_setting.QuotaDisplayTypeCNY:
-		usd := q / common.QuotaPerUnit
-		cny := usd * operation_setting.USDExchangeRate
-		return fmt.Sprintf("¥%.6f 额度", cny)
-	case operation_setting.QuotaDisplayTypeCustom:
-		usd := q / common.QuotaPerUnit
-		rate := operation_setting.GetGeneralSetting().CustomCurrencyExchangeRate
-		symbol := operation_setting.GetGeneralSetting().CustomCurrencySymbol
-		if symbol == "" {
-			symbol = "¤"
-		}
-		if rate <= 0 {
-			rate = 1
-		}
-		v := usd * rate
-		return fmt.Sprintf("%s%.6f 额度", symbol, v)
-	case operation_setting.QuotaDisplayTypeTokens:
-		return fmt.Sprintf("%d 点额度", quota)
-	default: // USD
-		return fmt.Sprintf("＄%.6f 额度", q/common.QuotaPerUnit)
-	}
+	return LogQuota64(int64(quota))
+}
+
+func LogQuota64(quota int64) string {
+	return formatQuota64(quota, true)
 }
 
 func FormatQuota(quota int) string {
+	return FormatQuota64(int64(quota))
+}
+
+func FormatQuota64(quota int64) string {
+	return formatQuota64(quota, false)
+}
+
+func formatQuota64(quota int64, withUnit bool) string {
 	q := float64(quota)
+	suffix := ""
+	if withUnit {
+		suffix = " 额度"
+	}
 	switch operation_setting.GetQuotaDisplayType() {
 	case operation_setting.QuotaDisplayTypeCNY:
 		usd := q / common.QuotaPerUnit
 		cny := usd * operation_setting.USDExchangeRate
-		return fmt.Sprintf("¥%.6f", cny)
+		return fmt.Sprintf("¥%.6f%s", cny, suffix)
 	case operation_setting.QuotaDisplayTypeCustom:
 		usd := q / common.QuotaPerUnit
 		rate := operation_setting.GetGeneralSetting().CustomCurrencyExchangeRate
@@ -164,11 +157,14 @@ func FormatQuota(quota int) string {
 			rate = 1
 		}
 		v := usd * rate
-		return fmt.Sprintf("%s%.6f", symbol, v)
+		return fmt.Sprintf("%s%.6f%s", symbol, v, suffix)
 	case operation_setting.QuotaDisplayTypeTokens:
+		if withUnit {
+			return fmt.Sprintf("%d 点额度", quota)
+		}
 		return fmt.Sprintf("%d", quota)
-	default:
-		return fmt.Sprintf("＄%.6f", q/common.QuotaPerUnit)
+	default: // USD
+		return fmt.Sprintf("＄%.6f%s", q/common.QuotaPerUnit, suffix)
 	}
 }
 

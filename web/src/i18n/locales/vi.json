@@ -5566,7 +5566,6 @@
     "Available prizes": "Phần thưởng hiện có",
     "No prizes are currently available.": "Hiện không có phần thưởng nào.",
     "Activate speed pass?": "Kích hoạt thẻ tăng tốc?",
-    "The timer starts immediately and cannot be paused. Existing API keys for the target group will work only until the timer expires.": "Bộ đếm bắt đầu ngay và không thể tạm dừng. Khóa API hiện có của nhóm đích chỉ hoạt động đến khi hết thời gian.",
     "Unable to load recharge reward settings": "Không thể tải cài đặt phần thưởng nạp tiền",
     "Refresh the page and try again.": "Hãy tải lại trang và thử lại.",
     "Recharge reward settings saved": "Đã lưu cài đặt phần thưởng nạp tiền",
@@ -5610,6 +5609,15 @@
     "Grant cards directly to a user. Leave expiration empty to use the template validity period.": "Cấp thẻ trực tiếp cho người dùng. Để trống thời hạn để dùng thời hạn của mẫu.",
     "Activation deadline": "Hạn kích hoạt",
     "Grant speed pass": "Cấp thẻ tăng tốc",
-    "Select an enabled speed pass template": "Chọn mẫu thẻ tăng tốc đã bật"
+    "Select an enabled speed pass template": "Chọn mẫu thẻ tăng tốc đã bật",
+    "Activate it before the activation deadline. The timer starts immediately and cannot be paused.": "Kích hoạt thẻ trước thời hạn. Bộ đếm thời gian bắt đầu ngay lập tức và không thể tạm dừng.",
+    "Each single recharge of {{amount}} or more grants {{count}} draw chance(s).": "Mỗi lần nạp từ {{amount}} trở lên sẽ nhận được {{count}} lượt quay.",
+    "Earn a speed pass from an eligible recharge, promotion, or recharge draw.": "Nhận thẻ tăng tốc từ lần nạp đủ điều kiện, chương trình khuyến mãi hoặc vòng quay nạp tiền.",
+    "How to use a speed pass": "Cách sử dụng thẻ tăng tốc",
+    "Only one speed pass can be active at a time.": "Mỗi thời điểm chỉ có thể có một thẻ tăng tốc đang hoạt động.",
+    "Recharge draw is currently paused. Existing draw chances remain stored.": "Vòng quay nạp tiền hiện đang tạm dừng. Các lượt quay hiện có vẫn được giữ lại.",
+    "Speed passes grant temporary access to discounted groups. Draw chances earned from recharges can be used independently.": "Thẻ tăng tốc cho phép truy cập tạm thời các nhóm có hệ số thấp. Lượt quay nhận được khi nạp tiền có thể dùng độc lập, không cần thẻ tăng tốc.",
+    "The timer starts immediately and cannot be paused. Requests automatically use {{group}} until the timer expires, then return to their original group.": "Bộ đếm thời gian bắt đầu ngay lập tức và không thể tạm dừng. Các yêu cầu sẽ tự động dùng nhóm {{group}} cho đến khi hết thời gian, sau đó trở về nhóm ban đầu.",
+    "While it is active, requests automatically use the group shown on the pass. When access expires, they automatically return to the API key's original group.": "Khi thẻ đang có hiệu lực, các yêu cầu sẽ tự động dùng nhóm hiển thị trên thẻ. Khi quyền truy cập hết hạn, chúng sẽ tự động trở về nhóm ban đầu của khóa API."
   }
 }

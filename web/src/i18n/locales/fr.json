@@ -5566,7 +5566,6 @@
     "Available prizes": "Lots disponibles",
     "No prizes are currently available.": "Aucun lot n’est actuellement disponible.",
     "Activate speed pass?": "Activer le pass accéléré ?",
-    "The timer starts immediately and cannot be paused. Existing API keys for the target group will work only until the timer expires.": "Le décompte démarre immédiatement et ne peut pas être suspendu. Les clés API existantes du groupe cible ne fonctionneront que jusqu’à son expiration.",
     "Unable to load recharge reward settings": "Impossible de charger les paramètres des récompenses de recharge",
     "Refresh the page and try again.": "Actualisez la page et réessayez.",
     "Recharge reward settings saved": "Paramètres des récompenses de recharge enregistrés",
@@ -5610,6 +5609,15 @@
     "Grant cards directly to a user. Leave expiration empty to use the template validity period.": "Attribuez directement des cartes à un utilisateur. Laissez l’expiration vide pour utiliser la durée de validité du modèle.",
     "Activation deadline": "Date limite d’activation",
     "Grant speed pass": "Attribuer un pass accéléré",
-    "Select an enabled speed pass template": "Sélectionnez un modèle de pass accéléré activé"
+    "Select an enabled speed pass template": "Sélectionnez un modèle de pass accéléré activé",
+    "Activate it before the activation deadline. The timer starts immediately and cannot be paused.": "Activez-le avant la date limite d’activation. Le décompte démarre immédiatement et ne peut pas être mis en pause.",
+    "Each single recharge of {{amount}} or more grants {{count}} draw chance(s).": "Chaque recharge d’au moins {{amount}} donne droit à {{count}} tirage(s).",
+    "Earn a speed pass from an eligible recharge, promotion, or recharge draw.": "Obtenez un pass accéléré grâce à une recharge éligible, une promotion ou un tirage lié à une recharge.",
+    "How to use a speed pass": "Comment utiliser un pass accéléré",
+    "Only one speed pass can be active at a time.": "Un seul pass accéléré peut être actif à la fois.",
+    "Recharge draw is currently paused. Existing draw chances remain stored.": "Le tirage de recharge est actuellement suspendu. Les chances existantes restent conservées.",
+    "Speed passes grant temporary access to discounted groups. Draw chances earned from recharges can be used independently.": "Les pass accélérés donnent un accès temporaire aux groupes à tarif réduit. Les chances de tirage obtenues par recharge peuvent être utilisées indépendamment.",
+    "The timer starts immediately and cannot be paused. Requests automatically use {{group}} until the timer expires, then return to their original group.": "Le décompte démarre immédiatement et ne peut pas être mis en pause. Les requêtes utilisent automatiquement le groupe {{group}} jusqu’à la fin, puis reviennent à leur groupe d’origine.",
+    "While it is active, requests automatically use the group shown on the pass. When access expires, they automatically return to the API key's original group.": "Pendant sa validité, les requêtes utilisent automatiquement le groupe indiqué sur le pass. À l’expiration de l’accès, elles reviennent automatiquement au groupe d’origine de la clé API."
   }
 }

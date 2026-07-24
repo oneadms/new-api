@@ -124,3 +124,16 @@ func TestQuotaFromDecimalChecked(t *testing.T) {
 		assert.Equal(t, QuotaClampOverflow, clamp.Kind)
 	}
 }
+
+func TestWalletQuotaFromDecimalSupportsBigintWalletBalance(t *testing.T) {
+	quota, err := WalletQuotaFromDecimal(decimal.NewFromInt(10_000).Mul(decimal.NewFromInt(500_000)))
+	require.NoError(t, err)
+	assert.Equal(t, int64(5_000_000_000), quota)
+
+	quota, err = WalletQuotaFromDecimal(decimal.NewFromInt(MaxWalletQuota))
+	require.NoError(t, err)
+	assert.Equal(t, int64(MaxWalletQuota), quota)
+
+	_, err = WalletQuotaFromDecimal(decimal.NewFromInt(MaxWalletQuota).Add(decimal.NewFromInt(1)))
+	assert.Error(t, err)
+}
