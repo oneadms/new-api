@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -423,6 +424,8 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	configuredGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 	_, configuredGroupDisabled := subscriptionDisabledGroups[configuredGroup]
 	_, resolvedGroupDisabled := subscriptionDisabledGroups[relayInfo.UsingGroup]
+	configuredGroupDisabled = configuredGroupDisabled || setting.IsSubscriptionDisabledGroup(configuredGroup)
+	resolvedGroupDisabled = resolvedGroupDisabled || setting.IsSubscriptionDisabledGroup(relayInfo.UsingGroup)
 	if configuredGroupDisabled || resolvedGroupDisabled {
 		disabledGroup := relayInfo.UsingGroup
 		if configuredGroupDisabled {

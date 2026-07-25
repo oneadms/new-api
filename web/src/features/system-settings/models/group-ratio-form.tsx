@@ -26,6 +26,7 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
+import { MultiSelect } from '@/components/multi-select'
 import {
   Accordion,
   AccordionContent,
@@ -66,6 +67,7 @@ type GroupFormValues = {
   GroupRatio: string
   TopupGroupRatio: string
   UserUsableGroups: string
+  SubscriptionDisabledGroups: string
   GroupGroupRatio: string
   AutoGroups: string
   DefaultUseAutoGroup: boolean
@@ -104,6 +106,9 @@ export const GroupRatioForm = memo(function GroupRatioForm({
   const watchedGroupRatio = form.watch('GroupRatio')
   const watchedUserUsableGroups = form.watch('UserUsableGroups')
   const watchedTopupGroupRatio = form.watch('TopupGroupRatio')
+  const watchedSubscriptionDisabledGroups = form.watch(
+    'SubscriptionDisabledGroups'
+  )
   const groupNames = useMemo(() => {
     const ratioMap = safeJsonParse<Record<string, number>>(watchedGroupRatio, {
       fallback: {},
@@ -125,6 +130,22 @@ export const GroupRatioForm = memo(function GroupRatioForm({
       ]),
     ]
   }, [watchedGroupRatio, watchedUserUsableGroups, watchedTopupGroupRatio])
+  const subscriptionDisabledGroups = useMemo(
+    () =>
+      safeJsonParse<string[]>(watchedSubscriptionDisabledGroups, {
+        fallback: [],
+        silent: true,
+      }),
+    [watchedSubscriptionDisabledGroups]
+  )
+  const subscriptionDisabledGroupOptions = useMemo(
+    () =>
+      [...new Set(['auto', ...groupNames])].map((group) => ({
+        label: group,
+        value: group,
+      })),
+    [groupNames]
+  )
 
   return (
     <div className='space-y-6'>
@@ -181,6 +202,40 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               onChange={(value) =>
                 handleFieldChange('GroupSpecialUsableGroup', value)
               }
+            />
+
+            <FormField
+              control={form.control}
+              name='SubscriptionDisabledGroups'
+              render={() => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Global subscription-excluded groups')}
+                  </FormLabel>
+                  <FormControl>
+                    <MultiSelect
+                      options={subscriptionDisabledGroupOptions}
+                      selected={subscriptionDisabledGroups}
+                      onChange={(values) =>
+                        handleFieldChange(
+                          'SubscriptionDisabledGroups',
+                          JSON.stringify(values)
+                        )
+                      }
+                      placeholder={t(
+                        'Select global subscription-excluded groups'
+                      )}
+                      allowCreate
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Subscription balance is never used for these groups. Existing and future subscriptions use wallet balance instead.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
 
             <FormField
@@ -259,6 +314,27 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   <FormDescription>
                     {t(
                       'JSON map of group → description exposed when users create API keys.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='SubscriptionDisabledGroups'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Global subscription-excluded groups')}
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea rows={4} {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Subscription balance is never used for these groups. Existing and future subscriptions use wallet balance instead.'
                     )}
                   </FormDescription>
                   <FormMessage />
