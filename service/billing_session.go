@@ -412,6 +412,31 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return session, nil
 	}
 
+	subscriptionDisabledGroups, resolved := common.GetContextKeyType[map[string]struct{}](c, constant.ContextKeySubscriptionDisabledGroups)
+	if !resolved {
+		access, err := model.GetActiveSubscriptionGroupAccess(relayInfo.UserId)
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+		}
+		subscriptionDisabledGroups = access.SubscriptionDisabledGroups
+	}
+	configuredGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	_, configuredGroupDisabled := subscriptionDisabledGroups[configuredGroup]
+	_, resolvedGroupDisabled := subscriptionDisabledGroups[relayInfo.UsingGroup]
+	if configuredGroupDisabled || resolvedGroupDisabled {
+		disabledGroup := relayInfo.UsingGroup
+		if configuredGroupDisabled {
+			disabledGroup = configuredGroup
+		}
+		if pref == "subscription_only" {
+			return nil, types.NewErrorWithStatusCode(
+				fmt.Errorf("订阅余额不可用于分组 %s", disabledGroup),
+				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		return tryWallet()
+	}
+
 	switch pref {
 	case "subscription_only":
 		return trySubscription()

@@ -11,9 +11,12 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestResetStatusCode(t *testing.T) {
@@ -235,6 +238,97 @@ func TestPrepareTaskErrorForResponseKeepsLocalErrors(t *testing.T) {
 	PrepareTaskErrorForResponse(taskErr, true)
 
 	require.Equal(t, "local build request failed", taskErr.Message)
+}
+
+func TestPrepareMidjourneyResponseForResponseMasksUpstreamMessages(t *testing.T) {
+	resp := &dto.MidjourneyResponse{
+		Code:        23,
+		Description: "队列已满，请稍后尝试",
+		Properties:  map[string]any{"discordInstanceId": "111"},
+		Result:      "task-1",
+	}
+
+	statusCode := PrepareMidjourneyResponseForResponse(resp, http.StatusOK, true)
+
+	require.Equal(t, http.StatusTooManyRequests, statusCode)
+	require.Equal(t, "上游队列已满，请稍后重试", resp.Description)
+	require.Empty(t, resp.Result)
+	require.Nil(t, resp.Properties)
+}
+
+func TestPrepareMidjourneyResponseForResponseKeepsResultForLocalLoadSignal(t *testing.T) {
+	resp := &dto.MidjourneyResponse{
+		Code:        30,
+		Description: "当前分组负载已饱和，请稍后再试",
+		Result:      "keep-this",
+	}
+
+	statusCode := PrepareMidjourneyResponseForResponse(resp, http.StatusOK, true)
+
+	require.Equal(t, http.StatusTooManyRequests, statusCode)
+	require.Equal(t, "当前分组上游负载已饱和，请稍后再试", resp.Description)
+	require.Equal(t, "keep-this", resp.Result)
+}
+
+func TestPrepareMidjourneyTaskForResponseByStoredTextMasksPublicText(t *testing.T) {
+	task := &dto.MidjourneyDto{
+		Description: "公益站暂时不可用",
+		FailReason:  "No available account instance",
+		Properties:  &dto.Properties{FinalPrompt: "keep"},
+	}
+
+	PrepareMidjourneyTaskForResponseByStoredText(task, true)
+
+	require.Equal(t, upstreamUnavailablePublicMessage, task.Description)
+	require.Equal(t, upstreamUnavailablePublicMessage, task.FailReason)
+	require.Nil(t, task.Properties)
+}
+
+func TestPrepareMidjourneyModelTaskForResponseMasksPublicText(t *testing.T) {
+	task := &model.Midjourney{
+		Description: "队列已满，请稍后再试",
+		FailReason:  "余额不足",
+		Properties:  "keep",
+	}
+
+	PrepareMidjourneyModelTaskForResponse(task, true)
+
+	require.Equal(t, "上游队列已满，请稍后重试", task.Description)
+	require.Equal(t, upstreamBillingErrorPublicMessage, task.FailReason)
+	require.Empty(t, task.Properties)
+}
+
+func TestMidjourneyHideUpstreamErrorFallsBackToDB(t *testing.T) {
+	originalDB := model.DB
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	defer func() {
+		model.DB = originalDB
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+	}()
+
+	db, err := gorm.Open(sqlite.Open("file:midjourney-hide-upstream-error?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	defer func() { _ = sqlDB.Close() }()
+
+	model.DB = db
+	common.MemoryCacheEnabled = false
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}))
+
+	hideUpstreamError := true
+	settingsBytes, marshalErr := common.Marshal(dto.ChannelSettings{HideUpstreamError: hideUpstreamError})
+	require.NoError(t, marshalErr)
+	channel := &model.Channel{
+		Id:      10001,
+		Name:    "hide-upstream-error-channel",
+		Key:     "sk-test",
+		Status:  common.ChannelStatusEnabled,
+		Setting: common.GetPointer(string(settingsBytes)),
+	}
+	require.NoError(t, db.Create(channel).Error)
+
+	require.True(t, MidjourneyHideUpstreamError(channel.Id))
 }
 
 func TestUpstreamPublicMessageForStatus(t *testing.T) {

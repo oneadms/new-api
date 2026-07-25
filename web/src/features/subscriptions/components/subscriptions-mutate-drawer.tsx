@@ -539,6 +539,31 @@ export function SubscriptionsMutateDrawer({
 
               <FormField
                 control={form.control}
+                name='subscription_disabled_groups'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Subscription-excluded Groups')}</FormLabel>
+                    <FormControl>
+                      <MultiSelect
+                        options={restrictedGroupOptions}
+                        selected={field.value}
+                        onChange={field.onChange}
+                        placeholder={t('Select subscription-excluded groups')}
+                        maxVisibleChips={6}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Subscription balance is not used for the selected groups. Requests use wallet balance instead.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name='sort_order'
                 render={({ field }) => (
                   <FormItem>

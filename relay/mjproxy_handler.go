@@ -75,9 +75,8 @@ func RelayMidjourneyImage(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
 		c.JSON(resp.StatusCode, gin.H{
-			"error": string(responseBody),
+			"error": "upstream image request failed",
 		})
 		return
 	}
@@ -207,7 +206,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	if err != nil {
 		return &dto.MidjourneyResponse{
 			Code:        4,
-			Description: err.Error(),
+			Description: "model_price_error",
 		}
 	}
 
@@ -215,7 +214,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	if err != nil {
 		return &dto.MidjourneyResponse{
 			Code:        4,
-			Description: err.Error(),
+			Description: "query_user_quota_failed",
 		}
 	}
 
@@ -257,6 +256,8 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		}
 	}()
 	midjResponse := &mjResp.Response
+	responseForClient := *midjResponse
+	responseStatusCode := service.PrepareMidjourneyResponseForResponse(&responseForClient, mjResp.StatusCode, info.ChannelSetting.HideUpstreamError)
 	midjourneyTask := &model.Midjourney{
 		UserId:      info.UserId,
 		Code:        midjResponse.Code,
@@ -280,11 +281,11 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "insert_midjourney_task_failed")
 	}
-	c.Writer.WriteHeader(mjResp.StatusCode)
-	respBody, err := json.Marshal(midjResponse)
+	respBody, err := common.Marshal(responseForClient)
 	if err != nil {
-		return service.MidjourneyErrorWrapper(constant.MjRequestError, "unmarshal_response_body_failed")
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "marshal_response_body_failed")
 	}
+	c.Writer.WriteHeader(responseStatusCode)
 	_, err = io.Copy(c.Writer, bytes.NewBuffer(respBody))
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "copy_response_body_failed")
@@ -316,11 +317,13 @@ func RelayMidjourneyTaskImageSeed(c *gin.Context) *dto.MidjourneyResponse {
 		return &midjResponseWithStatus.Response
 	}
 	midjResponse := &midjResponseWithStatus.Response
-	c.Writer.WriteHeader(midjResponseWithStatus.StatusCode)
-	respBody, err := json.Marshal(midjResponse)
+	responseForClient := *midjResponse
+	responseStatusCode := service.PrepareMidjourneyResponseForResponse(&responseForClient, midjResponseWithStatus.StatusCode, service.MidjourneyHideUpstreamError(originTask.ChannelId))
+	respBody, err := common.Marshal(responseForClient)
 	if err != nil {
-		return service.MidjourneyErrorWrapper(constant.MjRequestError, "unmarshal_response_body_failed")
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "marshal_response_body_failed")
 	}
+	c.Writer.WriteHeader(responseStatusCode)
 	service.IOCopyBytesGracefully(c, nil, respBody)
 	return nil
 }
@@ -340,7 +343,8 @@ func RelayMidjourneyTask(c *gin.Context, relayMode int) *dto.MidjourneyResponse 
 			}
 		}
 		midjourneyTask := coverMidjourneyTaskDto(c, originTask)
-		respBody, err = json.Marshal(midjourneyTask)
+		service.PrepareMidjourneyTaskForResponseByStoredText(&midjourneyTask, service.MidjourneyHideUpstreamError(originTask.ChannelId))
+		respBody, err = common.Marshal(midjourneyTask)
 		if err != nil {
 			return &dto.MidjourneyResponse{
 				Code:        4,
@@ -363,13 +367,14 @@ func RelayMidjourneyTask(c *gin.Context, relayMode int) *dto.MidjourneyResponse 
 			originTasks := model.GetByMJIds(userId, condition.IDs)
 			for _, originTask := range originTasks {
 				midjourneyTask := coverMidjourneyTaskDto(c, originTask)
+				service.PrepareMidjourneyTaskForResponseByStoredText(&midjourneyTask, service.MidjourneyHideUpstreamError(originTask.ChannelId))
 				tasks = append(tasks, midjourneyTask)
 			}
 		}
 		if tasks == nil {
 			tasks = make([]dto.MidjourneyDto, 0)
 		}
-		respBody, err = json.Marshal(tasks)
+		respBody, err = common.Marshal(tasks)
 		if err != nil {
 			return &dto.MidjourneyResponse{
 				Code:        4,
@@ -514,7 +519,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	if err != nil {
 		return &dto.MidjourneyResponse{
 			Code:        4,
-			Description: err.Error(),
+			Description: "model_price_error",
 		}
 	}
 
@@ -522,7 +527,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	if err != nil {
 		return &dto.MidjourneyResponse{
 			Code:        4,
-			Description: err.Error(),
+			Description: "query_user_quota_failed",
 		}
 	}
 
@@ -533,11 +538,13 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		}
 	}
 
-	midjResponseWithStatus, responseBody, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL)
+	midjResponseWithStatus, _, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL)
 	if err != nil {
 		return &midjResponseWithStatus.Response
 	}
 	midjResponse := &midjResponseWithStatus.Response
+	responseForClient := *midjResponse
+	responseStatusCode := service.PrepareMidjourneyResponseForResponse(&responseForClient, midjResponseWithStatus.StatusCode, relayInfo.ChannelSetting.HideUpstreamError)
 
 	defer func() {
 		if consumeQuota && midjResponseWithStatus.StatusCode == 200 {
@@ -619,13 +626,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 					midjourneyTask.StartTime = time.Now().UnixNano() / int64(time.Millisecond)
 					midjourneyTask.FinishTime = time.Now().UnixNano() / int64(time.Millisecond)
 					midjResponse.Code = 1
+					responseForClient.Code = 1
 				}
 			}
-		}
-		//修改返回值
-		if midjRequest.Action != constant.MjActionInPaint && midjRequest.Action != constant.MjActionCustomZoom {
-			newBody := strings.Replace(string(responseBody), `"code":21`, `"code":1`, -1)
-			responseBody = []byte(newBody)
 		}
 	}
 	if midjResponse.Code == 1 && midjRequest.Action == "UPLOAD" {
@@ -641,17 +644,21 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	}
 
 	if midjResponse.Code == 22 { //22-排队中，说明任务已存在
-		//修改返回值
-		newBody := strings.Replace(string(responseBody), `"code":22`, `"code":1`, -1)
-		responseBody = []byte(newBody)
+		responseForClient.Code = 1
 	}
-	//resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
-	bodyReader := io.NopCloser(bytes.NewBuffer(responseBody))
+	respBody, err := common.Marshal(responseForClient)
+	if err != nil {
+		return &dto.MidjourneyResponse{
+			Code:        4,
+			Description: "marshal_response_body_failed",
+		}
+	}
+	bodyReader := io.NopCloser(bytes.NewBuffer(respBody))
 
 	//for k, v := range resp.Header {
 	//	c.Writer.Header().Set(k, v[0])
 	//}
-	c.Writer.WriteHeader(midjResponseWithStatus.StatusCode)
+	c.Writer.WriteHeader(responseStatusCode)
 
 	_, err = io.Copy(c.Writer, bodyReader)
 	if err != nil {

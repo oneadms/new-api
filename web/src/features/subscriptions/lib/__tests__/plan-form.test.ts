@@ -45,6 +45,7 @@ const plan: SubscriptionPlan = {
   upgrade_group: '',
   downgrade_group: '',
   restricted_groups: ['auto', 'vip'],
+  subscription_disabled_groups: ['default'],
   stripe_price_id: '',
   creem_product_id: '',
   waffo_pancake_product_id: '',
@@ -58,13 +59,20 @@ describe('subscription plan restricted groups', () => {
 
     assert.deepEqual(values.restricted_groups, ['auto', 'vip'])
     assert.deepEqual(payload.plan.restricted_groups, ['auto', 'vip'])
+    assert.deepEqual(values.subscription_disabled_groups, ['default'])
+    assert.deepEqual(payload.plan.subscription_disabled_groups, ['default'])
   })
 
   test('defaults legacy plan responses to no restricted groups', () => {
-    const { restricted_groups: _restrictedGroups, ...legacyPlan } = plan
+    const {
+      restricted_groups: _restrictedGroups,
+      subscription_disabled_groups: _subscriptionDisabledGroups,
+      ...legacyPlan
+    } = plan
 
     const values = planToFormValues(legacyPlan as SubscriptionPlan)
 
     assert.deepEqual(values.restricted_groups, [])
+    assert.deepEqual(values.subscription_disabled_groups, [])
   })
 })

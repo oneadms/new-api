@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -161,6 +162,11 @@ func PrepareTaskErrorForResponse(taskErr *dto.TaskError, hideUpstreamError bool)
 	taskErr.Message = upstreamPublicMessageForStatus(taskErr.StatusCode)
 }
 
+// PublicUpstreamMessageForStatus exposes the generic upstream status message mapping for other response types.
+func PublicUpstreamMessageForStatus(statusCode int) string {
+	return upstreamPublicMessageForStatus(statusCode)
+}
+
 func HideUpstreamErrorMessage(newApiErr *types.NewAPIError, enabled bool) {
 	if !enabled || !shouldHideUpstreamErrorMessage(newApiErr) {
 		return
@@ -254,6 +260,219 @@ func upstreamPublicMessageForStatus(statusCode int) string {
 		}
 		return upstreamGenericErrorPublicMessage
 	}
+}
+
+func PrepareMidjourneyResponseForResponse(midjourneyResponse *dto.MidjourneyResponse, statusCode int, hideUpstreamError bool) int {
+	if midjourneyResponse == nil {
+		return statusCode
+	}
+	statusCode = midjourneyStatusCodeForCode(midjourneyResponse.Code, statusCode)
+	shouldClearResult := midjourneyResponse.Code != 30
+	if !hideUpstreamError {
+		return statusCode
+	}
+
+	if publicMessage, masked := midjourneyPublicMessageForStoredText(midjourneyResponse.Description); masked {
+		midjourneyResponse.Description = publicMessage
+		if shouldClearResult {
+			midjourneyResponse.Result = ""
+		}
+		midjourneyResponse.Properties = nil
+		return statusCode
+	}
+
+	if !shouldHideMidjourneyResponse(midjourneyResponse.Code) {
+		return statusCode
+	}
+
+	midjourneyResponse.Description = midjourneyPublicMessageForMidjourneyCode(midjourneyResponse.Code)
+	if shouldClearResult {
+		midjourneyResponse.Result = ""
+	}
+	midjourneyResponse.Properties = nil
+	return statusCode
+}
+
+func PrepareMidjourneyTaskForResponse(midjourneyTask *dto.MidjourneyDto, code int, hideUpstreamError bool) {
+	if midjourneyTask == nil {
+		return
+	}
+	if !hideUpstreamError || !shouldHideMidjourneyResponse(code) {
+		return
+	}
+
+	publicMessage := midjourneyPublicMessageForMidjourneyCode(code)
+	midjourneyTask.Description = publicMessage
+	midjourneyTask.FailReason = publicMessage
+	midjourneyTask.Properties = nil
+}
+
+func PrepareMidjourneyTaskForResponseByStoredText(midjourneyTask *dto.MidjourneyDto, hideUpstreamError bool) {
+	if midjourneyTask == nil || !hideUpstreamError {
+		return
+	}
+
+	description, descriptionMasked := midjourneyPublicMessageForStoredText(midjourneyTask.Description)
+	failReason, failReasonMasked := midjourneyPublicMessageForStoredText(midjourneyTask.FailReason)
+	if descriptionMasked {
+		midjourneyTask.Description = description
+	}
+	if failReasonMasked {
+		midjourneyTask.FailReason = failReason
+	}
+	if descriptionMasked || failReasonMasked {
+		midjourneyTask.Properties = nil
+	}
+}
+
+func PrepareMidjourneyModelTaskForResponse(midjourneyTask *model.Midjourney, hideUpstreamError bool) {
+	if midjourneyTask == nil {
+		return
+	}
+	if !hideUpstreamError {
+		return
+	}
+
+	description, descriptionMasked := midjourneyPublicMessageForStoredText(midjourneyTask.Description)
+	failReason, failReasonMasked := midjourneyPublicMessageForStoredText(midjourneyTask.FailReason)
+	if descriptionMasked {
+		midjourneyTask.Description = description
+	}
+	if failReasonMasked {
+		midjourneyTask.FailReason = failReason
+	}
+	if descriptionMasked || failReasonMasked {
+		midjourneyTask.Properties = ""
+	}
+}
+
+func MidjourneyHideUpstreamError(channelId int) bool {
+	if channelId == 0 {
+		return false
+	}
+	channel, err := model.CacheGetChannel(channelId)
+	if err == nil && channel != nil {
+		return channel.GetSetting().HideUpstreamError
+	}
+	channel, err = model.GetChannelById(channelId, true)
+	if err != nil || channel == nil {
+		return false
+	}
+	return channel.GetSetting().HideUpstreamError
+}
+
+func ShouldHideMidjourneyResponse(code int) bool {
+	return shouldHideMidjourneyResponse(code)
+}
+
+func shouldHideMidjourneyResponse(code int) bool {
+	switch code {
+	case 1, 4, 5, 21, 22:
+		return false
+	case 3, 23, 24, 25, 30:
+		return true
+	default:
+		return code >= 23
+	}
+}
+
+func midjourneyStatusCodeForCode(code int, fallbackStatusCode int) int {
+	switch code {
+	case 1, 21, 22:
+		if fallbackStatusCode != 0 {
+			return fallbackStatusCode
+		}
+		return http.StatusOK
+	case 3:
+		return http.StatusServiceUnavailable
+	case 4:
+		if fallbackStatusCode != 0 {
+			return fallbackStatusCode
+		}
+		return http.StatusBadRequest
+	case 5:
+		if fallbackStatusCode != 0 {
+			return fallbackStatusCode
+		}
+		return http.StatusInternalServerError
+	case 23, 30:
+		return http.StatusTooManyRequests
+	case 24:
+		return http.StatusBadRequest
+	case 25:
+		return http.StatusPaymentRequired
+	default:
+		if fallbackStatusCode != 0 {
+			return fallbackStatusCode
+		}
+		return http.StatusServiceUnavailable
+	}
+}
+
+func midjourneyPublicMessageForMidjourneyCode(code int) string {
+	switch code {
+	case 3:
+		return upstreamUnavailablePublicMessage
+	case 23:
+		return "上游队列已满，请稍后重试"
+	case 24:
+		return "请求内容触发上游审核，请修改后重试"
+	case 25:
+		return "上游账户余额不足，请联系管理员"
+	case 30:
+		return "当前分组上游负载已饱和，请稍后再试"
+	default:
+		return upstreamUnavailablePublicMessage
+	}
+}
+
+func midjourneyPublicMessageForStoredText(text string) (string, bool) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return text, false
+	}
+	lowerText := strings.ToLower(trimmed)
+
+	switch trimmed {
+	case "公益站暂时不可用", "No available account instance":
+		return upstreamUnavailablePublicMessage, true
+	case "队列已满，请稍后尝试", "队列已满，请稍后再试":
+		return "上游队列已满，请稍后重试", true
+	case "可能包含敏感词", "prompt包含敏感词":
+		return "请求内容触发上游审核，请修改后重试", true
+	case "上游账户余额不足，请联系管理员", "余额不足":
+		return upstreamBillingErrorPublicMessage, true
+	case "当前分组负载已饱和，请稍后再试":
+		return "当前分组上游负载已饱和，请稍后再试", true
+	}
+
+	if strings.Contains(trimmed, "暂时不可用") {
+		return upstreamUnavailablePublicMessage, true
+	}
+	if strings.Contains(trimmed, "队列已满") || (strings.Contains(lowerText, "queue") && strings.Contains(lowerText, "full")) {
+		return "上游队列已满，请稍后重试", true
+	}
+	if strings.Contains(trimmed, "敏感词") ||
+		strings.Contains(lowerText, "sensitive") ||
+		strings.Contains(lowerText, "banned") ||
+		strings.Contains(lowerText, "policy") {
+		return "请求内容触发上游审核，请修改后重试", true
+	}
+	if strings.Contains(trimmed, "余额不足") ||
+		(strings.Contains(lowerText, "balance") && (strings.Contains(lowerText, "insufficient") || strings.Contains(lowerText, "not enough"))) {
+		return upstreamBillingErrorPublicMessage, true
+	}
+	if strings.Contains(trimmed, "负载已饱和") ||
+		(strings.Contains(lowerText, "load") && (strings.Contains(lowerText, "saturated") || strings.Contains(lowerText, "overloaded"))) {
+		return "当前分组上游负载已饱和，请稍后再试", true
+	}
+	if strings.Contains(lowerText, "temporarily unavailable") ||
+		strings.Contains(lowerText, "service unavailable") ||
+		strings.Contains(lowerText, "no available account instance") {
+		return upstreamUnavailablePublicMessage, true
+	}
+
+	return text, false
 }
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {

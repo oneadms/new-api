@@ -181,6 +181,10 @@ type SubscriptionPlan struct {
 	// This remains on the plan so updates also apply to existing subscriptions.
 	RestrictedGroups []string `json:"restricted_groups" gorm:"type:text;serializer:json"`
 
+	// Groups that remain accessible but cannot consume this plan's subscription balance.
+	// Requests to these groups use wallet balance according to the user's billing preference.
+	SubscriptionDisabledGroups []string `json:"subscription_disabled_groups" gorm:"type:text;serializer:json"`
+
 	// Total quota (amount in quota units, 0 = unlimited)
 	TotalAmount int64 `json:"total_amount" gorm:"type:bigint;not null;default:0"`
 
@@ -213,6 +217,9 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	}
 	if p.RestrictedGroups == nil {
 		p.RestrictedGroups = []string{}
+	}
+	if p.SubscriptionDisabledGroups == nil {
+		p.SubscriptionDisabledGroups = []string{}
 	}
 }
 
@@ -767,23 +774,28 @@ func HasActiveUserSubscription(userId int) (bool, error) {
 }
 
 type ActiveSubscriptionGroupAccess struct {
-	HasActiveSubscription bool
-	RestrictedGroups      map[string]struct{}
+	HasActiveSubscription      bool
+	RestrictedGroups           map[string]struct{}
+	SubscriptionDisabledGroups map[string]struct{}
 }
 
 // GetActiveSubscriptionGroupAccess returns the union of group restrictions
 // configured on all active subscription plans for a user. Restrictions are read
 // from the current plans so plan changes also affect subscriptions bought earlier.
 func GetActiveSubscriptionGroupAccess(userId int) (ActiveSubscriptionGroupAccess, error) {
-	access := ActiveSubscriptionGroupAccess{RestrictedGroups: make(map[string]struct{})}
+	access := ActiveSubscriptionGroupAccess{
+		RestrictedGroups:           make(map[string]struct{}),
+		SubscriptionDisabledGroups: make(map[string]struct{}),
+	}
 	if userId <= 0 {
 		return access, nil
 	}
 	var rows []struct {
-		RestrictedGroups *string `gorm:"column:restricted_groups"`
+		RestrictedGroups           *string `gorm:"column:restricted_groups"`
+		SubscriptionDisabledGroups *string `gorm:"column:subscription_disabled_groups"`
 	}
 	if err := DB.Table("user_subscriptions AS user_subscription").
-		Select("subscription_plan.restricted_groups").
+		Select("subscription_plan.restricted_groups, subscription_plan.subscription_disabled_groups").
 		Joins("LEFT JOIN subscription_plans AS subscription_plan ON subscription_plan.id = user_subscription.plan_id").
 		Where("user_subscription.user_id = ? AND user_subscription.status = ? AND user_subscription.end_time > ?",
 			userId, "active", common.GetTimestamp()).
@@ -796,17 +808,28 @@ func GetActiveSubscriptionGroupAccess(userId int) (ActiveSubscriptionGroupAccess
 	}
 
 	for _, row := range rows {
-		if row.RestrictedGroups == nil || strings.TrimSpace(*row.RestrictedGroups) == "" {
-			continue
+		if row.RestrictedGroups != nil && strings.TrimSpace(*row.RestrictedGroups) != "" {
+			var groups []string
+			if err := common.UnmarshalJsonStr(*row.RestrictedGroups, &groups); err != nil {
+				return ActiveSubscriptionGroupAccess{}, fmt.Errorf("invalid subscription plan group restrictions: %w", err)
+			}
+			for _, group := range groups {
+				group = strings.TrimSpace(group)
+				if group != "" {
+					access.RestrictedGroups[group] = struct{}{}
+				}
+			}
 		}
-		var groups []string
-		if err := common.UnmarshalJsonStr(*row.RestrictedGroups, &groups); err != nil {
-			return ActiveSubscriptionGroupAccess{}, fmt.Errorf("invalid subscription plan group restrictions: %w", err)
-		}
-		for _, group := range groups {
-			group = strings.TrimSpace(group)
-			if group != "" {
-				access.RestrictedGroups[group] = struct{}{}
+		if row.SubscriptionDisabledGroups != nil && strings.TrimSpace(*row.SubscriptionDisabledGroups) != "" {
+			var groups []string
+			if err := common.UnmarshalJsonStr(*row.SubscriptionDisabledGroups, &groups); err != nil {
+				return ActiveSubscriptionGroupAccess{}, fmt.Errorf("invalid subscription plan disabled groups: %w", err)
+			}
+			for _, group := range groups {
+				group = strings.TrimSpace(group)
+				if group != "" {
+					access.SubscriptionDisabledGroups[group] = struct{}{}
+				}
 			}
 		}
 	}

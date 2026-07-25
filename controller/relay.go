@@ -430,11 +430,10 @@ func RelayMidjourney(c *gin.Context) {
 	//err = relayMidjourneySubmit(c, relayMode)
 	log.Println(mjErr)
 	if mjErr != nil {
-		statusCode := http.StatusBadRequest
 		if mjErr.Code == 30 {
 			mjErr.Result = "当前分组负载已饱和，请稍后再试，或升级账户以提升服务质量。"
-			statusCode = http.StatusTooManyRequests
 		}
+		statusCode := service.PrepareMidjourneyResponseForResponse(mjErr, http.StatusBadRequest, hideUpstreamError(c, relayInfo))
 		c.JSON(statusCode, gin.H{
 			"description": fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result),
 			"type":        "upstream_error",

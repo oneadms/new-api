@@ -16,17 +16,19 @@ func TestActiveSubscriptionRestrictedGroupsUseActivePlanUnion(t *testing.T) {
 
 	plans := []SubscriptionPlan{
 		{
-			Title:            "first restricted plan",
-			DurationUnit:     SubscriptionDurationMonth,
-			DurationValue:    1,
-			RestrictedGroups: []string{"vip", "shared"},
+			Title:                      "first restricted plan",
+			DurationUnit:               SubscriptionDurationMonth,
+			DurationValue:              1,
+			RestrictedGroups:           []string{"vip", "shared"},
+			SubscriptionDisabledGroups: []string{"wallet-only", "shared"},
 		},
 		{
-			Title:            "second restricted plan",
-			DurationUnit:     SubscriptionDurationMonth,
-			DurationValue:    1,
-			Enabled:          false,
-			RestrictedGroups: []string{"premium", "shared"},
+			Title:                      "second restricted plan",
+			DurationUnit:               SubscriptionDurationMonth,
+			DurationValue:              1,
+			Enabled:                    false,
+			RestrictedGroups:           []string{"premium", "shared"},
+			SubscriptionDisabledGroups: []string{"premium-wallet"},
 		},
 		{
 			Title:            "inactive restricted plan",
@@ -66,21 +68,28 @@ func TestActiveSubscriptionRestrictedGroupsUseActivePlanUnion(t *testing.T) {
 		"shared":  {},
 		"vip":     {},
 	}, access.RestrictedGroups)
+	assert.Equal(t, map[string]struct{}{
+		"premium-wallet": {},
+		"shared":         {},
+		"wallet-only":    {},
+	}, access.SubscriptionDisabledGroups)
 
 	access, err = GetActiveSubscriptionGroupAccess(2102)
 	require.NoError(t, err)
 	assert.False(t, access.HasActiveSubscription)
 	assert.Empty(t, access.RestrictedGroups)
+	assert.Empty(t, access.SubscriptionDisabledGroups)
 }
 
 func TestActiveSubscriptionRestrictedGroupsFollowCurrentPlan(t *testing.T) {
 	truncateTables(t)
 	now := common.GetTimestamp()
 	plan := SubscriptionPlan{
-		Title:            "historical subscription plan",
-		DurationUnit:     SubscriptionDurationMonth,
-		DurationValue:    1,
-		RestrictedGroups: []string{"before"},
+		Title:                      "historical subscription plan",
+		DurationUnit:               SubscriptionDurationMonth,
+		DurationValue:              1,
+		RestrictedGroups:           []string{"before"},
+		SubscriptionDisabledGroups: []string{"wallet-before"},
 	}
 	require.NoError(t, DB.Create(&plan).Error)
 	InvalidateSubscriptionPlanCache(plan.Id)
@@ -95,14 +104,17 @@ func TestActiveSubscriptionRestrictedGroupsFollowCurrentPlan(t *testing.T) {
 	access, err := GetActiveSubscriptionGroupAccess(2201)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]struct{}{"before": {}}, access.RestrictedGroups)
+	assert.Equal(t, map[string]struct{}{"wallet-before": {}}, access.SubscriptionDisabledGroups)
 
 	plan.RestrictedGroups = []string{"after"}
+	plan.SubscriptionDisabledGroups = []string{"wallet-after"}
 	require.NoError(t, DB.Save(&plan).Error)
 	InvalidateSubscriptionPlanCache(plan.Id)
 
 	access, err = GetActiveSubscriptionGroupAccess(2201)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]struct{}{"after": {}}, access.RestrictedGroups)
+	assert.Equal(t, map[string]struct{}{"wallet-after": {}}, access.SubscriptionDisabledGroups)
 }
 
 func TestEnsureSubscriptionPlanTableSQLiteAddsRestrictedGroups(t *testing.T) {
@@ -121,4 +133,5 @@ func TestEnsureSubscriptionPlanTableSQLiteAddsRestrictedGroups(t *testing.T) {
 	require.NoError(t, ensureSubscriptionPlanTableSQLite())
 
 	assert.True(t, db.Migrator().HasColumn("subscription_plans", "restricted_groups"))
+	assert.True(t, db.Migrator().HasColumn("subscription_plans", "subscription_disabled_groups"))
 }

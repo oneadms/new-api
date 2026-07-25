@@ -307,6 +307,10 @@ func GetAllMidjourney(c *gin.Context) {
 	items := model.GetAllTasks(pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.CountAllTasks(queryParams)
 
+	for i, midjourney := range items {
+		service.PrepareMidjourneyModelTaskForResponse(midjourney, service.MidjourneyHideUpstreamError(midjourney.ChannelId))
+		items[i] = midjourney
+	}
 	if setting.MjForwardUrlEnabled {
 		for i, midjourney := range items {
 			midjourney.ImageUrl = system_setting.ServerAddress + "/mj/image/" + midjourney.MjId
@@ -332,6 +336,10 @@ func GetUserMidjourney(c *gin.Context) {
 	items := model.GetAllUserTask(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.CountAllUserTask(userId, queryParams)
 
+	for i, midjourney := range items {
+		service.PrepareMidjourneyModelTaskForResponse(midjourney, service.MidjourneyHideUpstreamError(midjourney.ChannelId))
+		items[i] = midjourney
+	}
 	if setting.MjForwardUrlEnabled {
 		for i, midjourney := range items {
 			midjourney.ImageUrl = system_setting.ServerAddress + "/mj/image/" + midjourney.MjId

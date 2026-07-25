@@ -77,6 +77,36 @@ func TestSubscriptionRestrictionsCanDisableAutoSelection(t *testing.T) {
 	assert.NotContains(t, groups, "auto")
 }
 
+func TestSubscriptionDisabledGroupsRemainUsable(t *testing.T) {
+	truncate(t)
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
+
+	now := common.GetTimestamp()
+	plan := model.SubscriptionPlan{
+		Title:                      "wallet-only vip plan",
+		DurationUnit:               model.SubscriptionDurationMonth,
+		DurationValue:              1,
+		SubscriptionDisabledGroups: []string{"vip"},
+	}
+	require.NoError(t, model.DB.Create(&plan).Error)
+	require.NoError(t, model.DB.Create(&model.UserSubscription{
+		UserId: 2304, PlanId: plan.Id, Status: "active", StartTime: now - 60, EndTime: now + 3600,
+	}).Error)
+
+	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Set("id", 2304)
+	groups, err := ResolveUserUsableGroups(ctx, "default")
+	require.NoError(t, err)
+	assert.Contains(t, groups, "vip")
+	disabledGroups, found := common.GetContextKeyType[map[string]struct{}](ctx, constant.ContextKeySubscriptionDisabledGroups)
+	require.True(t, found)
+	assert.Contains(t, disabledGroups, "vip")
+}
+
 func TestActiveGroupPassTemporarilyRestoresRestrictedGroup(t *testing.T) {
 	truncate(t)
 	require.NoError(t, model.DB.Exec("DELETE FROM recharge_reward_configs").Error)

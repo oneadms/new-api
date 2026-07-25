@@ -207,6 +207,12 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		return
 	}
 	req.Plan.RestrictedGroups = restrictedGroups
+	subscriptionDisabledGroups, validationErr := normalizeSubscriptionRestrictedGroups(req.Plan.SubscriptionDisabledGroups)
+	if validationErr != nil {
+		common.ApiErrorMsg(c, validationErr.Error())
+		return
+	}
+	req.Plan.SubscriptionDisabledGroups = subscriptionDisabledGroups
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
@@ -237,6 +243,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		return
 	}
 	restrictedGroupsProvided := req.Plan.RestrictedGroups != nil
+	subscriptionDisabledGroupsProvided := req.Plan.SubscriptionDisabledGroups != nil
 	if strings.TrimSpace(req.Plan.Title) == "" {
 		common.ApiErrorMsg(c, "套餐标题不能为空")
 		return
@@ -288,6 +295,12 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		return
 	}
 	req.Plan.RestrictedGroups = restrictedGroups
+	subscriptionDisabledGroups, validationErr := normalizeSubscriptionRestrictedGroups(req.Plan.SubscriptionDisabledGroups)
+	if validationErr != nil {
+		common.ApiErrorMsg(c, validationErr.Error())
+		return
+	}
+	req.Plan.SubscriptionDisabledGroups = subscriptionDisabledGroups
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
@@ -298,6 +311,15 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 	if restrictedGroupsProvided {
 		var err error
 		restrictedGroupsJSON, err = common.Marshal(req.Plan.RestrictedGroups)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	var subscriptionDisabledGroupsJSON []byte
+	if subscriptionDisabledGroupsProvided {
+		var err error
+		subscriptionDisabledGroupsJSON, err = common.Marshal(req.Plan.SubscriptionDisabledGroups)
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -335,6 +357,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		}
 		if restrictedGroupsProvided {
 			updateMap["restricted_groups"] = string(restrictedGroupsJSON)
+		}
+		if subscriptionDisabledGroupsProvided {
+			updateMap["subscription_disabled_groups"] = string(subscriptionDisabledGroupsJSON)
 		}
 		if err := tx.Model(&model.SubscriptionPlan{}).Where("id = ?", id).Updates(updateMap).Error; err != nil {
 			return err

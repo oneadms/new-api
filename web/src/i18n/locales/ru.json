@@ -5618,6 +5618,9 @@
     "Recharge draw is currently paused. Existing draw chances remain stored.": "Розыгрыш за пополнение сейчас приостановлен. Имеющиеся попытки сохраняются.",
     "Speed passes grant temporary access to discounted groups. Draw chances earned from recharges can be used independently.": "Скоростные пропуска дают временный доступ к группам со сниженным тарифом. Попытки розыгрыша за пополнение используются независимо от пропусков.",
     "The timer starts immediately and cannot be paused. Requests automatically use {{group}} until the timer expires, then return to their original group.": "Отсчёт начнётся сразу, и его нельзя приостановить. До его окончания запросы автоматически используют группу {{group}}, а затем возвращаются к исходной группе.",
-    "While it is active, requests automatically use the group shown on the pass. When access expires, they automatically return to the API key's original group.": "Пока пропуск активен, запросы автоматически используют указанную на нём группу. После окончания доступа они автоматически возвращаются к исходной группе API-ключа."
+    "While it is active, requests automatically use the group shown on the pass. When access expires, they automatically return to the API key's original group.": "Пока пропуск активен, запросы автоматически используют указанную на нём группу. После окончания доступа они автоматически возвращаются к исходной группе API-ключа.",
+    "Select subscription-excluded groups": "Выберите группы без баланса подписки",
+    "Subscription balance is not used for the selected groups. Requests use wallet balance instead.": "Для выбранных групп баланс подписки не используется. Запросы используют баланс кошелька.",
+    "Subscription-excluded Groups": "Группы без баланса подписки"
   }
 }

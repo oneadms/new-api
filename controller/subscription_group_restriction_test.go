@@ -49,15 +49,16 @@ func TestAdminUpdateSubscriptionPlanHandlesRestrictedGroups(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&plan).Error)
 	planPayload := gin.H{
-		"title":                 plan.Title,
-		"currency":              "USD",
-		"duration_unit":         model.SubscriptionDurationMonth,
-		"duration_value":        1,
-		"enabled":               true,
-		"restricted_groups":     []string{" vip ", "default", "vip"},
-		"quota_reset_period":    model.SubscriptionResetNever,
-		"allow_balance_pay":     true,
-		"allow_wallet_overflow": true,
+		"title":                        plan.Title,
+		"currency":                     "USD",
+		"duration_unit":                model.SubscriptionDurationMonth,
+		"duration_value":               1,
+		"enabled":                      true,
+		"restricted_groups":            []string{" vip ", "default", "vip"},
+		"subscription_disabled_groups": []string{" vip ", "default", "vip"},
+		"quota_reset_period":           model.SubscriptionResetNever,
+		"allow_balance_pay":            true,
+		"allow_wallet_overflow":        true,
 	}
 	payload, err := common.Marshal(gin.H{"plan": planPayload})
 	require.NoError(t, err)
@@ -79,6 +80,7 @@ func TestAdminUpdateSubscriptionPlanHandlesRestrictedGroups(t *testing.T) {
 	var updated model.SubscriptionPlan
 	require.NoError(t, db.First(&updated, plan.Id).Error)
 	assert.Equal(t, []string{"default", "vip"}, updated.RestrictedGroups)
+	assert.Equal(t, []string{"default", "vip"}, updated.SubscriptionDisabledGroups)
 
 	delete(planPayload, "restricted_groups")
 	planPayload["title"] = "legacy client update"
@@ -96,8 +98,10 @@ func TestAdminUpdateSubscriptionPlanHandlesRestrictedGroups(t *testing.T) {
 	require.True(t, response.Success, response.Message)
 	require.NoError(t, db.First(&updated, plan.Id).Error)
 	assert.Equal(t, []string{"default", "vip"}, updated.RestrictedGroups)
+	assert.Equal(t, []string{"default", "vip"}, updated.SubscriptionDisabledGroups)
 
 	planPayload["restricted_groups"] = []string{}
+	planPayload["subscription_disabled_groups"] = []string{}
 	payload, err = common.Marshal(gin.H{"plan": planPayload})
 	require.NoError(t, err)
 	recorder = httptest.NewRecorder()
@@ -112,6 +116,7 @@ func TestAdminUpdateSubscriptionPlanHandlesRestrictedGroups(t *testing.T) {
 	require.True(t, response.Success, response.Message)
 	require.NoError(t, db.First(&updated, plan.Id).Error)
 	assert.Empty(t, updated.RestrictedGroups)
+	assert.Empty(t, updated.SubscriptionDisabledGroups)
 }
 
 func TestNormalizeSubscriptionRestrictedGroupsRejectsUnknownGroup(t *testing.T) {
