@@ -41,7 +41,7 @@ func UpdateSubscriptionDisabledGroupsByJSONString(jsonString string) error {
 
 func SubscriptionDisabledGroups2JSONString() string {
 	subscriptionDisabledGroupsMutex.RLock()
-	groups := append([]string(nil), subscriptionDisabledGroups...)
+	groups := append([]string{}, subscriptionDisabledGroups...)
 	subscriptionDisabledGroupsMutex.RUnlock()
 
 	jsonBytes, err := common.Marshal(groups)

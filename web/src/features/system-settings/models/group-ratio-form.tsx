@@ -131,11 +131,16 @@ export const GroupRatioForm = memo(function GroupRatioForm({
     ]
   }, [watchedGroupRatio, watchedUserUsableGroups, watchedTopupGroupRatio])
   const subscriptionDisabledGroups = useMemo(
-    () =>
-      safeJsonParse<string[]>(watchedSubscriptionDisabledGroups, {
+    () => {
+      const parsed = safeJsonParse<unknown>(watchedSubscriptionDisabledGroups, {
         fallback: [],
         silent: true,
-      }),
+      })
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter(
+        (group): group is string => typeof group === 'string'
+      )
+    },
     [watchedSubscriptionDisabledGroups]
   )
   const subscriptionDisabledGroupOptions = useMemo(

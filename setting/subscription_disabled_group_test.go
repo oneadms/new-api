@@ -21,3 +21,13 @@ func TestUpdateSubscriptionDisabledGroupsByJSONString(t *testing.T) {
 	require.Error(t, UpdateSubscriptionDisabledGroupsByJSONString(`{"vip":true}`))
 	assert.Equal(t, `["auto","vip"]`, SubscriptionDisabledGroups2JSONString())
 }
+
+func TestSubscriptionDisabledGroupsEmptyValueSerializesAsArray(t *testing.T) {
+	original := SubscriptionDisabledGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, UpdateSubscriptionDisabledGroupsByJSONString(original))
+	})
+
+	require.NoError(t, UpdateSubscriptionDisabledGroupsByJSONString(`null`))
+	assert.Equal(t, `[]`, SubscriptionDisabledGroups2JSONString())
+}
