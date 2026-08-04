@@ -139,6 +139,15 @@ func (user *User) SetAccessToken(token string) {
 	user.AccessToken = &token
 }
 
+// UpdateUserAccessToken changes only the management token so a stale user
+// snapshot cannot overwrite accounting or profile fields.
+func UpdateUserAccessToken(userId int, accessToken string) error {
+	if userId == 0 {
+		return errors.New("id 为空！")
+	}
+	return DB.Model(&User{}).Where("id = ?", userId).Update("access_token", accessToken).Error
+}
+
 func (user *User) GetSetting() dto.UserSetting {
 	setting := dto.UserSetting{}
 	if user.Setting != "" {
@@ -489,15 +498,31 @@ func HardDeleteUserById(id int) error {
 	return user.HardDelete()
 }
 
-func inviteUser(inviterId int) (err error) {
-	user, err := GetUserById(inviterId, true)
-	if err != nil {
-		return err
+func inviteUser(inviterId int) error {
+	reward := int64(common.QuotaForInviter)
+	if inviterId == 0 || reward <= 0 || reward > int64(common.MaxWalletQuota) {
+		return ErrUserQuotaLimitExceeded
 	}
-	user.AffCount++
-	user.AffQuota += common.QuotaForInviter
-	user.AffHistoryQuota += common.QuotaForInviter
-	return DB.Save(user).Error
+	result := DB.Model(&User{}).
+		Where(
+			"id = ? AND aff_quota <= ? AND aff_history <= ? AND aff_count < ?",
+			inviterId,
+			int64(common.MaxWalletQuota)-reward,
+			int64(common.MaxWalletQuota)-reward,
+			int64(1<<31-1),
+		).
+		Updates(map[string]interface{}{
+			"aff_count":   gorm.Expr("aff_count + ?", 1),
+			"aff_quota":   gorm.Expr("aff_quota + ?", reward),
+			"aff_history": gorm.Expr("aff_history + ?", reward),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrUserQuotaLimitExceeded
+	}
+	return nil
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
@@ -523,13 +548,20 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	if user.AffQuota < quota {
 		return errors.New("邀请额度不足！")
 	}
+	if int64(user.Quota) > int64(common.MaxWalletQuota)-int64(quota) {
+		return ErrUserQuotaLimitExceeded
+	}
 
 	// 更新用户额度
 	user.AffQuota -= quota
-	user.Quota += quota
+	user.Quota = int(int64(user.Quota) + int64(quota))
 
-	// 保存用户状态
-	if err := tx.Save(user).Error; err != nil {
+	// Only persist the two balances changed by this operation. Saving the full
+	// user snapshot can overwrite concurrent accounting updates on SQLite.
+	if err := tx.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]interface{}{
+		"aff_quota": user.AffQuota,
+		"quota":     user.Quota,
+	}).Error; err != nil {
 		return err
 	}
 
@@ -639,9 +671,11 @@ func (user *User) finishInsert(inviterId int) {
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
 		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+			if err := inviteUser(inviterId); err != nil {
+				common.SysError(fmt.Sprintf("failed to credit inviter %d: %s", inviterId, err.Error()))
+			} else {
+				RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
+			}
 		}
 	}
 }
@@ -696,8 +730,11 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
 		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+			if err := inviteUser(inviterId); err != nil {
+				common.SysError(fmt.Sprintf("failed to credit inviter %d: %s", inviterId, err.Error()))
+			} else {
+				RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
+			}
 		}
 	}
 }
@@ -748,7 +785,17 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 			return err
 		}
 	}
-	if err = tx.Model(&current).Omit("quota", "used_quota", "request_count", "auth_version").Updates(newUser).Error; err != nil {
+	// Accounting state is maintained by atomic delta or locked balance paths.
+	// Never copy those fields from a profile/authentication snapshot.
+	if err = tx.Model(&current).Omit(
+		"quota",
+		"used_quota",
+		"request_count",
+		"aff_count",
+		"aff_quota",
+		"aff_history",
+		"auth_version",
+	).Updates(newUser).Error; err != nil {
 		return err
 	}
 	return tx.First(user, user.Id).Error

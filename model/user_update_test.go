@@ -31,14 +31,17 @@ func TestUserUpdateDoesNotOverwriteAccountingFields(t *testing.T) {
 	setupUserUpdateTestState(t)
 
 	user := User{
-		Id:           1,
-		Username:     "quota-race-user",
-		Password:     "password",
-		DisplayName:  "before",
-		Status:       common.UserStatusEnabled,
-		Quota:        1000,
-		UsedQuota:    20,
-		RequestCount: 3,
+		Id:              1,
+		Username:        "quota-race-user",
+		Password:        "password",
+		DisplayName:     "before",
+		Status:          common.UserStatusEnabled,
+		Quota:           1000,
+		UsedQuota:       20,
+		RequestCount:    3,
+		AffCount:        2,
+		AffQuota:        300,
+		AffHistoryQuota: 500,
 	}
 	require.NoError(t, DB.Create(&user).Error)
 
@@ -49,6 +52,9 @@ func TestUserUpdateDoesNotOverwriteAccountingFields(t *testing.T) {
 		"quota":         gorm.Expr("quota - ?", 400),
 		"used_quota":    gorm.Expr("used_quota + ?", 400),
 		"request_count": gorm.Expr("request_count + ?", 1),
+		"aff_count":     gorm.Expr("aff_count + ?", 1),
+		"aff_quota":     gorm.Expr("aff_quota - ?", 100),
+		"aff_history":   gorm.Expr("aff_history + ?", 200),
 	}).Error)
 
 	staleUser.DisplayName = "after"
@@ -60,6 +66,9 @@ func TestUserUpdateDoesNotOverwriteAccountingFields(t *testing.T) {
 	assert.Equal(t, 600, got.Quota)
 	assert.Equal(t, 420, got.UsedQuota)
 	assert.Equal(t, 4, got.RequestCount)
+	assert.Equal(t, 3, got.AffCount)
+	assert.Equal(t, 200, got.AffQuota)
+	assert.Equal(t, 700, got.AffHistoryQuota)
 }
 
 func TestUpdateUserSettingOnlyUpdatesSetting(t *testing.T) {
@@ -90,6 +99,132 @@ func TestUpdateUserSettingOnlyUpdatesSetting(t *testing.T) {
 	assert.Equal(t, 270, got.UsedQuota)
 	assert.Equal(t, 4, got.RequestCount)
 	assert.Equal(t, "zh", got.GetSetting().Language)
+}
+
+func TestUpdateUserAccessTokenOnlyUpdatesAccessToken(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	oldToken := "old-access-token"
+	user := User{
+		Id:           3,
+		Username:     "access-token-user",
+		Password:     "password",
+		DisplayName:  "before",
+		AccessToken:  &oldToken,
+		Status:       common.UserStatusEnabled,
+		Quota:        1000,
+		UsedQuota:    20,
+		RequestCount: 3,
+		AffQuota:     300,
+	}
+	require.NoError(t, DB.Create(&user).Error)
+
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]interface{}{
+		"display_name":  "concurrent-update",
+		"quota":         gorm.Expr("quota - ?", 250),
+		"used_quota":    gorm.Expr("used_quota + ?", 250),
+		"request_count": gorm.Expr("request_count + ?", 1),
+		"aff_quota":     gorm.Expr("aff_quota - ?", 50),
+	}).Error)
+
+	newToken := "new-access-token"
+	require.NoError(t, UpdateUserAccessToken(user.Id, newToken))
+
+	var got User
+	require.NoError(t, DB.First(&got, user.Id).Error)
+	assert.Equal(t, newToken, got.GetAccessToken())
+	assert.Equal(t, "concurrent-update", got.DisplayName)
+	assert.Equal(t, 750, got.Quota)
+	assert.Equal(t, 270, got.UsedQuota)
+	assert.Equal(t, 4, got.RequestCount)
+	assert.Equal(t, 250, got.AffQuota)
+}
+
+func TestInviteRewardDoesNotOverwriteUserAccounting(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	oldReward := common.QuotaForInviter
+	common.QuotaForInviter = 250
+	t.Cleanup(func() {
+		common.QuotaForInviter = oldReward
+	})
+
+	user := User{
+		Id:              4,
+		Username:        "inviter",
+		Password:        "password",
+		Status:          common.UserStatusEnabled,
+		Quota:           1000,
+		UsedQuota:       20,
+		RequestCount:    3,
+		AffCount:        2,
+		AffQuota:        300,
+		AffHistoryQuota: 500,
+	}
+	require.NoError(t, DB.Create(&user).Error)
+	require.NoError(t, inviteUser(user.Id))
+
+	var got User
+	require.NoError(t, DB.First(&got, user.Id).Error)
+	assert.Equal(t, 1000, got.Quota)
+	assert.Equal(t, 20, got.UsedQuota)
+	assert.Equal(t, 3, got.RequestCount)
+	assert.Equal(t, 3, got.AffCount)
+	assert.Equal(t, 550, got.AffQuota)
+	assert.Equal(t, 750, got.AffHistoryQuota)
+}
+
+func TestInviteRewardRejectsAffiliateQuotaOverflow(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	oldReward := common.QuotaForInviter
+	common.QuotaForInviter = 250
+	t.Cleanup(func() {
+		common.QuotaForInviter = oldReward
+	})
+
+	user := User{
+		Id:              5,
+		Username:        "overflow-inviter",
+		Password:        "password",
+		Status:          common.UserStatusEnabled,
+		AffCount:        2,
+		AffQuota:        common.MaxWalletQuota - 100,
+		AffHistoryQuota: common.MaxWalletQuota - 100,
+	}
+	require.NoError(t, DB.Create(&user).Error)
+
+	err := inviteUser(user.Id)
+	require.ErrorIs(t, err, ErrUserQuotaLimitExceeded)
+
+	var got User
+	require.NoError(t, DB.First(&got, user.Id).Error)
+	assert.Equal(t, 2, got.AffCount)
+	assert.Equal(t, common.MaxWalletQuota-100, got.AffQuota)
+	assert.Equal(t, common.MaxWalletQuota-100, got.AffHistoryQuota)
+}
+
+func TestTransferAffQuotaRejectsWalletOverflow(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	transferQuota := int(common.QuotaPerUnit)
+	user := User{
+		Id:       6,
+		Username: "affiliate-transfer-overflow",
+		Password: "password",
+		Status:   common.UserStatusEnabled,
+		Quota:    common.MaxWalletQuota - 100,
+		AffQuota: transferQuota,
+	}
+	require.NoError(t, DB.Create(&user).Error)
+
+	err := user.TransferAffQuotaToQuota(transferQuota)
+	require.ErrorIs(t, err, ErrUserQuotaLimitExceeded)
+
+	var got User
+	require.NoError(t, DB.First(&got, user.Id).Error)
+	assert.Equal(t, common.MaxWalletQuota-100, got.Quota)
+	assert.Equal(t, transferQuota, got.AffQuota)
 }
 
 func TestEnsureEmailAvailableRejectsExistingEmailCaseInsensitive(t *testing.T) {
