@@ -318,6 +318,15 @@ docker run --name new-api -d --restart always \
 | `CRYPTO_SECRET` | HMAC secret for cache keys; nodes sharing Redis must use the same effective value | Defaults to `SESSION_SECRET` |
 | `SQL_DSN` | Database connection string | - |
 | `REDIS_CONN_STRING` | Redis connection string | - |
+| `CODEX2API_POLICY_ENABLED` | Enable the signed NewAPI ↔ Codex2API identity/policy adapter | `false` |
+| `CODEX2API_POLICY_IDENTITY_FORWARD_ENABLED` | Forward signed identity only to a bound Codex2API target and key | `false` |
+| `CODEX2API_POLICY_BINDINGS` | JSON binding array (platform, target, Key SHA-256 fingerprint, binding secret) | `[]` |
+| `CODEX2API_POLICY_AUDIT_ENABLED` | Record verified policy decisions; does not punish by itself | `false` |
+| `CODEX2API_POLICY_STRIKE_ENABLED` | Enable strike accumulation | `false` |
+| `CODEX2API_POLICY_ACCOUNT_BAN_ENABLED` | Disable ordinary users and their tokens after the threshold (admins are excluded) | `false` |
+| `CODEX2API_POLICY_IP_BLOCK_ENABLED` | Temporarily restrict a source IP after the threshold | `false` |
+| `CODEX2API_POLICY_BAN_AFTER` | Verified eligible decisions required within the window | `2` |
+| `CODEX2API_POLICY_WINDOW_SECONDS` | Strike accumulation window in seconds | `86400` |
 | `STREAMING_TIMEOUT` | Streaming timeout (seconds) | `300` |
 | `STREAM_SCANNER_MAX_BUFFER_MB` | Max per-line buffer (MB) for the stream scanner; increase when upstream sends huge image/base64 payloads | `64` |
 | `MAX_REQUEST_BODY_MB` | Max request body size (MB, counted **after decompression**; prevents huge requests/zip bombs from exhausting memory). Exceeding it returns `413` | `32` |
@@ -418,6 +427,28 @@ See [User authentication and login sessions](./docs/authentication.md) for the t
 **Cache configuration:**
 - `REDIS_CONN_STRING`: Redis cache (recommended)
 - `MEMORY_CACHE_ENABLED`: Memory cache
+
+**Optional Codex2API signed-identity adapter:**
+
+NewAPI sends trusted identity headers only when both the actual outbound target and the actual Codex2API key fingerprint match a binding. Unmatched channels receive no identity headers. Keep the raw key out of configuration; the binding secret must be at least 32 bytes:
+
+```bash
+printf %s "$CODEX2API_KEY" | shasum -a 256
+```
+
+```env
+CODEX2API_POLICY_ENABLED=true
+CODEX2API_POLICY_IDENTITY_FORWARD_ENABLED=true
+CODEX2API_POLICY_BINDINGS=[{"platform_id":"primary-newapi","target":"http://TARGET:PORT","codex_key_fingerprint":"<64-character lowercase fingerprint from the command above>","secret":"<at least 32-byte secret shared with Codex2API>","enabled":true}]
+CODEX2API_POLICY_AUDIT_ENABLED=true
+CODEX2API_POLICY_STRIKE_ENABLED=false
+CODEX2API_POLICY_ACCOUNT_BAN_ENABLED=false
+CODEX2API_POLICY_IP_BLOCK_ENABLED=false
+CODEX2API_POLICY_BAN_AFTER=2
+CODEX2API_POLICY_WINDOW_SECONDS=86400
+```
+
+Keep punishment switches disabled while validating the Codex2API key binding, target URL, and signature handshake. Enable strike accumulation, account disabling, and IP blocking independently as needed. The global GuardPipeline threshold and review profile are not overridable by request headers or metadata.
 
 ---
 

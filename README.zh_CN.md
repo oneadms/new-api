@@ -325,6 +325,15 @@ docker run --name new-api -d --restart always \
 | `CRYPTO_SECRET` | 缓存键 HMAC 密钥；共享 Redis 的节点必须使用相同有效值 | 默认跟随 `SESSION_SECRET` |
 | `SQL_DSN` | 数据库连接字符串                                                     | - |
 | `REDIS_CONN_STRING` | Redis 连接字符串                                                  | - |
+| `CODEX2API_POLICY_ENABLED` | 启用 NewAPI 与 Codex2API 的签名身份/策略回传适配器 | `false` |
+| `CODEX2API_POLICY_IDENTITY_FORWARD_ENABLED` | 仅向绑定的 Codex2API 目标和 Key 转发签名身份 | `false` |
+| `CODEX2API_POLICY_BINDINGS` | JSON 绑定数组（平台、目标、Key SHA-256 指纹、绑定密钥） | `[]` |
+| `CODEX2API_POLICY_AUDIT_ENABLED` | 记录已验签的策略决定；不会单独处罚 | `false` |
+| `CODEX2API_POLICY_STRIKE_ENABLED` | 启用违规累计 | `false` |
+| `CODEX2API_POLICY_ACCOUNT_BAN_ENABLED` | 达到阈值后禁用普通用户及其 Token（管理员不自动禁用） | `false` |
+| `CODEX2API_POLICY_IP_BLOCK_ENABLED` | 达到阈值后暂时限制来源 IP | `false` |
+| `CODEX2API_POLICY_BAN_AFTER` | 时间窗口内达到的有效违规次数 | `2` |
+| `CODEX2API_POLICY_WINDOW_SECONDS` | 违规累计时间窗口（秒） | `86400` |
 | `STREAMING_TIMEOUT` | 流式超时时间（秒）                                                    | `300` |
 | `STREAM_SCANNER_MAX_BUFFER_MB` | 流式扫描器单行最大缓冲（MB），图像生成等超大 `data:` 片段（如 4K 图片 base64）需适当调大 | `64` |
 | `MAX_REQUEST_BODY_MB` | 请求体最大大小（MB，**解压后**计；防止超大请求/zip bomb 导致内存暴涨），超过将返回 `413` | `32` |
@@ -425,6 +434,28 @@ Token、Origin 校验和 PAT 契约见[用户鉴权与登录会话](./docs/authe
 **缓存配置：**
 - `REDIS_CONN_STRING`：Redis 缓存（推荐）
 - `MEMORY_CACHE_ENABLED`：内存缓存
+
+**Codex2API 签名身份适配器（可选）：**
+
+只有同时匹配实际出站目标地址和实际使用的 Codex2API Key 指纹时，NewAPI 才会发送可信身份头；未匹配的渠道不会泄露这些头。绑定密钥至少 32 字节，原始 Key 不写入配置：
+
+```bash
+printf %s "$CODEX2API_KEY" | shasum -a 256
+```
+
+```env
+CODEX2API_POLICY_ENABLED=true
+CODEX2API_POLICY_IDENTITY_FORWARD_ENABLED=true
+CODEX2API_POLICY_BINDINGS=[{"platform_id":"primary-newapi","target":"http://TARGET:PORT","codex_key_fingerprint":"<上面命令输出的64位小写指纹>","secret":"<与Codex2API绑定的至少32字节密钥>","enabled":true}]
+CODEX2API_POLICY_AUDIT_ENABLED=true
+CODEX2API_POLICY_STRIKE_ENABLED=false
+CODEX2API_POLICY_ACCOUNT_BAN_ENABLED=false
+CODEX2API_POLICY_IP_BLOCK_ENABLED=false
+CODEX2API_POLICY_BAN_AFTER=2
+CODEX2API_POLICY_WINDOW_SECONDS=86400
+```
+
+建议先保持处罚开关关闭，确认 Codex2API 管理页的 Key 绑定、目标地址和签名验签均正常后，再按需分别开启违规累计、账号禁用或 IP 限制。全局 GuardPipeline 的阈值与审核档位不接受请求头或元数据覆盖。
 
 ---
 

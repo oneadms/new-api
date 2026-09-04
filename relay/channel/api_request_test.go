@@ -1,18 +1,48 @@
 package channel
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
-func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
-	t.Parallel()
+func TestAttachBodySHA256ProviderSurvivesNewRequestWrapping(t *testing.T) {
+	storage, err := common.CreateBodyStorage([]byte(`{"model":"gpt-5.5"}`))
+	require.NoError(t, err)
+	defer storage.Close()
 
+	source := common.ReaderOnly(storage)
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/v1/responses", source)
+	require.NoError(t, err)
+	// http.NewRequest wraps an arbitrary io.Reader in io.NopCloser, which would
+	// hide ReaderOnly's digest method unless the channel attaches it explicitly.
+	attachBodySHA256Provider(req, source)
+	provider, ok := req.Body.(bodySHA256Provider)
+	require.True(t, ok)
+	digest, err := provider.BodySHA256()
+	require.NoError(t, err)
+	require.NotEmpty(t, digest)
+
+	body, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.Equal(t, `{"model":"gpt-5.5"}`, string(body))
+	require.NoError(t, req.Body.Close())
+	// Closing the transport wrapper must not close the request-scoped storage.
+	_, err = storage.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	remaining, err := io.ReadAll(storage)
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(`{"model":"gpt-5.5"}`), strings.TrimSpace(string(remaining)))
+}
+
+func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -34,8 +64,6 @@ func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 }
 
 func TestProcessHeaderOverride_ChannelTestSkipsClientHeaderPlaceholder(t *testing.T) {
-	t.Parallel()
-
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -58,8 +86,6 @@ func TestProcessHeaderOverride_ChannelTestSkipsClientHeaderPlaceholder(t *testin
 }
 
 func TestProcessHeaderOverride_NonTestKeepsClientHeaderPlaceholder(t *testing.T) {
-	t.Parallel()
-
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -81,8 +107,6 @@ func TestProcessHeaderOverride_NonTestKeepsClientHeaderPlaceholder(t *testing.T)
 }
 
 func TestProcessHeaderOverride_RuntimeOverrideIsFinalHeaderMap(t *testing.T) {
-	t.Parallel()
-
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -112,14 +136,17 @@ func TestProcessHeaderOverride_RuntimeOverrideIsFinalHeaderMap(t *testing.T) {
 }
 
 func TestProcessHeaderOverride_PassthroughSkipsAcceptEncoding(t *testing.T) {
-	t.Parallel()
-
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	ctx.Request.Header.Set("X-Trace-Id", "trace-123")
 	ctx.Request.Header.Set("Accept-Encoding", "gzip")
+	ctx.Request.Header.Set("anthropic-auth-token", "client-secret")
+	ctx.Request.Header.Set("api-key", "client-secret")
+	ctx.Request.Header.Set("mj-api-secret", "client-secret")
+	ctx.Request.Header.Set("X-NewAPI-Future", "forged")
+	ctx.Request.Header.Set("X-Codex2API-Policy-Future", "forged")
 
 	info := &relaycommon.RelayInfo{
 		IsChannelTest: false,
@@ -136,11 +163,19 @@ func TestProcessHeaderOverride_PassthroughSkipsAcceptEncoding(t *testing.T) {
 
 	_, hasAcceptEncoding := headers["accept-encoding"]
 	require.False(t, hasAcceptEncoding)
+	_, hasAnthropicCredential := headers["anthropic-auth-token"]
+	require.False(t, hasAnthropicCredential)
+	_, hasAPIKeyCredential := headers["api-key"]
+	require.False(t, hasAPIKeyCredential)
+	_, hasMidjourneyCredential := headers["mj-api-secret"]
+	require.False(t, hasMidjourneyCredential)
+	_, hasFutureNewAPIHeader := headers["x-newapi-future"]
+	require.False(t, hasFutureNewAPIHeader)
+	_, hasFuturePolicyHeader := headers["x-codex2api-policy-future"]
+	require.False(t, hasFuturePolicyHeader)
 }
 
 func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.T) {
-	t.Parallel()
-
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)

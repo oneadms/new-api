@@ -2,6 +2,8 @@ package common
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -302,10 +304,77 @@ func CreateBodyStorageFromReader(reader io.Reader, contentLength int64, maxBytes
 	return storage, nil
 }
 
-// ReaderOnly wraps an io.Reader to hide io.Closer, preventing http.NewRequest
-// from type-asserting io.ReadCloser and closing the underlying BodyStorage.
+// readerOnly wraps an io.Reader without exposing the underlying Close method.
+// net/http will add its own no-op closer when it turns this into a request
+// body, while the request-scoped BodyStorage cleanup middleware remains
+// responsible for releasing the actual storage. Seek and BodySHA256 are
+// exposed when the wrapped reader supports them; this lets integrations hash a
+// disk-backed body without first materialising it in memory.
+type readerOnly struct {
+	reader io.Reader
+}
+
+func (r *readerOnly) Read(p []byte) (int, error) {
+	if r == nil || r.reader == nil {
+		return 0, io.EOF
+	}
+	return r.reader.Read(p)
+}
+
+func (r *readerOnly) Seek(offset int64, whence int) (int64, error) {
+	if r == nil || r.reader == nil {
+		return 0, fmt.Errorf("wrapped reader is nil")
+	}
+	seeker, ok := r.reader.(interface {
+		io.Reader
+		io.Seeker
+	})
+	if !ok {
+		return 0, fmt.Errorf("wrapped reader is not seekable")
+	}
+	return seeker.Seek(offset, whence)
+}
+
+// BodySHA256 returns the SHA-256 digest of the complete wrapped body and
+// restores the reader's original position.  It is intentionally a method on
+// the wrapper rather than a package-specific interface so relay integrations
+// can use it without importing the storage implementation.
+func (r *readerOnly) BodySHA256() (string, error) {
+	if r == nil || r.reader == nil {
+		return "", fmt.Errorf("wrapped reader is nil")
+	}
+	seeker, ok := r.reader.(interface {
+		io.Reader
+		io.Seeker
+	})
+	if !ok {
+		return "", fmt.Errorf("wrapped reader is not seekable")
+	}
+	current, err := seeker.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return "", err
+	}
+	if _, err = seeker.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	hasher := sha256.New()
+	_, copyErr := io.Copy(hasher, seeker)
+	_, restoreErr := seeker.Seek(current, io.SeekStart)
+	if copyErr != nil {
+		return "", copyErr
+	}
+	if restoreErr != nil {
+		return "", restoreErr
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+// ReaderOnly wraps an io.Reader while keeping the underlying closer private.
+// The returned value also implements io.Seeker/BodySHA256 when the wrapped
+// reader does, which avoids an otherwise expensive in-memory copy for large
+// outbound bodies.
 func ReaderOnly(r io.Reader) io.Reader {
-	return struct{ io.Reader }{r}
+	return &readerOnly{reader: r}
 }
 
 // CleanupOldCacheFiles 清理旧的缓存文件（用于启动时清理残留）

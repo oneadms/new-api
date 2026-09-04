@@ -12,6 +12,10 @@ import (
 
 func SetRelayRouter(router *gin.Engine) {
 	router.Use(middleware.CORS())
+	// Check the optional shared Codex2API IP deny-list before decompression or
+	// authentication so blocked sources cannot spend resources or rotate tokens
+	// to evade an active policy block.
+	router.Use(middleware.Codex2APIPolicyIPBlock())
 	router.Use(middleware.DecompressRequestMiddleware())
 	router.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	router.Use(middleware.StatsMiddleware())

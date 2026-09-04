@@ -47,6 +47,15 @@ services:
 #      - USER_SESSION_ISSUANCE_WINDOW_SECONDS=86400  # 不得大于 revoked 保留期 (must not exceed revoked retention)
 #      - USER_SESSION_REVOKED_RETENTION_DAYS=7
 #      - USER_SESSION_HOURLY_ALERT_THRESHOLD=5000  # 仅告警，不做全局拒绝 (alert only; never globally rejects login)
+#      - CODEX2API_POLICY_ENABLED=false  # Optional signed NewAPI ↔ Codex2API adapter
+#      - CODEX2API_POLICY_IDENTITY_FORWARD_ENABLED=true
+#      - CODEX2API_POLICY_BINDINGS=[]  # JSON bindings; keep raw Codex2API keys out of this file
+#      - CODEX2API_POLICY_AUDIT_ENABLED=true
+#      - CODEX2API_POLICY_STRIKE_ENABLED=false
+#      - CODEX2API_POLICY_ACCOUNT_BAN_ENABLED=false
+#      - CODEX2API_POLICY_IP_BLOCK_ENABLED=false
+#      - CODEX2API_POLICY_BAN_AFTER=2
+#      - CODEX2API_POLICY_WINDOW_SECONDS=86400
 #      - SYNC_FREQUENCY=60  # Uncomment if regular database syncing is needed
 #      - GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX  # Google Analytics 的测量 ID (Google Analytics Measurement ID)
 #      - UMAMI_WEBSITE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  # Umami 网站 ID (Umami Website ID)

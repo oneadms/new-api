@@ -327,6 +327,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if openaiErr == nil {
 		return false
 	}
+	if c != nil && c.GetBool(service.Codex2APIPolicyViolationContextKey) {
+		return false
+	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
@@ -359,7 +362,12 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
-	if service.ShouldDisableChannel(err) && channelError.AutoBan {
+	// A verified Codex2API policy decision describes the caller's request, not
+	// an unhealthy upstream channel. Do not let the generic automatic channel
+	// ban policy disable a healthy channel because Codex2API returned a signed
+	// policy block (often HTTP 400/401).
+	policyViolation := c != nil && c.GetBool(service.Codex2APIPolicyViolationContextKey)
+	if !policyViolation && service.ShouldDisableChannel(err) && channelError.AutoBan {
 		gopool.Go(func() {
 			service.DisableChannel(channelError, err.ErrorWithStatusCode())
 		})
@@ -628,6 +636,9 @@ func hideUpstreamError(c *gin.Context, relayInfo *relaycommon.RelayInfo) bool {
 
 func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError, retryTimes int) bool {
 	if taskErr == nil {
+		return false
+	}
+	if c != nil && c.GetBool(service.Codex2APIPolicyViolationContextKey) {
 		return false
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {

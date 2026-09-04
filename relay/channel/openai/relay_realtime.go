@@ -114,6 +114,11 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					close(targetClosed)
 					return
 				}
+				// Responses/WebSocket policy decisions are carried in signed JSON
+				// error frames because the HTTP upgrade headers are already committed.
+				// Consume the decision for audit/strike handling while forwarding the
+				// original frame unchanged to the client.
+				service.ProcessCodex2APIPolicyEvent(c, message)
 				info.SetFirstResponseTime()
 				realtimeEvent := &dto.RealtimeEvent{}
 				err = common.Unmarshal(message, realtimeEvent)
