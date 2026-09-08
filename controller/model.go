@@ -260,6 +260,13 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
+	// Codex 客户端刷新模型选单时带 client_version 查询参数，期望的是 Codex manifest
+	// 形状而不是 OpenAI 的 {"data":[...]}；按可见模型（含上面的额度/分组过滤）合成。
+	if modelType == constant.ChannelTypeOpenAI && isCodexManifestRequest(c) {
+		ListCodexModelsManifest(c, userModelNames)
+		return
+	}
+
 	ownerByModel := map[string]string{}
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
