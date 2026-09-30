@@ -68,7 +68,7 @@ func trimHeartbeats(heartbeats []Heartbeat) []Heartbeat {
 	if len(heartbeats) <= maxHeartbeatSamples {
 		return heartbeats
 	}
-	return heartbeats[:maxHeartbeatSamples]
+	return heartbeats[len(heartbeats)-maxHeartbeatSamples:]
 }
 
 func float64Ptr(value float64) *float64 {
