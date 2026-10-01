@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { toIntlLocale } from '@/i18n/languages'
 import { cn } from '@/lib/utils'
 
 import { getUptimeStatus } from './api'
@@ -568,7 +569,7 @@ export function Status() {
 
   const lastUpdated = getLastUpdatedLabel(
     statusQuery.dataUpdatedAt,
-    i18n.language || undefined
+    toIntlLocale(i18n.resolvedLanguage || i18n.language)
   )
   let emptyStateTitle = ''
   let emptyStateDescription = ''
