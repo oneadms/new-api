@@ -85,17 +85,11 @@ export type ThemeScale = 'default' | 'sm' | 'lg' | 'xl'
 export type ContentLayout = 'full' | 'centered'
 
 /**
- * Font axis for the theme.
- *
- * - `default` — resolve at runtime from the active preset
- *   (see `PRESET_DEFAULT_FONT`). The shipped `default` and `anthropic`
- *   presets resolve to serif; other named color presets fall back to
- *   sans unless they list a different choice. Mirrors how
- *   `radius: 'default'` defers to a per-preset hint.
- * - `sans` — humanist sans (Public Sans), the project's UI fallback.
- * - `serif` — editorial serif (Lora + CJK fallbacks), the project's
- *   "soul" typography. Inherits across the whole UI; monospace contexts
- *   keep their own family via Tailwind preflight and `.font-mono`.
+ * 字体设置独立于配色预设。
+ * - `default` 跟随当前预设：Anthropic 使用衬线字体，基础配色使用无衬线字体。
+ * - `sans` 使用 Public Sans 及对应的中文回退字体。
+ * - `serif` 使用 Lora 及对应的中文回退字体。
+ * 等宽内容保留自己的字体，不受此设置影响。
  */
 export type ThemeFont = 'default' | 'sans' | 'serif'
 
@@ -116,7 +110,7 @@ export type ThemeCustomization = {
 }
 
 export const DEFAULT_THEME_CUSTOMIZATION: ThemeCustomization = {
-  preset: 'default',
+  preset: 'anthropic',
   font: 'default',
   radius: 'default',
   scale: 'default',
@@ -163,15 +157,8 @@ export const THEME_COOKIE_KEYS = {
 } as const
 
 /**
- * Preset → default font mapping. Used by the provider to resolve the user's
- * `font: 'default'` preference against the active preset.
- *
- * Co-located with the preset registry so a preset's signature typography
- * is declared in one place. Presets not listed here fall back to the
- * `resolveThemeFont` default of `sans`. The shipped `default` preset
- * opts into serif so the editorial Lora voice is the out-of-the-box
- * experience; vivid color presets stay on the humanist sans so their
- * accents read clearly without competing with the body type.
+ * 预设的默认字体与配色注册表统一维护；未声明的预设使用无衬线字体。
+ * 仅在用户选择跟随预设时使用此映射，显式字体偏好始终优先。
  */
 export const PRESET_DEFAULT_FONT: Partial<
   Record<ThemePreset, ResolvedThemeFont>
