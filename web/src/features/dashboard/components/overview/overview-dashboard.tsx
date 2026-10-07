@@ -618,13 +618,14 @@ export function OverviewDashboard() {
   }
 
   return (
-    <div className='flex flex-col gap-4'>
+    <div className='flex flex-col gap-5'>
+      <SummaryCards />
       {setupGuideExpanded ? (
-        <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
+        <CardStaggerContainer className='grid items-stretch gap-5 min-[1500px]:grid-cols-[minmax(0,1fr)_20rem]'>
           <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
             <div className='relative h-full overflow-hidden p-4 sm:p-5'>
               <SetupGuideBackdrop />
-              <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
+              <div className='relative grid gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_21rem]'>
                 <div className='flex min-w-0 flex-col gap-5'>
                   <div className='flex flex-wrap items-start justify-between gap-3'>
                     <div className='flex max-w-2xl flex-col gap-1'>
@@ -748,8 +749,6 @@ export function OverviewDashboard() {
           </CardStaggerItem>
         </CardStaggerContainer>
       )}
-
-      <SummaryCards />
 
       {showContentPanels && (
         <CardStaggerContainer

@@ -16,24 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { SidebarTrigger } from '@/components/ui/sidebar'
-import { cn } from '@/lib/utils'
+import { fileURLToPath } from 'node:url'
 
-type HeaderProps = React.HTMLAttributes<HTMLElement>
+import { defineConfig } from 'vitest/config'
 
-export function Header({ className, children, ...props }: HeaderProps) {
-  return (
-    <header
-      className={cn(
-        'workspace-header sticky top-0 z-40 h-[var(--app-header-height,4rem)] w-full shrink-0',
-        className
-      )}
-      {...props}
-    >
-      <div className='flex h-full items-center gap-1.5 px-3 sm:gap-3 sm:px-5'>
-        <SidebarTrigger variant='ghost' className='size-8' />
-        {children}
-      </div>
-    </header>
-  )
-}
+export default defineConfig({
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/ui-setup.ts'],
+    include: ['src/**/__tests__/*.ui.test.tsx'],
+    restoreMocks: true,
+    unstubGlobals: true,
+  },
+})

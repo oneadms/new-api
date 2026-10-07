@@ -105,13 +105,20 @@ export function ResetPasswordConfirm({
     }
   }
 
+  let submitLabel = t('auth.resetPasswordConfirm.confirm')
+  if (newPassword) {
+    submitLabel = t('auth.resetPasswordConfirm.backToLogin')
+  } else if (isActive) {
+    submitLabel = t('auth.resetPasswordConfirm.retry', { seconds: secondsLeft })
+  }
+
   return (
     <AuthLayout>
       <div className='w-full space-y-8'>
         <div className='space-y-2'>
-          <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
+          <h1 className='text-2xl font-semibold tracking-tight'>
             {t('Reset password')}
-          </h2>
+          </h1>
           <p className='text-muted-foreground text-left text-sm sm:text-base'>
             {newPassword
               ? t('auth.resetPasswordConfirm.success')
@@ -154,6 +161,7 @@ export function ResetPasswordConfirm({
                   size='icon'
                   variant='outline'
                   onClick={handleCopy}
+                  aria-label={t('Copy to clipboard')}
                 >
                   {copied ? (
                     <CheckIcon className='h-4 w-4' />
@@ -179,13 +187,7 @@ export function ResetPasswordConfirm({
               newPassword ? false : loading || isActive || !isValidResetLink
             }
           >
-            {newPassword
-              ? t('auth.resetPasswordConfirm.backToLogin')
-              : isActive
-                ? t('auth.resetPasswordConfirm.retry', {
-                    seconds: secondsLeft,
-                  })
-                : t('auth.resetPasswordConfirm.confirm')}
+            {submitLabel}
           </Button>
 
           {!newPassword && (

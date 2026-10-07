@@ -34,7 +34,7 @@ type PublicLayoutProps = {
 
 export function PublicLayout(props: PublicLayoutProps) {
   return (
-    <div className='bg-background text-foreground relative min-h-svh overflow-x-clip'>
+    <div className='public-page text-foreground relative min-h-svh overflow-x-clip'>
       <PublicHeader
         navContent={props.navContent}
         navLinks={props.navLinks}
@@ -46,13 +46,15 @@ export function PublicLayout(props: PublicLayoutProps) {
         {...props.headerProps}
       />
 
-      {props.showMainContainer !== false ? (
-        <main className='container px-4 py-6 pt-20 md:px-4'>
-          {props.children}
-        </main>
-      ) : (
-        props.children
-      )}
+      <div id='public-content' tabIndex={-1}>
+        {props.showMainContainer !== false ? (
+          <main className='container px-4 py-6 pt-28 md:px-8'>
+            {props.children}
+          </main>
+        ) : (
+          props.children
+        )}
+      </div>
     </div>
   )
 }

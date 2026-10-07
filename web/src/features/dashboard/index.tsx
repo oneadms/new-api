@@ -320,8 +320,13 @@ export function Dashboard() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {activeSection === 'overview'
+          ? t('A focused home for keys, balance, routing, and service health.')
+          : t('Track usage, costs and performance with real-time analytics')}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Content>
-        <div className='space-y-3 sm:space-y-4'>
+        <div className='space-y-5'>
           {activeSection !== 'overview' && (
             <div className='flex flex-wrap items-center justify-between gap-1.5 sm:gap-2'>
               {showSectionTabs ? (

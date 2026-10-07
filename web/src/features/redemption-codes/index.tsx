@@ -33,6 +33,9 @@ export function Redemptions() {
         <SectionPageLayout.Title>
           {t('Redemption Codes')}
         </SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Create and manage credits for your users.')}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>
           <RedemptionsPrimaryButtons />
         </SectionPageLayout.Actions>

@@ -72,7 +72,8 @@ export function TableEmpty({
   return (
     <TableRow>
       <TableCell colSpan={colSpan} className='h-[400px] p-0'>
-        <Empty>
+        {/* 提示按滚动窗口居中，避免宽表格把空状态推到屏幕之外。 */}
+        <Empty className='sticky left-0 w-[100cqw] max-w-full whitespace-normal'>
           <EmptyHeader>
             <EmptyMedia variant='icon'>
               {icon || <Database className='size-6' />}

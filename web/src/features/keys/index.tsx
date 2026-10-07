@@ -31,6 +31,9 @@ export function ApiKeys() {
     <ApiKeysProvider>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>{t('API Keys')}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Create, organize, and control access to your API keys.')}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>
           <ApiKeysPrimaryButtons />
         </SectionPageLayout.Actions>

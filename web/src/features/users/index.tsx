@@ -34,6 +34,9 @@ function UsersContent() {
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>{t('Users')}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Manage your team, permissions, and account balances.')}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>
           <UsersPrimaryButtons />
         </SectionPageLayout.Actions>

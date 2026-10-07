@@ -37,6 +37,9 @@ export function SystemInfo() {
           </Badge>
         </span>
       </SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t('A clear view of your gateway and its environment.')}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Content>
         <div className='space-y-4'>
           <SystemInstancesPanel />

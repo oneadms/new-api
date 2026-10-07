@@ -45,15 +45,15 @@ export function PlaygroundEmptyState({
 
   return (
     <div className='flex min-h-[min(520px,calc(100svh-18rem))] items-center justify-center px-1 py-8 md:py-12'>
-      <div className='grid w-full max-w-2xl gap-5 text-center'>
-        <div className='bg-muted/50 text-muted-foreground mx-auto flex size-11 items-center justify-center rounded-xl border'>
+      <div className='grid w-full max-w-2xl gap-7 text-center'>
+        <div className='bg-primary/10 text-primary border-primary/20 mx-auto flex size-14 items-center justify-center rounded-2xl border'>
           <MessageSquarePlusIcon className='size-5' aria-hidden='true' />
         </div>
 
         <div className='grid gap-2'>
-          <h2 className='text-xl font-semibold tracking-tight text-balance md:text-2xl'>
+          <h1 className='public-page-title text-2xl font-semibold text-balance md:text-4xl'>
             {t('Start a playground chat')}
-          </h2>
+          </h1>
           <p className='text-muted-foreground mx-auto max-w-lg text-sm leading-6 text-balance'>
             {t(
               'Test a model with a starter prompt, or write your own request below.'
@@ -61,13 +61,13 @@ export function PlaygroundEmptyState({
           </p>
         </div>
 
-        <div className='grid gap-2 sm:grid-cols-2'>
+        <div className='grid gap-3 sm:grid-cols-2'>
           {starterPrompts.map(({ icon: Icon, text }) => {
             const prompt = t(text)
 
             return (
               <Button
-                className='h-auto min-h-11 justify-start gap-2 px-3 py-2.5 text-left whitespace-normal'
+                className='bg-card h-auto min-h-16 justify-start gap-3 rounded-xl px-4 py-4 text-left whitespace-normal'
                 key={text}
                 onClick={() => onSelectPrompt(prompt)}
                 variant='outline'

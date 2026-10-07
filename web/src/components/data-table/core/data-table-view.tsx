@@ -62,7 +62,7 @@ export function DataTableView<TData>(props: DataTableViewProps<TData>) {
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-lg border',
+        'bg-card overflow-hidden rounded-xl border shadow-xs',
         props.containerClassName
       )}
       {...props.containerProps}
@@ -138,7 +138,7 @@ function SplitHeaderTableView<TData>({
     >
       <div
         className={cn(
-          'min-h-0 flex-1 overflow-auto',
+          '@container/table-viewport min-h-0 flex-1 overflow-auto',
           '**:data-[slot=table-header]:[--table-header-bg:var(--table-header)]',
           '**:data-[slot=table-header]:bg-(--table-header-bg)',
           props.splitHeaderScrollClassName,
@@ -296,7 +296,9 @@ function renderEmptyState<TData>(
     return (
       <TableRow>
         <TableCell colSpan={colSpan} className={props.emptyCellClassName}>
-          {props.emptyContent}
+          <div className='sticky left-0 w-[calc(100cqw-1rem)] max-w-full whitespace-normal'>
+            {props.emptyContent}
+          </div>
         </TableCell>
       </TableRow>
     )

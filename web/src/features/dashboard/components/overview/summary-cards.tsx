@@ -250,9 +250,9 @@ export function SummaryCards() {
   })
 
   return (
-    <div className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
+    <div className='overview-summary bg-card overflow-hidden rounded-2xl border'>
       <div className='grid xl:grid-cols-[minmax(0,1fr)_19rem]'>
-        <div className='flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-5'>
+        <div className='flex flex-col gap-4 p-4 sm:gap-5 sm:p-6'>
           <div className='flex flex-wrap items-start justify-between gap-3'>
             <div className='flex flex-col gap-1'>
               <h3 className='text-sm font-semibold sm:text-base'>
@@ -263,11 +263,11 @@ export function SummaryCards() {
               </p>
             </div>
           </div>
-          <StaggerContainer className='grid grid-cols-3 gap-1.5 sm:gap-3'>
+          <StaggerContainer className='grid grid-cols-1 gap-3 min-[420px]:grid-cols-3'>
             {items.map((it) => (
               <StaggerItem
                 key={it.key}
-                className='bg-background/60 rounded-lg border px-2 py-1.5 sm:rounded-xl sm:p-3'
+                className='bg-background/60 min-w-0 rounded-xl border px-3 py-3 sm:p-4'
               >
                 <StatCard
                   title={it.title}
@@ -285,7 +285,7 @@ export function SummaryCards() {
           </StaggerContainer>
         </div>
 
-        <div className='flex flex-col justify-between gap-3 border-t bg-[linear-gradient(135deg,color-mix(in_oklch,var(--overview-accent-2)_12%,var(--background))_0%,color-mix(in_oklch,oklch(0.82_0.04_155)_8%,var(--background))_48%,color-mix(in_oklch,var(--overview-accent-1)_7%,var(--background))_100%)] p-3 sm:gap-4 sm:p-5 xl:border-t-0 xl:border-l'>
+        <div className='overview-balance-panel flex flex-col justify-between gap-4 border-t p-5 sm:p-6 xl:border-t-0 xl:border-l'>
           <div className='flex flex-col gap-2 sm:gap-3'>
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground text-xs font-medium'>
@@ -302,7 +302,7 @@ export function SummaryCards() {
               </span>
             </div>
 
-            <div className='font-mono text-xl font-semibold tracking-tight sm:text-2xl'>
+            <div className='overview-summary-value text-3xl font-semibold tracking-tight sm:text-4xl'>
               {formatQuota(remainQuota)}
             </div>
 

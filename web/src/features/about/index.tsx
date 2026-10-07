@@ -32,14 +32,16 @@ function EmptyAboutState() {
   const currentYear = new Date().getFullYear()
 
   return (
-    <div className='flex min-h-[60vh] items-center justify-center p-8'>
-      <div className='max-w-2xl space-y-6 text-center'>
+    <div className='flex min-h-[70vh] items-center justify-center px-1 py-10'>
+      <div className='bg-card max-w-2xl space-y-8 rounded-3xl border p-7 text-center shadow-xs sm:p-12'>
         <div className='flex justify-center'>
-          <Construction className='text-muted-foreground h-24 w-24' />
+          <Construction className='text-primary size-12' aria-hidden='true' />
         </div>
         <div className='space-y-2'>
-          <h2 className='text-2xl font-bold'>{t('No About Content Set')}</h2>
-          <p className='text-muted-foreground'>
+          <h1 className='public-page-title text-2xl font-semibold'>
+            {t('No About Content Set')}
+          </h1>
+          <p className='text-muted-foreground text-sm leading-relaxed'>
             {t(
               'The administrator has not configured any about content yet. You can set it in the settings page, supporting HTML or URL.'
             )}

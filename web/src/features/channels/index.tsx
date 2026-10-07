@@ -93,6 +93,11 @@ export function Channels() {
             {retryBadge}
           </span>
         </SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t(
+            'Connect your providers and keep every request on the right route.'
+          )}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>
           <ChannelsPrimaryButtons />
         </SectionPageLayout.Actions>

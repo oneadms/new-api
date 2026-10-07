@@ -19,45 +19,65 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
+import { GatewayVisual } from '@/components/gateway-visual'
+import { LanguageSwitcher } from '@/components/language-switcher'
+import { ThemeSwitch } from '@/components/theme-switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
-type AuthLayoutProps = {
-  children: React.ReactNode
-}
+type AuthLayoutProps = { children: React.ReactNode }
 
-export function AuthLayout({ children }: AuthLayoutProps) {
+export function AuthLayout(props: AuthLayoutProps) {
   const { t } = useTranslation()
   const { systemName, logo, loading } = useSystemConfig()
-
   return (
-    <div className='relative grid h-svh max-w-none'>
-      <Link
-        to='/'
-        className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
-      >
-        <div className='relative h-8 w-8'>
+    <div className='auth-shell'>
+      <header className='auth-header'>
+        <Link to='/' className='auth-brand'>
           {loading ? (
-            <Skeleton className='absolute inset-0 rounded-full' />
+            <Skeleton className='size-8 rounded-lg' />
           ) : (
-            <img
-              src={logo}
-              alt={t('Logo')}
-              className='h-8 w-8 rounded-full object-cover'
-            />
+            <img src={logo} alt='' className='size-8 object-contain' />
           )}
+          {loading ? (
+            <Skeleton className='h-6 w-24' />
+          ) : (
+            <span>{systemName}</span>
+          )}
+        </Link>
+        <div className='flex items-center gap-1'>
+          <LanguageSwitcher />
+          <ThemeSwitch />
         </div>
-        {loading ? (
-          <Skeleton className='h-6 w-24' />
-        ) : (
-          <h1 className='text-xl font-medium'>{systemName}</h1>
-        )}
-      </Link>
-      <div className='container flex items-center pt-16 sm:pt-0'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
-          {children}
+      </header>
+      <aside className='auth-story'>
+        <div className='auth-story-heading'>
+          <p className='home-eyebrow'>
+            {t('AI Application Infrastructure Foundation')}
+          </p>
+          <h2>
+            {t('Every model.')}
+            <br />
+            <span>{t('One connection.')}</span>
+          </h2>
+          <p>
+            {t(
+              'The infrastructure stays in one place. Your ideas can go anywhere.'
+            )}
+          </p>
         </div>
-      </div>
+        <GatewayVisual name={systemName} />
+        <div className='auth-story-footer'>
+          <span>OpenAI · Claude · Gemini · DeepSeek</span>
+          <span>{t('Multi-protocol Compatible')}</span>
+        </div>
+      </aside>
+      <main id='content' className='auth-form-panel'>
+        <div className='auth-form-content'>{props.children}</div>
+        <Link to='/' className='auth-back-link'>
+          ← {t('Back to Home')}
+        </Link>
+      </main>
     </div>
   )
 }

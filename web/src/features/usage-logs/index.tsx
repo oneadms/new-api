@@ -128,6 +128,9 @@ function UsageLogsContent() {
         <SectionPageLayout.Title>
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Understand each request, from model to cost.')}
+        </SectionPageLayout.Description>
         {canManageScope && (
           <SectionPageLayout.Actions>
             <Tabs value={viewScope} onValueChange={handleViewScopeChange}>

@@ -196,8 +196,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   return (
     <div
       className={cn(
-        'group relative flex flex-col rounded-xl border p-3 transition-colors sm:p-5',
-        'hover:bg-muted/20'
+        'catalog-model-card bg-card group relative flex flex-col rounded-2xl border p-4 transition-colors sm:p-6',
+        'hover:border-primary/40'
       )}
     >
       {/* Header: icon + name + price + actions */}
@@ -234,6 +234,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             onClick={handleCopy}
             className='text-muted-foreground hover:text-foreground hover:bg-muted rounded-md border p-1.5 transition-colors'
             title={t('Copy')}
+            aria-label={t('Copy model name')}
           >
             <Copy className='size-3.5' />
           </button>

@@ -87,6 +87,9 @@ function ModelsContent() {
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
+        <SectionPageLayout.Description>
+          {t('Organize the models available through your gateway.')}
+        </SectionPageLayout.Description>
         <SectionPageLayout.Actions>
           {activeSection === 'metadata' ? (
             <ModelsPrimaryButtons />

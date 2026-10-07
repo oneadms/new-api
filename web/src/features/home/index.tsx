@@ -29,6 +29,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { CTA, Features, Hero, HowItWorks, Stats } from './components'
 import { useHomePageContent } from './hooks'
 
+import '@/styles/home.css'
+
 export function Home() {
   const { i18n, t } = useTranslation()
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -122,11 +124,13 @@ export function Home() {
 
   return (
     <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
+      <main id='content' className='home-page'>
+        <Hero isAuthenticated={isAuthenticated} />
+        <Stats />
+        <Features />
+        <HowItWorks />
+        <CTA isAuthenticated={isAuthenticated} />
+      </main>
       <Footer />
     </PublicLayout>
   )

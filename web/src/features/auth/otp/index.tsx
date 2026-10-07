@@ -28,9 +28,9 @@ export function Otp() {
     <AuthLayout>
       <div className='w-full space-y-8'>
         <div className='space-y-3'>
-          <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
+          <h1 className='text-2xl font-semibold tracking-tight'>
             {t('Two-factor Authentication')}
-          </h2>
+          </h1>
           <p className='text-muted-foreground text-left text-sm sm:text-base'>
             {t('Please enter the authentication code.')}
           </p>

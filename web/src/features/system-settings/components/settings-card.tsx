@@ -41,11 +41,11 @@ export const SettingsCard = memo(function SettingsCard({
 }: SettingsCardProps) {
   return (
     <Card className={className}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
+      <CardHeader className='border-b px-5 pb-5 sm:px-6'>
+        <CardTitle className='font-semibold'>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className='px-5 pt-1 sm:px-6'>{children}</CardContent>
     </Card>
   )
 })

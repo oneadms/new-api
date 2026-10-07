@@ -585,7 +585,7 @@ export function Status() {
 
   return (
     <PublicLayout showMainContainer={false}>
-      <PageTransition className='mx-auto flex w-full max-w-6xl flex-col gap-6 px-3 pt-24 pb-10 sm:px-6 lg:px-8'>
+      <PageTransition className='mx-auto flex w-full max-w-[1376px] flex-col gap-7 px-5 pt-28 pb-12 sm:px-8 sm:pt-32 lg:px-12'>
         <header className='flex flex-col gap-4 md:flex-row md:items-end md:justify-between'>
           <div className='flex min-w-0 flex-col gap-3'>
             <div className='flex items-center gap-3'>
@@ -593,7 +593,7 @@ export function Status() {
                 <Activity className='size-5' />
               </div>
               <div className='flex min-w-0 flex-col gap-1'>
-                <h1 className='text-2xl font-semibold sm:text-3xl'>
+                <h1 className='public-page-title text-3xl font-semibold sm:text-4xl'>
                   {t('Service Status')}
                 </h1>
                 <p className='text-muted-foreground text-sm'>

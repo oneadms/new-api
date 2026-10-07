@@ -20,6 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/public-sans';
+@import '@fontsource-variable/space-grotesk';
 /* Editorial serif (Lora) backing the `serif` font axis and the Anthropic
  * preset's default typography. See `--font-serif` in theme.css for the
  * full Latin + CJK fallback stack and `theme-presets.css` for the cascade
@@ -29,6 +30,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 @import './theme.css';
 @import './theme-presets.css';
+@import './experience.css';
 
 :root {
   --app-background-image: none;

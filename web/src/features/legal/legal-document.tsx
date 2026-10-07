@@ -127,9 +127,11 @@ export function LegalDocument({
       {contentIsHtml ? (
         <RichContent mode='html' htmlVariant='isolated' content={rawContent} />
       ) : (
-        <div className='mx-auto max-w-4xl space-y-6 py-12'>
+        <div className='bg-card mx-auto max-w-4xl space-y-8 rounded-2xl border px-6 py-8 shadow-[var(--surface-shadow)] sm:px-12 sm:py-12'>
           <div className='space-y-2'>
-            <h1 className='text-3xl font-semibold tracking-tight'>{title}</h1>
+            <h1 className='public-page-title text-3xl font-semibold sm:text-4xl'>
+              {title}
+            </h1>
           </div>
 
           <RichContent

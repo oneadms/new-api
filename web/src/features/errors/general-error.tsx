@@ -56,9 +56,9 @@ export function GeneralError({
 
   return (
     <div className={cn('h-svh w-full', className)}>
-      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
+      <div className='m-auto flex h-full w-full max-w-2xl flex-col items-center justify-center gap-4 px-6 py-12'>
         {!minimal && (
-          <h1 className='text-[7rem] leading-tight font-bold'>
+          <h1 className='public-page-title text-primary text-[7rem] leading-none font-semibold sm:text-[10rem]'>
             {status ?? 500}
           </h1>
         )}
