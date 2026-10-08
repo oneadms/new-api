@@ -219,7 +219,7 @@ export interface CheckinStats {
  * Check-in status response
  */
 export interface CheckinStatusResponse {
-  /** Whether check-in feature is enabled */
+  /** 普通签到是否启用；运气签到由 lucky.enabled 独立控制。 */
   enabled: boolean
   lucky: {
     enabled: boolean

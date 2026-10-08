@@ -50,6 +50,8 @@ const STATUS_RELATED_KEYS = new Set([
   'general_setting.quota_display_type',
   'general_setting.custom_currency_symbol',
   'general_setting.custom_currency_exchange_rate',
+  'checkin_setting.enabled',
+  'lucky_checkin_setting.enabled',
 ])
 
 export function useUpdateOption() {
@@ -61,6 +63,14 @@ export function useUpdateOption() {
       if (data.success) {
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+
+        // 开关及奖励配置变更后，用户侧应立即重新读取可用的签到方式。
+        if (
+          variables.key.startsWith('checkin_setting.') ||
+          variables.key.startsWith('lucky_checkin_setting.')
+        ) {
+          void queryClient.invalidateQueries({ queryKey: ['checkin-status'] })
+        }
 
         // If updating frontend-display-related config, also refresh status
         if (STATUS_RELATED_KEYS.has(variables.key)) {

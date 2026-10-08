@@ -129,6 +129,12 @@ export function CheckinCalendarCard({
   }, [])
 
   const checkedToday = checkinData?.stats?.checked_in_today === true
+  const regularCheckinEnabled = checkinData?.enabled === true
+  const checkinDescription = regularCheckinEnabled
+    ? t('Check in daily to receive random balance rewards')
+    : t(
+        'Win the amount you stake, or lose it. This still uses today’s check-in.'
+      )
   const todayAward = checkinRecordsMap[todayString]
   const lucky = checkinData?.lucky
   const minLuckyStakeAmount = lucky
@@ -203,7 +209,7 @@ export function CheckinCalendarCard({
           const notify =
             res.data.lucky && !res.data.won ? toast.error : toast.success
           notify(`${resultMessage} ${formatDelta(res.data.quota_awarded)}`)
-          refetch()
+          void refetch()
           setTurnstileModalVisible(false)
           setLuckyDialogVisible(false)
           setPendingStake(undefined)
@@ -331,7 +337,7 @@ export function CheckinCalendarCard({
             key={turnstileWidgetKey}
             siteKey={turnstileSiteKey}
             onVerify={(token) => {
-              doCheckin(token, pendingStake)
+              void doCheckin(token, pendingStake)
             }}
             onExpire={() => {
               setTurnstileWidgetKey((v) => v + 1)
@@ -430,7 +436,9 @@ export function CheckinCalendarCard({
               <div className='min-w-0 flex-1'>
                 <div className='flex flex-wrap items-center gap-1.5 sm:gap-2'>
                   <h3 className='text-base font-semibold tracking-tight sm:text-lg'>
-                    {t('Daily Check-in')}
+                    {regularCheckinEnabled
+                      ? t('Daily Check-in')
+                      : t('Lucky check-in')}
                   </h3>
                   {checkedToday && (
                     <div className='inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 sm:gap-1.5 sm:px-2.5 sm:text-xs dark:text-emerald-400'>
@@ -449,7 +457,7 @@ export function CheckinCalendarCard({
                 <p className='text-muted-foreground mt-1 line-clamp-2 text-xs sm:text-sm'>
                   {checkedToday && todayAward !== undefined
                     ? `${t('Today')} ${formatDelta(todayAward)}`
-                    : t('Check in daily to receive random balance rewards')}
+                    : checkinDescription}
                 </p>
               </div>
             </button>
@@ -457,7 +465,7 @@ export function CheckinCalendarCard({
               {lucky?.enabled && (
                 <Button
                   type='button'
-                  variant='outline'
+                  variant={regularCheckinEnabled ? 'outline' : 'default'}
                   size='sm'
                   className='flex-1 sm:flex-none'
                   disabled={checkinLoading || checkedToday}
@@ -472,14 +480,16 @@ export function CheckinCalendarCard({
                   {t('Try my luck')}
                 </Button>
               )}
-              <Button
-                onClick={() => doCheckin()}
-                disabled={checkinLoading || checkedToday}
-                size='sm'
-                className='flex-1 sm:flex-none'
-              >
-                {checkinButtonLabel}
-              </Button>
+              {regularCheckinEnabled && (
+                <Button
+                  onClick={() => doCheckin()}
+                  disabled={checkinLoading || checkedToday}
+                  size='sm'
+                  className='flex-1 sm:flex-none'
+                >
+                  {checkinButtonLabel}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -619,12 +629,12 @@ export function CheckinCalendarCard({
 
                 <div className='bg-muted/30 text-muted-foreground rounded-lg border p-3 text-xs'>
                   <ul className='list-disc space-y-1 pl-5'>
-                    <li>
-                      {t('Check in daily to receive random balance rewards')}
-                    </li>
-                    <li>
-                      {t('Rewards will be added directly to your balance')}
-                    </li>
+                    <li>{checkinDescription}</li>
+                    {regularCheckinEnabled && (
+                      <li>
+                        {t('Rewards will be added directly to your balance')}
+                      </li>
+                    )}
                     <li>{t('Do not repeat check-in; only once per day')}</li>
                   </ul>
                 </div>

@@ -20,7 +20,7 @@ type CheckinRequest struct {
 func GetCheckinStatus(c *gin.Context) {
 	setting := operation_setting.GetCheckinSetting()
 	luckySetting := operation_setting.GetLuckyCheckinSetting()
-	if !setting.Enabled {
+	if !setting.Enabled && !luckySetting.Enabled {
 		common.ApiErrorMsg(c, "签到功能未启用")
 		return
 	}
@@ -57,12 +57,6 @@ func GetCheckinStatus(c *gin.Context) {
 
 // DoCheckin 执行用户签到
 func DoCheckin(c *gin.Context) {
-	setting := operation_setting.GetCheckinSetting()
-	if !setting.Enabled {
-		common.ApiErrorMsg(c, "签到功能未启用")
-		return
-	}
-
 	userId := c.GetInt("id")
 	var request CheckinRequest
 	if c.Request.ContentLength != 0 {

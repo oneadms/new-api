@@ -1718,6 +1718,7 @@
     "Enable rate limiting": "Enable rate limiting",
     "Enable raw SSE tracing": "Enable raw SSE tracing",
     "Enable recharge draw": "Enable recharge draw",
+    "Enable regular check-in": "Enable regular check-in",
     "Enable Request Passthrough": "Enable Request Passthrough",
     "Enable selected channels": "Enable selected channels",
     "Enable selected models": "Enable selected models",

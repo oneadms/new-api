@@ -1718,6 +1718,7 @@
     "Enable rate limiting": "レート制限を有効にする",
     "Enable raw SSE tracing": "生の SSE トレースを有効化",
     "Enable recharge draw": "チャージ抽選を有効化",
+    "Enable regular check-in": "通常のチェックインを有効化",
     "Enable Request Passthrough": "リクエストパススルーを有効にする",
     "Enable selected channels": "選択したチャネルを有効にする",
     "Enable selected models": "選択したモデルを有効にする",

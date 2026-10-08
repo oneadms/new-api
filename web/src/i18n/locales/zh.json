@@ -1718,6 +1718,7 @@
     "Enable rate limiting": "启用速率限制",
     "Enable raw SSE tracing": "启用原始 SSE 追踪",
     "Enable recharge draw": "启用充值抽奖",
+    "Enable regular check-in": "启用普通签到",
     "Enable Request Passthrough": "启用请求透传",
     "Enable selected channels": "启用选定的渠道",
     "Enable selected models": "启用选定的模型",

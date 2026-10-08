@@ -63,8 +63,12 @@ func HasCheckedInToday(userId int) (bool, error) {
 // SQLite 不支持嵌套事务，使用顺序操作 + 手动回滚
 func UserCheckin(userId int, stakeQuota *int) (*Checkin, error) {
 	setting := operation_setting.GetCheckinSetting()
-	if !setting.Enabled {
+	// 普通签到与运气签到分别校验开关，继续共用每日签到记录。
+	if stakeQuota == nil && !setting.Enabled {
 		return nil, ErrCheckinDisabled
+	}
+	if stakeQuota != nil && !operation_setting.GetLuckyCheckinSetting().Enabled {
+		return nil, ErrLuckyCheckinDisabled
 	}
 
 	// 检查今天是否已签到

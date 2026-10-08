@@ -1718,6 +1718,7 @@
     "Enable rate limiting": "Bật giới hạn tốc độ",
     "Enable raw SSE tracing": "Bật ghi vết SSE thô",
     "Enable recharge draw": "Bật quay thưởng nạp tiền",
+    "Enable regular check-in": "Bật điểm danh thông thường",
     "Enable Request Passthrough": "Bật Truyền qua Yêu cầu",
     "Enable selected channels": "Kích hoạt các kênh đã chọn",
     "Enable selected models": "Kích hoạt các mô hình đã chọn",

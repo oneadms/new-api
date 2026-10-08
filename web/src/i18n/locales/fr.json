@@ -1718,6 +1718,7 @@
     "Enable rate limiting": "Activer la limitation de débit",
     "Enable raw SSE tracing": "Activer la capture SSE brute",
     "Enable recharge draw": "Activer le tirage de recharge",
+    "Enable regular check-in": "Activer le pointage classique",
     "Enable Request Passthrough": "Activer le Passthrough de requêtes",
     "Enable selected channels": "Activer les canaux sélectionnés",
     "Enable selected models": "Activer les modèles sélectionnés",

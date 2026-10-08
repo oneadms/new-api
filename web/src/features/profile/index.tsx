@@ -40,7 +40,8 @@ export function Profile() {
   const { status } = useStatus()
   const permissions = useAuthStore((s) => s.auth.user?.permissions)
 
-  const checkinEnabled = status?.checkin_enabled === true
+  const checkinEnabled =
+    status?.checkin_enabled === true || status?.lucky_checkin_enabled === true
   const turnstileEnabled = !!(
     status?.turnstile_check && status?.turnstile_site_key
   )

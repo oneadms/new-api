@@ -319,7 +319,7 @@ export function CheckinSettingsSection({
             render={({ field }) => (
               <SettingsSwitchItem>
                 <SettingsSwitchContent>
-                  <FormLabel>{t('Enable check-in feature')}</FormLabel>
+                  <FormLabel>{t('Enable regular check-in')}</FormLabel>
                   <FormDescription>
                     {t(
                       'Allow users to check in daily for random balance rewards'
@@ -381,73 +381,67 @@ export function CheckinSettingsSection({
             </div>
           )}
 
-          {enabled && (
-            <>
-              <FormField
-                control={form.control}
-                name='luckyEnabled'
-                render={({ field }) => (
-                  <SettingsSwitchItem>
-                    <SettingsSwitchContent>
-                      <FormLabel>{t('Enable lucky check-in')}</FormLabel>
-                      <FormDescription>
-                        {t(
-                          'Allow users to risk quota for a chance to win the same amount'
-                        )}
-                      </FormDescription>
-                    </SettingsSwitchContent>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        disabled={updateOption.isPending || isSubmitting}
-                      />
-                    </FormControl>
-                  </SettingsSwitchItem>
-                )}
-              />
+          <FormField
+            control={form.control}
+            name='luckyEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Enable lucky check-in')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Allow users to risk quota for a chance to win the same amount'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={updateOption.isPending || isSubmitting}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
 
-              {luckyEnabled && (
-                <div className='grid gap-6 sm:grid-cols-2'>
-                  {luckyNumberFields.map(
-                    ({
-                      name,
-                      label,
-                      min,
-                      step,
-                      showCurrencyLabel,
-                      ...fieldProps
-                    }) => (
-                      <FormField
-                        key={name}
-                        control={form.control}
-                        name={name}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              {t(label)}
-                              {showCurrencyLabel
-                                ? ` (${currencyAmountLabel})`
-                                : ''}
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                type='number'
-                                min={min}
-                                step={step}
-                                {...fieldProps}
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    )
-                  )}
-                </div>
+          {luckyEnabled && (
+            <div className='grid gap-6 sm:grid-cols-2'>
+              {luckyNumberFields.map(
+                ({
+                  name,
+                  label,
+                  min,
+                  step,
+                  showCurrencyLabel,
+                  ...fieldProps
+                }) => (
+                  <FormField
+                    key={name}
+                    control={form.control}
+                    name={name}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t(label)}
+                          {showCurrencyLabel ? ` (${currencyAmountLabel})` : ''}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min={min}
+                            step={step}
+                            {...fieldProps}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )
               )}
-            </>
+            </div>
           )}
         </SettingsForm>
       </Form>
