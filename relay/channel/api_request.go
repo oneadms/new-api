@@ -566,6 +566,12 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
+	if info.IsQualityDetection {
+		// Detection is owned by a leased background task. Cancellation must stop
+		// the actual upstream request, and its body must never be replayed.
+		req = req.WithContext(c.Request.Context())
+		req.GetBody = nil
+	}
 	var client *http.Client
 	var err error
 	if info.ChannelSetting.Proxy != "" {
@@ -618,9 +624,18 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 		client = &clientCopy
 	}
+	if info.IsQualityDetection {
+		clientCopy := *client
+		clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		client = &clientCopy
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.LogError(c, "do request failed: "+err.Error())
+		if !info.IsQualityDetection {
+			logger.LogError(c, "do request failed: "+err.Error())
+		}
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
 	info.SetUpstreamHeadersTime()

@@ -16,11 +16,12 @@ const (
 	SystemTaskStatusSucceeded SystemTaskStatus = "succeeded"
 	SystemTaskStatusFailed    SystemTaskStatus = "failed"
 
-	SystemTaskTypeLogCleanup     = "log_cleanup"
-	SystemTaskTypeChannelTest    = "channel_test"
-	SystemTaskTypeModelUpdate    = "model_update"
-	SystemTaskTypeMidjourneyPoll = "midjourney_poll"
-	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
+	SystemTaskTypeLogCleanup       = "log_cleanup"
+	SystemTaskTypeChannelTest      = "channel_test"
+	SystemTaskTypeModelUpdate      = "model_update"
+	SystemTaskTypeMidjourneyPoll   = "midjourney_poll"
+	SystemTaskTypeAsyncTaskPoll    = "async_task_poll"
+	SystemTaskTypeQualityDetection = "quality_detection"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
@@ -90,6 +91,11 @@ func GenerateSystemTaskID() (string, error) {
 }
 
 func CreateSystemTask(taskType string, payload any, state any) (*SystemTask, error) {
+	return CreateSystemTaskTx(DB, taskType, payload, state)
+}
+
+// CreateSystemTaskTx keeps a task and its domain records in one transaction.
+func CreateSystemTaskTx(tx *gorm.DB, taskType string, payload any, state any) (*SystemTask, error) {
 	taskID, err := GenerateSystemTaskID()
 	if err != nil {
 		return nil, err
@@ -112,7 +118,7 @@ func CreateSystemTask(taskType string, payload any, state any) (*SystemTask, err
 		State:     stateText,
 	}
 
-	if err := DB.Create(task).Error; err != nil {
+	if err := tx.Create(task).Error; err != nil {
 		return nil, err
 	}
 	return task, nil
@@ -346,15 +352,29 @@ func RenewSystemTaskLock(taskID string, lockedBy string, lockUntil int64) error 
 }
 
 func MarkSystemTaskLeaseExpired(taskID string) error {
-	result := DB.Model(&SystemTask{}).
-		Where("task_id = ? AND status = ?", taskID, SystemTaskStatusRunning).
-		Updates(map[string]any{
-			"status":     SystemTaskStatusFailed,
-			"active_key": nil,
-			"error":      "task lease expired",
-			"updated_at": common.GetTimestamp(),
-		})
-	return result.Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var task SystemTask
+		if err := tx.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		result := tx.Model(&SystemTask{}).
+			Where("task_id = ? AND status = ?", taskID, SystemTaskStatusRunning).
+			Where("NOT EXISTS (SELECT 1 FROM system_task_locks WHERE system_task_locks.task_id = system_tasks.task_id AND system_task_locks.locked_by = system_tasks.locked_by AND system_task_locks.locked_until >= ?)", common.GetTimestamp()).
+			Updates(map[string]any{
+				"status": SystemTaskStatusFailed, "active_key": nil,
+				"error": "task lease expired", "updated_at": common.GetTimestamp(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 && task.Type == SystemTaskTypeQualityDetection {
+			return interruptQualityTaskTx(tx, taskID)
+		}
+		return nil
+	})
 }
 
 func ExpireStaleSystemTaskLocks(now int64) error {
@@ -370,6 +390,19 @@ func ExpireStaleSystemTaskLocks(now int64) error {
 			Delete(&SystemTaskLock{})
 		if result.Error != nil {
 			return result.Error
+		}
+	}
+	// A removed/replaced lease must also interrupt its quality children. A
+	// crashed owner is never permitted to replay queued or running targets.
+	var abandoned []SystemTask
+	if err := DB.Where("type = ? AND status = ?", SystemTaskTypeQualityDetection, SystemTaskStatusRunning).
+		Where("NOT EXISTS (SELECT 1 FROM system_task_locks WHERE system_task_locks.task_id = system_tasks.task_id AND system_task_locks.locked_by = system_tasks.locked_by AND system_task_locks.locked_until >= ?)", now).
+		Find(&abandoned).Error; err != nil {
+		return err
+	}
+	for _, task := range abandoned {
+		if err := MarkSystemTaskLeaseExpired(task.TaskID); err != nil {
+			return err
 		}
 	}
 	return nil

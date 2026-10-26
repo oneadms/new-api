@@ -551,6 +551,12 @@ export const STATIC_I18N_KEYS = [
   'The model that was requested',
   'The upstream channel that served the requests',
 
+  // Quality detection form validation (messages translated at field render time)
+  'Invalid configuration value',
+  'Each group can only be published once',
+  'Prompt must be at most 16000 UTF-8 bytes',
+  'Choose a model supported by this channel',
+
   // Misc
   'Cancel',
   'Status',

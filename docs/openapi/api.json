@@ -176,29 +176,30 @@
     },
     "/api/uptime/status": {
       "get": {
-        "summary": "获取Uptime Kuma状态",
-        "deprecated": false,
-        "description": "🔓 无需鉴权",
-        "tags": [
-          "系统"
-        ],
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "headers": {}
-          }
-        },
-        "security": [
-          {
-            "Combination343": []
-          },
-          {
-            "Combination1243": []
-          }
-        ]
+        "summary": "旧 Uptime Kuma 接口（已停用）",
+        "deprecated": true,
+        "description": "始终返回 410，不再请求 Kuma。使用 /api/status-page；旧配置保留用于回滚。",
+        "tags": ["系统"],
+        "responses": {"410": {"description": "集成已停用"}},
+        "security": []
       }
     },
+    "/api/status-page": {"$ref": "./quality-detection.json#/paths/~1api~1status-page"},
+    "/api/status-page/groups/{public_id}": {"$ref": "./quality-detection.json#/paths/~1api~1status-page~1groups~1{public_id}"},
+    "/api/status-page/artifacts/{public_id}/thumbnail": {"$ref": "./quality-detection.json#/paths/~1api~1status-page~1artifacts~1{public_id}~1thumbnail"},
+    "/api/quality-detection/settings": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1settings"},
+    "/api/quality-detection/channels": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1channels"},
+    "/api/quality-detection/channels/{id}": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1channels~1{id}"},
+    "/api/quality-detection/prompts": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1prompts"},
+    "/api/quality-detection/prompts/{id}/archive": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1prompts~1{id}~1archive"},
+    "/api/quality-detection/batches": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1batches"},
+    "/api/quality-detection/batches/{id}": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1batches~1{id}"},
+    "/api/quality-detection/batches/{id}/cancel": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1batches~1{id}~1cancel"},
+    "/api/quality-detection/runs/{id}": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1runs~1{id}"},
+    "/api/quality-detection/runs/{id}/output": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1runs~1{id}~1output"},
+    "/api/quality-detection/runs/{id}/thumbnail": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1runs~1{id}~1thumbnail"},
+    "/api/quality-detection/runs/{id}/review": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1runs~1{id}~1review"},
+    "/api/quality-detection/runs/{id}/baseline": {"$ref": "./quality-detection.json#/paths/~1api~1quality-detection~1runs~1{id}~1baseline"},
     "/api/notice": {
       "get": {
         "summary": "获取公告",

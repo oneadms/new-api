@@ -16,29 +16,63 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
-export interface UptimeHeartbeat {
-  status: number
-  time?: string
+export type StatusState =
+  | 'passed'
+  | 'review'
+  | 'partial'
+  | 'failed'
+  | 'unknown'
+  | 'stale'
+  | 'paused'
+export type StatusSample = {
+  public_id: string
+  channel_name: string
+  model: string
+  status: string
+  quality_result: string
+  completed_at: number
+  stale_after: number
+  first_text_ms: number | null
+  generation_ms: number | null
+  thumbnail_url: string | null
+  render_status: string
 }
-
-export interface UptimeMonitor {
+export type StatusGroup = {
+  public_id: string
   name: string
-  uptime: number
-  uptime24?: number
-  uptime30?: number
-  status: number
-  group?: string
-  heartbeats?: UptimeHeartbeat[]
+  channel_count: number
+  configured_count: number
+  fresh_count: number
+  state: StatusState
+  success_rate: number | null
+  avg_latency_ms: number | null
+  tokens_per_second: number | null
+  series: { ts: number; value: number | null }[]
+  latest_sample: StatusSample | null
 }
-
-export interface UptimeGroupResult {
-  categoryName: string
-  monitors: UptimeMonitor[]
+export type StatusPageData = {
+  enabled: boolean
+  paused: boolean
+  generated_at: number
+  metrics_data_until: number
+  last_probe_completed_at: number
+  window_start: number
+  window_end: number
+  bucket_seconds: number
+  total: number
+  page: number
+  page_size: number
+  models: string[]
+  summary: { groups: number; attention: number; channels: number }
+  groups: StatusGroup[]
 }
-
-export interface UptimeStatusResponse {
-  success: boolean
-  message?: string
-  data: UptimeGroupResult[]
+export type StatusFilters = {
+  hours: number
+  model: string
+  group: string
+  state: string
+  page: number
+  page_size: number
+  sort: string
 }
+export type StatusGroupDetail = { group: StatusGroup; samples: StatusSample[] }

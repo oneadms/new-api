@@ -90,9 +90,13 @@ export interface ApiResponse<T = unknown> {
 // ============================================================================
 
 export interface SystemStatus {
+  status_page_enabled?: boolean
+  quality_detection_enabled?: boolean
   success?: boolean
   message?: string
   data?: {
+    status_page_enabled?: boolean
+    quality_detection_enabled?: boolean
     version?: string
     system_name?: string
     logo?: string

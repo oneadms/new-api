@@ -1,0 +1,118 @@
+{
+  "openapi": "3.0.1",
+  "info": {"title": "new-api 原生状态页与降智检测", "version": "1.0.0", "description": "QuantumNous / new-api。运行与公开发布默认关闭。生成按渠道去重，公共查询仅读取已保存结果，不调用模型。除图片/文本产物外使用 {success,message,data} 响应。字段细节见 ../design/quality-detection-api.md。"},
+  "security": [{"AccessToken1": []}],
+  "paths": {
+    "/api/status-page": {
+      "get": {
+        "summary": "读取已发布分组状态", "description": "公开设置和 HeaderNavModules.status 均生效；模块要求登录时返回 401。统计只含数据库闭合时间桶。", "security": [{}, {"AccessToken1": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/Hours"}, {"$ref": "#/components/parameters/Model"},
+          {"$ref": "#/components/parameters/Page"}, {"$ref": "#/components/parameters/PageSize"},
+          {"name": "group", "in": "query", "schema": {"type": "string", "maxLength": 128}, "description": "按公开别名搜索，不接受私有组标识"},
+          {"name": "state", "in": "query", "schema": {"type": "string", "enum": ["", "passed", "review", "partial", "failed", "unknown", "stale", "paused"]}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["name", "state"], "default": "name"}}
+        ],
+        "responses": {"200": {"description": "分组列表与未分页摘要", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"$ref": "#/components/schemas/StatusPage"}}}]}}}}, "400": {"$ref": "#/components/responses/Invalid"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "403": {"$ref": "#/components/responses/Forbidden"}}
+      }
+    },
+    "/api/status-page/groups/{public_id}": {
+      "parameters": [{"$ref": "#/components/parameters/PublicID"}],
+      "get": {"summary": "读取公开分组样本", "security": [{}, {"AccessToken1": []}], "parameters": [{"$ref": "#/components/parameters/Hours"}, {"$ref": "#/components/parameters/Model"}], "responses": {"200": {"description": "data 为 {group:StatusGroup,samples:StatusSample[]}", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"type": "object", "properties": {"group": {"$ref": "#/components/schemas/StatusGroup"}, "samples": {"type": "array", "items": {"$ref": "#/components/schemas/StatusSample"}}}}}}]}}}}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/status-page/artifacts/{public_id}/thumbnail": {
+      "parameters": [{"$ref": "#/components/parameters/PublicID"}],
+      "get": {"summary": "读取静态 PNG（每次重新鉴权）", "description": "运行的 public_id；同一渠道在各分组共享此 URL。撤回公开权限后返回 404；Cache-Control: no-store。永不返回 HTML。", "security": [{}, {"AccessToken1": []}], "responses": {"200": {"$ref": "#/components/responses/PNG"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/quality-detection/settings": {
+      "get": {"security": [{"AccessToken1": []}], "summary": "管理员读取检测与发布设置", "responses": {"200": {"description": "data 为 QualitySettings", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"$ref": "#/components/schemas/QualitySettings"}}}]}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}, "403": {"$ref": "#/components/responses/Forbidden"}}},
+      "put": {"security": [{"AccessToken1": []}], "summary": "管理员更新设置（乐观版本）", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/QualitySettings"}}}}, "responses": {"200": {"$ref": "#/components/responses/Success"}, "400": {"$ref": "#/components/responses/Invalid"}, "409": {"$ref": "#/components/responses/Conflict"}}}
+    },
+    "/api/quality-detection/channels": {
+      "get": {"security": [{"AccessToken1": []}], "summary": "管理员读取渠道检测能力与配置", "responses": {"200": {"description": "data 为 {id,name,groups,models,status,supported,unsupported_reason,profile:QualityProfile}[]；不返回密钥", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}, "403": {"$ref": "#/components/responses/Forbidden"}}}
+    },
+    "/api/quality-detection/channels/{id}": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "put": {"security": [{"AccessToken1": []}], "summary": "管理员保存单个渠道唯一检测配置", "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/QualityProfile"}}}}, "responses": {"200": {"$ref": "#/components/responses/Success"}, "400": {"$ref": "#/components/responses/Invalid"}, "409": {"$ref": "#/components/responses/Conflict"}}}
+    },
+    "/api/quality-detection/prompts": {
+      "get": {"security": [{"AccessToken1": []}], "summary": "管理员读取不可变提示词版本", "responses": {"200": {"description": "data 为 QualityPrompt[]", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/QualityPrompt"}}}}]}}}}}},
+      "post": {"security": [{"AccessToken1": []}], "summary": "创建提示词或新版本", "description": "同 key 创建不可变新版本。正文上限 16000 UTF-8 字节。自定义提示词不会获得受信任自动评分权限。", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "content", "rule"], "properties": {"key": {"type": "string", "maxLength": 64}, "name": {"type": "string", "maxLength": 128}, "content": {"type": "string", "maxLength": 16000}, "rule": {"type": "string", "enum": ["visual", "interactive"]}}}}}}, "responses": {"201": {"$ref": "#/components/responses/Success"}, "400": {"$ref": "#/components/responses/Invalid"}}}
+    },
+    "/api/quality-detection/prompts/{id}/archive": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "post": {"security": [{"AccessToken1": []}], "summary": "归档或恢复提示词版本", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["archived"], "properties": {"archived": {"type": "boolean"}}}}}}, "responses": {"200": {"$ref": "#/components/responses/Success"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/quality-detection/batches": {
+      "get": {"security": [{"AccessToken1": []}], "summary": "管理员分页读取批次", "parameters": [{"$ref": "#/components/parameters/Page"}, {"$ref": "#/components/parameters/PageSize"}], "responses": {"200": {"description": "data 为 {items:QualityBatch[],total,page,page_size}", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}},
+      "post": {"security": [{"AccessToken1": []}], "summary": "管理员创建去重检测批次", "description": "目标取渠道与分组选中集合的并集。空选择为全部已启用渠道。一次渠道最多发送一次请求，不因网络错误自动重放。UTC 日预算在执行前预留。", "parameters": [{"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 128}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"channel_ids": {"type": "array", "maxItems": 5000, "items": {"type": "integer", "minimum": 1}}, "group_names": {"type": "array", "maxItems": 500, "items": {"type": "string", "maxLength": 128}}}}}}}, "responses": {"202": {"description": "已持久化，或同幂等键与参数的已有批次", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"$ref": "#/components/schemas/QualityBatch"}}}]}}}}, "400": {"$ref": "#/components/responses/Invalid"}, "409": {"$ref": "#/components/responses/Conflict"}}}
+    },
+    "/api/quality-detection/batches/{id}": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "get": {"security": [{"AccessToken1": []}], "summary": "读取批次进度和渠道结果", "responses": {"200": {"description": "data 为 {batch:QualityBatch,runs:QualityRun[]}", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/quality-detection/batches/{id}/cancel": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "post": {"security": [{"AccessToken1": []}], "summary": "管理员持久化取消请求（幂等）", "description": "已发生的上游费用不可撤销；页面关闭本身不会取消。", "responses": {"200": {"$ref": "#/components/responses/Success"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/quality-detection/runs/{id}": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "get": {"security": [{"AccessToken1": []}], "summary": "管理员读取检测运行元数据", "responses": {"200": {"description": "data 为 QualityRun，不含存储键或原始上游错误", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"$ref": "#/components/schemas/QualityRun"}}}]}}}}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/quality-detection/runs/{id}/output": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "get": {"security": [{"AccessToken1": []}], "summary": "管理员下载模型文本或提取 HTML", "description": "始终 text/plain、附件、nosniff、sandbox、no-store，禁止管理后台同源执行。", "parameters": [{"name": "kind", "in": "query", "schema": {"type": "string", "enum": ["raw", "html"], "default": "raw"}}], "responses": {"200": {"description": "最大 1 MiB 的 UTF-8 纯文本附件", "content": {"text/plain": {"schema": {"type": "string"}}}}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/quality-detection/runs/{id}/thumbnail": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "get": {"security": [{"AccessToken1": []}], "summary": "管理员读取静态缩略图", "responses": {"200": {"$ref": "#/components/responses/PNG"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+    },
+    "/api/quality-detection/runs/{id}/review": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "post": {"security": [{"AccessToken1": []}], "summary": "管理员人工复核（审计记录）", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["result", "note"], "properties": {"result": {"type": "string", "enum": ["accepted", "rejected"]}, "note": {"type": "string", "maxLength": 4000}}}}}}, "responses": {"200": {"$ref": "#/components/responses/Success"}, "409": {"$ref": "#/components/responses/Conflict"}}}
+    },
+    "/api/quality-detection/runs/{id}/baseline": {
+      "parameters": [{"$ref": "#/components/parameters/ID"}],
+      "post": {"security": [{"AccessToken1": []}], "summary": "将已通过人工复核的 HTML 设为渠道基线", "responses": {"200": {"$ref": "#/components/responses/Success"}, "409": {"$ref": "#/components/responses/Conflict"}}}
+    }
+  },
+  "components": {
+    "securitySchemes": {"AccessToken1": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT or PAT", "description": "所有 quality-detection 接口要求管理员及以上"}},
+    "parameters": {
+      "Hours": {"name": "hours", "in": "query", "schema": {"type": "integer", "enum": [1, 6, 24, 168], "default": 24}},
+      "Model": {"name": "model", "in": "query", "schema": {"type": "string", "maxLength": 256}},
+      "Page": {"name": "page", "in": "query", "schema": {"type": "integer", "minimum": 1, "default": 1}},
+      "PageSize": {"name": "page_size", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}},
+      "ID": {"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}},
+      "PublicID": {"name": "public_id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[a-f0-9]{32}$"}}
+    },
+    "responses": {
+      "Success": {"description": "操作成功，data 为结果对象或 null", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}},
+      "Invalid": {"description": "参数无效或超限"}, "Unauthorized": {"description": "需要有效登录"}, "Forbidden": {"description": "管理员权限不足或导航模块已关闭"},
+      "NotFound": {"description": "资源不存在、未公开或已过期"}, "Conflict": {"description": "版本冲突、幂等冲突、活动批次冲突或不满足操作前提"},
+      "PNG": {"description": "静态 PNG；Cache-Control: no-store", "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}}}
+    },
+    "schemas": {
+      "Envelope": {"type": "object", "required": ["success"], "properties": {"success": {"type": "boolean"}, "message": {"type": "string"}, "data": {"nullable": true}}},
+      "QualitySettings": {
+        "type": "object", "required": ["version", "enabled", "interval_minutes", "concurrency", "timeout_seconds", "max_output_tokens", "daily_call_limit", "daily_token_limit", "retention_days", "status_page_enabled", "public_groups"],
+        "properties": {
+          "version": {"type": "integer", "format": "int64", "minimum": 1}, "enabled": {"type": "boolean", "default": false},
+          "interval_minutes": {"type": "integer", "minimum": 5, "maximum": 10080, "default": 60}, "concurrency": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3},
+          "timeout_seconds": {"type": "integer", "minimum": 60, "maximum": 1800, "default": 600}, "max_output_tokens": {"type": "integer", "minimum": 1, "maximum": 1073741823, "default": 8192},
+          "daily_call_limit": {"type": "integer", "format": "int64", "minimum": 1, "maximum": 1000000, "default": 500}, "daily_token_limit": {"type": "integer", "format": "int64", "minimum": 1, "maximum": 1000000000000, "default": 5000000},
+          "retention_days": {"type": "integer", "minimum": 1, "maximum": 90, "default": 14}, "status_page_enabled": {"type": "boolean", "default": false},
+          "public_groups": {"type": "array", "maxItems": 500, "items": {"type": "object", "required": ["name", "alias"], "properties": {"name": {"type": "string"}, "alias": {"type": "string"}}}},
+          "renderer_available": {"type": "boolean", "readOnly": true, "description": "仅表示已配置，非实时健康探测"}
+        }
+      },
+      "QualityProfile": {"type": "object", "properties": {"channel_id": {"type": "integer"}, "enabled": {"type": "boolean"}, "model": {"type": "string"}, "protocol": {"type": "string", "enum": ["chat", "responses", "claude"]}, "prompt_version_id": {"type": "integer", "format": "int64"}, "reasoning_effort": {"type": "string"}, "timeout_seconds": {"type": "integer", "description": "0 继承全局；否则 60–1800"}, "public_alias": {"type": "string"}, "publish_sample": {"type": "boolean"}, "version": {"type": "integer", "format": "int64", "minimum": 0}}},
+      "QualityPrompt": {"type": "object", "properties": {"id": {"type": "integer", "format": "int64"}, "key": {"type": "string"}, "version": {"type": "integer"}, "name": {"type": "string"}, "content": {"type": "string"}, "rule": {"type": "string", "enum": ["visual", "interactive"]}, "archived": {"type": "boolean"}, "created_at": {"type": "integer", "format": "int64"}}},
+      "QualityBatch": {"type": "object", "properties": {"id": {"type": "integer", "format": "int64"}, "task_id": {"type": "string"}, "trigger": {"type": "string", "enum": ["manual", "scheduled"]}, "status": {"type": "string"}, "total": {"type": "integer"}, "completed": {"type": "integer"}, "failed": {"type": "integer"}, "cancel_requested": {"type": "boolean"}, "created_at": {"type": "integer", "format": "int64"}, "completed_at": {"type": "integer", "format": "int64"}, "summary": {"type": "string"}}},
+      "QualityRun": {"type": "object", "properties": {"id": {"type": "integer", "format": "int64"}, "public_id": {"type": "string"}, "batch_id": {"type": "integer", "format": "int64"}, "channel_id": {"type": "integer"}, "channel_name": {"type": "string"}, "model": {"type": "string"}, "mapped_model": {"type": "string"}, "prompt_version_id": {"type": "integer", "format": "int64"}, "prompt_name": {"type": "string"}, "status": {"type": "string", "enum": ["queued", "running", "completed", "failed", "cancelled", "interrupted", "skipped"]}, "quality_result": {"type": "string", "enum": ["not_evaluated", "rules_passed", "needs_review", "suspected_degradation"]}, "created_at": {"type": "integer", "format": "int64"}, "started_at": {"type": "integer", "format": "int64"}, "completed_at": {"type": "integer", "format": "int64"}, "first_text_ms": {"type": "integer", "nullable": true}, "generation_ms": {"type": "integer", "nullable": true}, "input_tokens": {"type": "integer", "nullable": true}, "output_tokens": {"type": "integer", "nullable": true}, "error_code": {"type": "string"}, "has_output": {"type": "boolean"}, "has_html": {"type": "boolean"}, "has_thumbnail": {"type": "boolean"}, "render_status": {"type": "string"}, "review_status": {"type": "string"}, "review_note": {"type": "string"}, "baseline_id": {"type": "integer", "format": "int64"}}},
+      "StatusSample": {"type": "object", "properties": {"public_id": {"type": "string"}, "channel_name": {"type": "string", "description": "仅公开别名"}, "model": {"type": "string"}, "status": {"type": "string"}, "quality_result": {"type": "string"}, "completed_at": {"type": "integer", "format": "int64"}, "stale_after": {"type": "integer", "format": "int64"}, "first_text_ms": {"type": "integer", "nullable": true}, "generation_ms": {"type": "integer", "nullable": true}, "thumbnail_url": {"type": "string", "nullable": true}, "render_status": {"type": "string"}}},
+      "StatusGroup": {"type": "object", "properties": {"public_id": {"type": "string"}, "name": {"type": "string", "description": "仅公开别名"}, "channel_count": {"type": "integer"}, "configured_count": {"type": "integer"}, "fresh_count": {"type": "integer"}, "state": {"type": "string", "enum": ["passed", "review", "partial", "failed", "unknown", "stale", "paused"]}, "success_rate": {"type": "number", "nullable": true}, "avg_latency_ms": {"type": "number", "nullable": true}, "tokens_per_second": {"type": "number", "nullable": true}, "series": {"type": "array", "items": {"type": "object", "properties": {"ts": {"type": "integer", "format": "int64"}, "value": {"type": "number", "nullable": true}}}}, "latest_sample": {"allOf": [{"$ref": "#/components/schemas/StatusSample"}], "nullable": true}}},
+      "StatusPage": {"type": "object", "properties": {"enabled": {"type": "boolean"}, "paused": {"type": "boolean"}, "generated_at": {"type": "integer", "format": "int64"}, "metrics_data_until": {"type": "integer", "format": "int64"}, "last_probe_completed_at": {"type": "integer", "format": "int64"}, "window_start": {"type": "integer", "format": "int64"}, "window_end": {"type": "integer", "format": "int64"}, "bucket_seconds": {"type": "integer"}, "total": {"type": "integer"}, "page": {"type": "integer"}, "page_size": {"type": "integer"}, "models": {"type": "array", "items": {"type": "string"}}, "summary": {"type": "object", "properties": {"groups": {"type": "integer"}, "attention": {"type": "integer"}, "channels": {"type": "integer"}}}, "groups": {"type": "array", "items": {"$ref": "#/components/schemas/StatusGroup"}}}}
+    }
+  }
+}

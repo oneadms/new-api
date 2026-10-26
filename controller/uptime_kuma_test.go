@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -52,8 +53,10 @@ func TestFetchGroupDataLimitsHeartbeatsToMostRecent(t *testing.T) {
 	assert.Equal(t, float64(0.99), *monitor.Uptime30)
 }
 
-func TestGetUptimeKumaStatusReturnsEmptyGroupWhenUpstreamFails(t *testing.T) {
+func TestGetUptimeKumaStatusReturnsGoneWithoutCallingConfiguredUpstream(t *testing.T) {
+	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(upstream.Close)
@@ -69,13 +72,14 @@ func TestGetUptimeKumaStatusReturnsEmptyGroupWhenUpstreamFails(t *testing.T) {
 
 	GetUptimeKumaStatus(context)
 
-	assert.Equal(t, http.StatusOK, response.Code)
+	assert.Equal(t, http.StatusGone, response.Code)
+	assert.Zero(t, calls.Load())
+	assert.Equal(t, "no-store", response.Header().Get("Cache-Control"))
 	var payload struct {
-		Success bool                `json:"success"`
-		Data    []UptimeGroupResult `json:"data"`
+		Success bool   `json:"success"`
+		Message string `json:"message"`
 	}
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &payload))
-	assert.True(t, payload.Success)
-	require.Len(t, payload.Data, 1)
-	assert.Empty(t, payload.Data[0].Monitors)
+	assert.False(t, payload.Success)
+	assert.Contains(t, payload.Message, "/api/status-page")
 }

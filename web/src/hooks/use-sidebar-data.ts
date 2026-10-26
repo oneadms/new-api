@@ -131,6 +131,12 @@ export function useSidebarData(): SidebarData {
             icon: Radio,
           },
           {
+            title: t('Quality detection'),
+            url: '/quality-detection',
+            icon: FlaskConical,
+            requiredRole: ROLE.ADMIN,
+          },
+          {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,

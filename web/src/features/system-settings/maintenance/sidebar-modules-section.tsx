@@ -134,6 +134,12 @@ export function SidebarModulesSection({
         title: t('Channels'),
         description: t('Configure upstream providers and routing.'),
       },
+      quality_detection: {
+        title: t('Quality detection'),
+        description: t(
+          'Inspect representative channel samples and publish group status.'
+        ),
+      },
       models: {
         title: t('Models'),
         description: t('Manage catalog visibility and pricing.'),

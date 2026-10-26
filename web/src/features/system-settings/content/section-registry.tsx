@@ -84,14 +84,9 @@ const CONTENT_SECTIONS = [
     ),
   },
   {
-    id: 'uptime-kuma',
-    titleKey: 'Uptime Kuma',
-    build: (settings: ContentSettings) => (
-      <UptimeKumaSection
-        enabled={settings['console_setting.uptime_kuma_enabled']}
-        data={settings['console_setting.uptime_kuma_groups']}
-      />
-    ),
+    id: 'status-page',
+    titleKey: 'Service Status',
+    build: () => <UptimeKumaSection />,
   },
   {
     id: 'chat',

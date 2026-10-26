@@ -16,11 +16,52 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { api } from '@/lib/api'
+import { queryOptions } from '@tanstack/react-query'
 
-import type { UptimeStatusResponse } from './types'
+import { qualityRequest } from '@/features/quality-detection/lib/request'
 
-export async function getUptimeStatus() {
-  const res = await api.get<UptimeStatusResponse>('/api/uptime/status')
-  return res.data
+import type { StatusFilters, StatusGroupDetail, StatusPageData } from './types'
+
+export const defaultStatusFilters: StatusFilters = {
+  hours: 24,
+  model: '',
+  group: '',
+  state: '',
+  page: 1,
+  page_size: 20,
+  sort: 'name',
+}
+
+export function statusPageOptions(
+  filters: StatusFilters = defaultStatusFilters
+) {
+  return queryOptions({
+    queryKey: ['status-page', filters],
+    queryFn: ({ signal }) =>
+      qualityRequest<StatusPageData>({
+        url: '/api/status-page',
+        params: filters,
+        signal,
+      }),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+    gcTime: 0,
+  })
+}
+
+export function statusGroupOptions(id: string, hours: number, model: string) {
+  return queryOptions({
+    queryKey: ['status-page', 'group', id, hours, model],
+    queryFn: ({ signal }) =>
+      qualityRequest<StatusGroupDetail>({
+        url: `/api/status-page/groups/${encodeURIComponent(id)}`,
+        params: { hours, model },
+        signal,
+      }),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+    gcTime: 0,
+  })
 }

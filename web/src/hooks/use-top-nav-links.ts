@@ -79,7 +79,7 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
   }
 
-  if (modules?.status !== false && status?.uptime_kuma_enabled !== false) {
+  if (modules?.status !== false && status?.status_page_enabled === true) {
     links.push({ title: t('Status'), href: '/status' })
   }
 

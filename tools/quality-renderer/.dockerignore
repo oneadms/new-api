@@ -1,0 +1,11 @@
+*
+!package.json
+!package-lock.json
+!src/
+!src/**
+!tests/
+!tests/**
+!integration/
+!integration/**
+!THIRD_PARTY_NOTICES.md
+!LICENSE.apache-2.0
