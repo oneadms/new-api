@@ -21,7 +21,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 
 import { getSettings, saveSettings } from '../api'
@@ -30,6 +29,7 @@ import { settingsSchema, type SettingsValues } from '../lib/schemas'
 import type { QualityChannel, QualitySettings } from '../types'
 import { QualityField, QualityToggle } from './QualityField'
 import { QueryFeedback } from './QueryFeedback'
+import { RendererSetupNotice } from './RendererSetupNotice'
 
 function SettingsForm(props: {
   settings: QualitySettings
@@ -52,15 +52,7 @@ function SettingsForm(props: {
       onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
       className='space-y-6'
     >
-      <Alert>
-        <AlertDescription>
-          {props.settings.renderer_available
-            ? t('Renderer available')
-            : t(
-                'Renderer unavailable. Generation is saved without a thumbnail.'
-              )}
-        </AlertDescription>
-      </Alert>
+      <RendererSetupNotice configured={props.settings.renderer_available} />
       <div className='grid gap-4 md:grid-cols-2'>
         <QualityToggle
           form={form}

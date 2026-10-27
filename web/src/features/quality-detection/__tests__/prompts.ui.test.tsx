@@ -35,6 +35,35 @@ afterEach(() => {
 })
 
 describe('immutable prompts', () => {
+  it('offers copying rather than a forbidden new builtin version and submits no reserved key', async () => {
+    const requests: InternalAxiosRequestConfig[] = []
+    api.defaults.adapter = async (config) => {
+      requests.push(config)
+      return {
+        status: 200,
+        statusText: 'OK',
+        config,
+        headers: {},
+        data: { success: true, data: { ...prompt, id: 2 } },
+      }
+    }
+    const user = userEvent.setup()
+    renderQuality(
+      <PromptsPanel prompts={[{ ...prompt, key: 'builtin-visual' }]} />
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Create version' })
+    ).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Copy prompt' }))
+    const dialog = screen.getByRole('dialog', { name: 'Copy prompt' })
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Create version' })
+    )
+    await waitFor(() => expect(requests).toHaveLength(1))
+    expect(JSON.parse(requests[0].data)).not.toHaveProperty('key')
+    expect(JSON.parse(requests[0].data).content).toBe(prompt.content)
+  })
+
   it('creates a new version with the existing key without editing historical content', async () => {
     const requests: InternalAxiosRequestConfig[] = []
     api.defaults.adapter = async (config) => {

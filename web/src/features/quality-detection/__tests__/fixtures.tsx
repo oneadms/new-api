@@ -36,6 +36,7 @@ export function renderQuality(children: ReactNode) {
     fallbackLng: 'en',
     keySeparator: false,
     resources: { en: { translation: {} } },
+    interpolation: { escapeValue: false },
     initAsync: false,
   })
   const client = new QueryClient({

@@ -76,6 +76,28 @@ afterEach(() => {
 })
 
 describe('native status page', () => {
+  it('keeps pagination in natural page flow and lets its controls wrap on narrow screens', async () => {
+    api.defaults.adapter = async (config) => ({
+      status: 200,
+      statusText: 'OK',
+      config,
+      headers: {},
+      data: { success: true, data },
+    })
+    renderQuality(<StatusContent />)
+    const pagination = await screen.findByRole('navigation', {
+      name: 'Pagination',
+    })
+    const main = screen.getByRole('main')
+    expect(main).toHaveClass('min-h-svh', 'min-w-0')
+    expect(main).not.toHaveClass('overflow-hidden', 'h-svh')
+    expect(main).toContainElement(pagination)
+    expect(pagination).toHaveClass('flex-wrap')
+    expect(
+      within(pagination).getByRole('button', { name: 'Next' })
+    ).toBeDisabled()
+  })
+
   it('reads server summaries and saved times; changing filters and refreshing never posts a model task', async () => {
     const requests: InternalAxiosRequestConfig[] = []
     api.defaults.adapter = async (config) => {
@@ -102,14 +124,12 @@ describe('native status page', () => {
     expect(
       document.querySelector('time[datetime="1970-01-01T00:05:00.000Z"]')
     ).toBeInTheDocument()
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Model' }),
-      'model-b'
-    )
+    await user.click(screen.getByRole('combobox', { name: 'Model' }))
+    await user.click(await screen.findByRole('option', { name: 'model-b' }))
     await screen.findByText('This model has no detection sample')
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Time window' }),
-      '6'
+    await user.click(screen.getByRole('combobox', { name: 'Time window' }))
+    await user.click(
+      await screen.findByRole('option', { name: 'Last 6 hours' })
     )
     await waitFor(() =>
       expect(requests.at(-1)?.params).toMatchObject({
@@ -119,9 +139,9 @@ describe('native status page', () => {
       })
     )
     await screen.findByText(group.name)
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Sort groups' }),
-      'state'
+    await user.click(screen.getByRole('combobox', { name: 'Sort groups' }))
+    await user.click(
+      await screen.findByRole('option', { name: 'Detection status' })
     )
     await waitFor(() =>
       expect(requests.at(-1)?.params).toMatchObject({ sort: 'state', page: 1 })

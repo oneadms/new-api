@@ -37,9 +37,9 @@ export function StatusContent() {
   const query = useQuery(statusPageOptions(filters))
   const data = isAccessError(query.error) ? undefined : query.data
   return (
-    <main className='mx-auto flex w-full max-w-[1440px] min-w-0 flex-col gap-7 px-4 pt-28 pb-12 sm:px-8 sm:pt-32'>
-      <header className='flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between'>
-        <div className='space-y-3'>
+    <main className='mx-auto flex min-h-svh w-full max-w-7xl min-w-0 flex-col gap-8 px-4 pt-28 pb-12 sm:px-8 sm:pt-32'>
+      <header className='flex flex-col gap-5 border-b pb-6 sm:flex-row sm:items-start sm:justify-between'>
+        <div className='flex min-w-0 flex-col gap-3'>
           <h1 className='public-page-title text-3xl font-semibold tracking-tight'>
             {t('Service Status')}
           </h1>
@@ -59,19 +59,21 @@ export function StatusContent() {
             </span>
           </div>
         </div>
-        <Button
-          variant='outline'
-          onClick={() => void query.refetch()}
-          disabled={query.isFetching}
-        >
-          {query.isFetching ? t('Refreshing...') : t('Refresh status')}
-        </Button>
+        <div className='flex flex-col items-start gap-3 sm:max-w-64 sm:items-end'>
+          <Button
+            variant='outline'
+            onClick={() => void query.refetch()}
+            disabled={query.isFetching}
+          >
+            {query.isFetching ? t('Refreshing...') : t('Refresh status')}
+          </Button>
+          <p className='text-muted-foreground text-xs leading-relaxed sm:text-right'>
+            {t(
+              'Refreshing reads saved results only. It never starts a model request.'
+            )}
+          </p>
+        </div>
       </header>
-      <p className='text-muted-foreground text-xs'>
-        {t(
-          'Refreshing reads saved results only. It never starts a model request.'
-        )}
-      </p>
       <QueryFeedback
         pending={query.isPending}
         error={query.error}
@@ -105,7 +107,7 @@ export function StatusContent() {
               {t('Refresh failed. Showing previously saved data.')}
             </p>
           )}
-          <dl className='grid grid-cols-1 gap-5 rounded-2xl border px-6 py-5 sm:grid-cols-3'>
+          <dl className='grid grid-cols-1 gap-6 rounded-xl border p-5 sm:grid-cols-3 sm:gap-8 sm:px-6'>
             <div>
               <dt className='text-muted-foreground text-xs'>
                 {t('Published groups')}
@@ -157,7 +159,7 @@ export function StatusContent() {
           )}
           <nav
             aria-label={t('Pagination')}
-            className='flex items-center justify-end gap-3'
+            className='flex flex-wrap items-center justify-end gap-3'
           >
             <Button
               variant='outline'

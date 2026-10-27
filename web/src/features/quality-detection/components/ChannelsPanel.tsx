@@ -19,10 +19,15 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import {
   Sheet,
   SheetContent,
@@ -31,10 +36,18 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 import type { QualityChannel, QualityPrompt } from '../types'
+import { ChannelReadiness } from './ChannelReadiness'
 import { ProfileForm } from './ProfileForm'
-import { QueryFeedback } from './QueryFeedback'
 
 function ChannelProfile(props: {
   channel: QualityChannel
@@ -45,7 +58,7 @@ function ChannelProfile(props: {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger
-        render={<Button variant='outline' />}
+        render={<Button variant='outline' size='sm' />}
         aria-label={`${t('Configure')}: ${props.channel.name}`}
       >
         {t('Configure')}
@@ -57,7 +70,7 @@ function ChannelProfile(props: {
             {props.channel.groups.join(' · ')}
           </SheetDescription>
         </SheetHeader>
-        <div className='flex-1 overflow-y-auto p-6'>
+        <div className='min-h-0 flex-1 overflow-y-auto p-6'>
           {open && (
             <ProfileForm
               key={`${props.channel.id}-${props.channel.profile.version}`}
@@ -75,75 +88,109 @@ function ChannelProfile(props: {
 export function ChannelsPanel(props: {
   channels: QualityChannel[]
   prompts: QualityPrompt[]
+  selected: number[]
+  eligible: Set<number>
+  onToggle: (id: number, checked: boolean) => void
 }) {
   const { t } = useTranslation()
-  const [group, setGroup] = useState('')
-  const [search, setSearch] = useState('')
-  const groups = [
-    ...new Set(props.channels.flatMap((channel) => channel.groups)),
-  ].sort()
-  const channels = props.channels.filter(
-    (channel) =>
-      (!group || channel.groups.includes(group)) &&
-      channel.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
-  )
+  if (!props.channels.length) {
+    return (
+      <Empty className='border py-10'>
+        <EmptyHeader>
+          <EmptyTitle>{t('No channels found')}</EmptyTitle>
+          <EmptyDescription>
+            {t(
+              'Try another group or search term. Configure channels in channel management if none exist.'
+            )}
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    )
+  }
   return (
-    <section className='space-y-5'>
-      <div className='grid gap-4 sm:grid-cols-2'>
-        <div className='space-y-2'>
-          <Label htmlFor='quality-channel-search'>{t('Search channels')}</Label>
-          <Input
-            id='quality-channel-search'
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
-        <div className='space-y-2'>
-          <Label htmlFor='quality-channel-group'>{t('Group')}</Label>
-          <NativeSelect
-            id='quality-channel-group'
-            className='w-full'
-            value={group}
-            onChange={(event) => setGroup(event.target.value)}
-          >
-            <NativeSelectOption value=''>{t('All groups')}</NativeSelectOption>
-            {groups.map((name) => (
-              <NativeSelectOption key={name} value={name}>
-                {name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </div>
-      </div>
-      <QueryFeedback empty={!channels.length} />
-      <div className='divide-y rounded-xl border'>
-        {channels.map((channel) => (
-          <article
-            key={channel.id}
-            className='flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between'
-          >
-            <div className='min-w-0 space-y-1'>
-              <h3 className='truncate font-medium' title={channel.name}>
-                {channel.name}
-              </h3>
-              <p className='text-muted-foreground text-xs break-all'>
-                {channel.groups.join(' · ')}
-              </p>
-              <p className='text-muted-foreground text-xs break-all'>
-                {channel.profile.model || t('No model configured')} ·{' '}
-                {channel.profile.enabled ? t('Enabled') : t('Disabled')}
-              </p>
-              {!channel.supported && (
-                <p className='text-muted-foreground text-sm'>
-                  {t('Unsupported detection target')}:{' '}
-                  {channel.unsupported_reason}
-                </p>
-              )}
-            </div>
-            <ChannelProfile channel={channel} prompts={props.prompts} />
-          </article>
-        ))}
-      </div>
-    </section>
+    <div className='overflow-hidden rounded-xl border'>
+      <Table aria-label={t('Channels')} className='block table-fixed sm:table'>
+        <TableHeader className='bg-muted/40 hidden sm:table-header-group'>
+          <TableRow>
+            <TableHead className='w-12'>
+              <span className='sr-only'>{t('Select')}</span>
+            </TableHead>
+            <TableHead>{t('Channel')}</TableHead>
+            <TableHead className='hidden w-[24%] lg:table-cell'>
+              {t('Detection model')}
+            </TableHead>
+            <TableHead className='w-[25%]'>{t('Detection status')}</TableHead>
+            <TableHead className='w-28'>
+              <span className='sr-only'>{t('Configure')}</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody className='block sm:table-row-group [&>tr]:h-auto'>
+          {props.channels.map((channel) => {
+            const ready = props.eligible.has(channel.id)
+            const selected = ready && props.selected.includes(channel.id)
+            return (
+              <TableRow
+                key={channel.id}
+                data-state={selected ? 'selected' : undefined}
+                className='grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-2 px-3 py-4 sm:table-row sm:p-0'
+              >
+                <TableCell className='row-span-2 p-0 sm:py-5 sm:pl-4'>
+                  <Checkbox
+                    aria-label={channel.name}
+                    aria-describedby={`quality-channel-${channel.id}-readiness`}
+                    checked={selected}
+                    disabled={!ready}
+                    onCheckedChange={(checked) =>
+                      props.onToggle(channel.id, checked)
+                    }
+                  />
+                </TableCell>
+                <TableCell className='min-w-0 p-0 sm:py-5 sm:pr-4'>
+                  <p className='truncate font-medium' title={channel.name}>
+                    {channel.name}
+                  </p>
+                  <p
+                    className='text-muted-foreground mt-1 truncate text-xs'
+                    title={channel.groups.join(' · ')}
+                  >
+                    {channel.groups.join(' · ')}
+                  </p>
+                  <p
+                    className='text-muted-foreground mt-1 truncate text-xs lg:hidden'
+                    title={channel.profile.model}
+                  >
+                    {channel.profile.model || t('No model configured')}
+                  </p>
+                </TableCell>
+                <TableCell className='hidden min-w-0 lg:table-cell'>
+                  <p className='truncate' title={channel.profile.model}>
+                    {channel.profile.model || t('No model configured')}
+                  </p>
+                </TableCell>
+                <TableCell
+                  id={`quality-channel-${channel.id}-readiness`}
+                  className='col-start-2 row-start-2 min-w-0 p-0 pt-2 whitespace-normal sm:p-2'
+                >
+                  {ready ? (
+                    <Badge
+                      variant='outline'
+                      className='text-emerald-700 dark:text-emerald-400'
+                    >
+                      {t('Ready')}
+                    </Badge>
+                  ) : (
+                    <ChannelReadiness channel={channel} />
+                  )}
+                </TableCell>
+                <TableCell className='col-start-3 row-span-2 row-start-1 p-0 text-right sm:pr-4'>
+                  <ChannelProfile channel={channel} prompts={props.prompts} />
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
   )
 }

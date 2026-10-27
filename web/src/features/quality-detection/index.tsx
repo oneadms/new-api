@@ -21,11 +21,11 @@ import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { SectionPageLayout } from '@/components/layout/components/section-page-layout'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { getBatches, getChannels, getPrompts } from './api'
-import { ChannelsPanel } from './components/ChannelsPanel'
 import { HistoryPanel } from './components/HistoryPanel'
 import { PromptsPanel } from './components/PromptsPanel'
 import { QueryFeedback } from './components/QueryFeedback'
@@ -35,7 +35,7 @@ import { isBatchActive } from './lib/batches'
 
 export function QualityDetection() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState('history')
+  const [tab, setTab] = useState('channels')
   const [selectedBatch, setSelectedBatch] = useState<number | null>(null)
   const channels = useQuery({
     queryKey: ['quality-detection', 'channels'],
@@ -57,18 +57,16 @@ export function QualityDetection() {
   })
   const active = latest.data?.items.find(isBatchActive)
   return (
-    <main className='mx-auto w-full max-w-[1440px] min-w-0 space-y-7 p-4 sm:p-8'>
-      <header className='flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between'>
-        <div className='space-y-2'>
-          <h1 className='text-2xl font-semibold tracking-tight'>
-            {t('Quality detection')}
-          </h1>
-          <p className='text-muted-foreground max-w-3xl text-sm'>
-            {t(
-              'Inspect representative channel outputs without changing production routing or charging user wallets.'
-            )}
-          </p>
-        </div>
+    <SectionPageLayout>
+      <SectionPageLayout.Title>
+        {t('Quality detection')}
+      </SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t(
+          'Inspect representative channel outputs without changing production routing or charging user wallets.'
+        )}
+      </SectionPageLayout.Description>
+      <SectionPageLayout.Actions>
         <Button
           variant='outline'
           render={<Link to='/status' />}
@@ -76,71 +74,103 @@ export function QualityDetection() {
         >
           {t('Service Status')}
         </Button>
-      </header>
-      <QueryFeedback
-        pending={channels.isPending || prompts.isPending || latest.isPending}
-        error={channels.error || prompts.error || latest.error}
-        retry={() => {
-          void channels.refetch()
-          void prompts.refetch()
-          void latest.refetch()
-        }}
-      />
-      {active && (
-        <div className='flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4'>
-          <p>
-            {t(
-              'A batch is already running. View or stop it before starting another.'
-            )}
-          </p>
-          <Button
-            variant='outline'
-            onClick={() => {
-              setSelectedBatch(active.id)
-              setTab('history')
+      </SectionPageLayout.Actions>
+      <SectionPageLayout.Content>
+        <div className='mx-auto flex w-full max-w-[1440px] min-w-0 flex-col gap-6'>
+          <QueryFeedback
+            pending={
+              channels.isPending || prompts.isPending || latest.isPending
+            }
+            error={channels.error || prompts.error || latest.error}
+            retry={() => {
+              void channels.refetch()
+              void prompts.refetch()
+              void latest.refetch()
             }}
-          >
-            {t('View batch')} #{active.id}
-          </Button>
-        </div>
-      )}
-      {channels.data && !channels.isError && (
-        <RunBatch
-          channels={channels.data}
-          blocked={Boolean(active) || !latest.isSuccess}
-          onCreated={(id) => {
-            setSelectedBatch(id)
-            setTab('history')
-          }}
-        />
-      )}
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className='flex h-auto max-w-full flex-wrap justify-start'>
-          <TabsTrigger value='history'>{t('Run history')}</TabsTrigger>
-          <TabsTrigger value='channels'>{t('Channels')}</TabsTrigger>
-          <TabsTrigger value='prompts'>{t('Prompt versions')}</TabsTrigger>
-          <TabsTrigger value='settings'>{t('Settings')}</TabsTrigger>
-        </TabsList>
-        <TabsContent value='history' className='pt-5'>
-          <HistoryPanel selected={selectedBatch} onSelect={setSelectedBatch} />
-        </TabsContent>
-        <TabsContent value='channels' className='pt-5'>
-          {channels.data &&
-            prompts.data &&
-            !channels.isError &&
-            !prompts.isError && (
-              <ChannelsPanel channels={channels.data} prompts={prompts.data} />
-            )}
-        </TabsContent>
-        <TabsContent value='prompts' className='pt-5'>
-          {prompts.data && !prompts.isError && (
-            <PromptsPanel prompts={prompts.data} />
+          />
+          {active && (
+            <div className='flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-sm'>
+              <p>
+                {t(
+                  'A batch is already running. View or stop it before starting another.'
+                )}
+              </p>
+              <Button
+                variant='outline'
+                onClick={() => {
+                  setSelectedBatch(active.id)
+                  setTab('history')
+                }}
+              >
+                {t('View batch')} #{active.id}
+              </Button>
+            </div>
           )}
-        </TabsContent>
-        <TabsContent value='settings' className='pt-5'>
-          <SettingsPanel channels={channels.data ?? []} />
-        </TabsContent>
-      </Tabs>
-    </main>
+          <Tabs value={tab} onValueChange={setTab} className='min-w-0 gap-6'>
+            <div className='min-w-0 overflow-x-auto border-b pt-1'>
+              <TabsList
+                variant='line'
+                className='w-max min-w-full justify-start gap-5 p-0 group-data-horizontal/tabs:h-11 sm:gap-6'
+              >
+                <TabsTrigger
+                  value='channels'
+                  className='h-11 flex-none px-1 group-data-horizontal/tabs:after:bottom-0'
+                >
+                  {t('Channels')}
+                </TabsTrigger>
+                <TabsTrigger
+                  value='history'
+                  className='h-11 flex-none px-1 group-data-horizontal/tabs:after:bottom-0'
+                >
+                  {t('Run history')}
+                </TabsTrigger>
+                <TabsTrigger
+                  value='prompts'
+                  className='h-11 flex-none px-1 group-data-horizontal/tabs:after:bottom-0'
+                >
+                  {t('Prompt versions')}
+                </TabsTrigger>
+                <TabsTrigger
+                  value='settings'
+                  className='h-11 flex-none px-1 group-data-horizontal/tabs:after:bottom-0'
+                >
+                  {t('Settings')}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value='channels' className='min-w-0'>
+              {channels.data &&
+                prompts.data &&
+                !channels.isError &&
+                !prompts.isError && (
+                  <RunBatch
+                    channels={channels.data}
+                    prompts={prompts.data}
+                    blocked={Boolean(active) || !latest.isSuccess}
+                    onCreated={(id) => {
+                      setSelectedBatch(id)
+                      setTab('history')
+                    }}
+                  />
+                )}
+            </TabsContent>
+            <TabsContent value='history' className='min-w-0'>
+              <HistoryPanel
+                selected={selectedBatch}
+                onSelect={setSelectedBatch}
+              />
+            </TabsContent>
+            <TabsContent value='prompts' className='min-w-0'>
+              {prompts.data && !prompts.isError && (
+                <PromptsPanel prompts={prompts.data} />
+              )}
+            </TabsContent>
+            <TabsContent value='settings' className='min-w-0'>
+              <SettingsPanel channels={channels.data ?? []} />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </SectionPageLayout.Content>
+    </SectionPageLayout>
   )
 }

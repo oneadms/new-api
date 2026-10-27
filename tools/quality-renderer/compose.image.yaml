@@ -1,0 +1,13 @@
+# Prebuilt-image deployment override for new-api / QuantumNous.
+# Use with compose.yaml; all isolation, resource and network settings are retained.
+# Requires Docker Compose with !reset support (v2.24.0 or newer).
+services:
+  quality-renderer:
+    build: !reset null
+    image: ${QUALITY_RENDERER_IMAGE:?Set the published quality-renderer image tag or digest}
+    pull_policy: always
+
+  quality-renderer-worker:
+    build: !reset null
+    image: ${QUALITY_RENDERER_IMAGE:?Set the published quality-renderer image tag or digest}
+    pull_policy: always

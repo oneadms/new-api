@@ -1,5 +1,6 @@
 # Optional isolated renderer for new-api / QuantumNous.
 # No host ports, host bind mounts, database, application volumes or Docker socket.
+# Local build default. For published images, also pass -f compose.image.yaml.
 name: new-api-quality-renderer
 services:
   quality-renderer:

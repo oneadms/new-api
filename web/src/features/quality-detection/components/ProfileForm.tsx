@@ -26,6 +26,7 @@ import { saveProfile } from '../api'
 import { useQualityMutation } from '../hooks/use-quality-mutation'
 import { profileSchema } from '../lib/schemas'
 import type { QualityChannel, QualityProfile, QualityPrompt } from '../types'
+import { ChannelReadiness } from './ChannelReadiness'
 import { QualityField, QualityToggle } from './QualityField'
 import { QueryFeedback } from './QueryFeedback'
 
@@ -40,6 +41,16 @@ export function ProfileForm(props: {
     defaultValues: { ...props.channel.profile, channel_id: props.channel.id },
   })
   const enabled = useWatch({ control: form.control, name: 'enabled' })
+  const model = useWatch({ control: form.control, name: 'model' })
+  const protocol = useWatch({ control: form.control, name: 'protocol' })
+  const correctingTarget =
+    ['model_unavailable', 'unsupported_model', 'unsupported_protocol'].includes(
+      props.channel.unsupported_reason
+    ) &&
+    (model !== props.channel.profile.model ||
+      protocol !== props.channel.profile.protocol)
+  const canEnable =
+    props.channel.status === 1 && (props.channel.supported || correctingTarget)
   const mutation = useQualityMutation(saveProfile, props.onSaved)
   return (
     <form
@@ -63,19 +74,17 @@ export function ProfileForm(props: {
         form={form}
         name='enabled'
         label={t('Enable detection for this channel')}
-        disabled={!props.channel.supported && !enabled}
+        disabled={!canEnable && !enabled}
       />
-      {!props.channel.supported && (
-        <p role='status'>
-          {t('Unsupported detection target')}:{' '}
-          {props.channel.unsupported_reason}
-        </p>
+      {!props.channel.supported && !correctingTarget && (
+        <ChannelReadiness channel={props.channel} />
       )}
       <div className='grid gap-4 sm:grid-cols-2'>
         <QualityField
           form={form}
           name='model'
           label={t('Detection model')}
+          searchable
           options={[
             { value: '', label: t('Select model') },
             ...[
@@ -120,6 +129,12 @@ export function ProfileForm(props: {
           form={form}
           name='reasoning_effort'
           label={t('Reasoning effort')}
+          options={[
+            { value: '', label: t('Default') },
+            ...['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].map(
+              (value) => ({ value, label: value })
+            ),
+          ]}
           hint={t(
             'Optional; only use values supported by the selected protocol and model.'
           )}

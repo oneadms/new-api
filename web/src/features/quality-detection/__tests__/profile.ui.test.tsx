@@ -35,6 +35,50 @@ afterEach(() => {
 })
 
 describe('profile configuration', () => {
+  it('allows a disabled profile with a removed model to be corrected and enabled in one save', async () => {
+    const requests: InternalAxiosRequestConfig[] = []
+    api.defaults.adapter = async (config) => {
+      requests.push(config)
+      return {
+        status: 200,
+        statusText: 'OK',
+        config,
+        headers: {},
+        data: { success: true, data: channel.profile },
+      }
+    }
+    const user = userEvent.setup()
+    renderQuality(
+      <ProfileForm
+        channel={{
+          ...channel,
+          supported: false,
+          unsupported_reason: 'model_unavailable',
+          profile: {
+            ...channel.profile,
+            enabled: false,
+            model: 'removed-model',
+          },
+        }}
+        prompts={[prompt]}
+        onSaved={vi.fn()}
+      />
+    )
+    await user.click(screen.getByRole('combobox', { name: 'Detection model' }))
+    await user.click(await screen.findByRole('option', { name: 'model-a' }))
+    const toggle = screen.getByRole('switch', {
+      name: 'Enable detection for this channel',
+    })
+    expect(toggle).not.toHaveAttribute('aria-disabled', 'true')
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(requests).toHaveLength(1))
+    expect(JSON.parse(requests[0].data)).toMatchObject({
+      model: 'model-a',
+      enabled: true,
+    })
+  })
+
   it('preserves the channel version and zero timeout without copying settings by group', async () => {
     const requests: InternalAxiosRequestConfig[] = []
     api.defaults.adapter = async (config) => {

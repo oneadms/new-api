@@ -20,6 +20,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { OptionSelect } from '@/components/option-select'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -29,30 +30,49 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 
 import { createBatch } from '../api'
 import { eligibleChannels } from '../lib/batches'
-import type { QualityChannel } from '../types'
+import type { QualityChannel, QualityPrompt } from '../types'
+import { ChannelsPanel } from './ChannelsPanel'
 import { QueryFeedback } from './QueryFeedback'
 
 type Confirmation = { ids: number[]; groups: number; key: string }
 export function RunBatch(props: {
   channels: QualityChannel[]
+  prompts: QualityPrompt[]
   blocked: boolean
   onCreated: (id: number) => void
 }) {
   const { t } = useTranslation()
   const client = useQueryClient()
   const [group, setGroup] = useState('')
+  const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<number[]>([])
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
-  const available = eligibleChannels(props.channels, group)
-  const chosen = eligibleChannels(props.channels).filter((channel) =>
-    selected.includes(channel.id)
+  const uniqueChannels = [
+    ...new Map(props.channels.map((channel) => [channel.id, channel])).values(),
+  ]
+  const visible = uniqueChannels.filter(
+    (channel) =>
+      (!group || channel.groups.includes(group)) &&
+      `${channel.name} ${channel.id} ${channel.profile.model}`
+        .toLocaleLowerCase()
+        .includes(search.trim().toLocaleLowerCase())
   )
+  const activePrompts = new Set(
+    props.prompts
+      .filter((prompt) => !prompt.archived)
+      .map((prompt) => prompt.id)
+  )
+  const eligible = eligibleChannels(uniqueChannels).filter((channel) =>
+    activePrompts.has(channel.profile.prompt_version_id)
+  )
+  const eligibleIDs = new Set(eligible.map((channel) => channel.id))
+  const available = visible.filter((channel) => eligibleIDs.has(channel.id))
+  const chosen = eligible.filter((channel) => selected.includes(channel.id))
   const groups = [
     ...new Set(props.channels.flatMap((channel) => channel.groups)),
   ].sort()
@@ -70,37 +90,68 @@ export function RunBatch(props: {
     },
   })
   return (
-    <section className='space-y-4 rounded-xl border p-5'>
-      <div>
-        <h2 className='font-medium'>{t('Run detection')}</h2>
-        <p className='text-muted-foreground mt-1 text-sm'>
-          {t(
-            'One request per selected channel. Shared groups never multiply requests.'
-          )}
-        </p>
-      </div>
-      <div className='flex flex-wrap items-end gap-3'>
-        <div className='space-y-2'>
-          <Label htmlFor='batch-group'>{t('Filter channels by group')}</Label>
-          <NativeSelect
-            id='batch-group'
-            value={group}
-            onChange={(event) => setGroup(event.target.value)}
-          >
-            <NativeSelectOption value=''>{t('All groups')}</NativeSelectOption>
-            {groups.map((name) => (
-              <NativeSelectOption key={name} value={name}>
-                {name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+    <section className='space-y-5'>
+      <div className='flex flex-wrap items-center justify-between gap-4'>
+        <div className='space-y-1'>
+          <h2 className='text-base font-semibold'>{t('Channels')}</h2>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Configure a model and prompt for each channel, then select it to run detection.'
+            )}
+          </p>
         </div>
         <Button
+          disabled={props.blocked || chosen.length === 0 || mutation.isPending}
+          onClick={() => {
+            mutation.reset()
+            setConfirmation({
+              ids: chosen.map((channel) => channel.id).sort((a, b) => a - b),
+              groups: new Set(chosen.flatMap((channel) => channel.groups)).size,
+              key: crypto.randomUUID(),
+            })
+          }}
+        >
+          {t('Run detection')}
+        </Button>
+      </div>
+      <FieldGroup className='grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,20rem)]'>
+        <Field>
+          <FieldLabel htmlFor='quality-channel-search'>
+            {t('Search channels')}
+          </FieldLabel>
+          <Input
+            id='quality-channel-search'
+            className='h-9'
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t('Search channels')}
+          />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor='batch-group'>
+            {t('Filter channels by group')}
+          </FieldLabel>
+          <OptionSelect
+            id='batch-group'
+            searchable
+            value={group}
+            onValueChange={setGroup}
+            options={[
+              { value: '', label: t('All groups') },
+              ...groups.map((name) => ({ value: name, label: name })),
+            ]}
+          />
+        </Field>
+      </FieldGroup>
+      <div className='flex flex-wrap items-center gap-2'>
+        <Button
           variant='outline'
+          size='sm'
+          disabled={!available.length}
           onClick={() =>
-            setSelected([
+            setSelected((previous) => [
               ...new Set([
-                ...selected,
+                ...previous,
                 ...available.map((channel) => channel.id),
               ]),
             ])
@@ -108,51 +159,39 @@ export function RunBatch(props: {
         >
           {t('Select filtered channels')}
         </Button>
-        <Button variant='ghost' onClick={() => setSelected([])}>
+        <Button
+          variant='ghost'
+          size='sm'
+          disabled={!selected.length}
+          onClick={() => setSelected([])}
+        >
           {t('Clear selection')}
         </Button>
+        <p
+          className='text-muted-foreground text-sm tabular-nums sm:ml-auto'
+          aria-live='polite'
+        >
+          {t('{{count}} unique channels selected', { count: chosen.length })}
+        </p>
       </div>
-      <fieldset className='max-h-64 space-y-2 overflow-y-auto'>
-        <legend className='sr-only'>{t('Channels')}</legend>
-        {available.map((channel) => (
-          <Label
-            key={channel.id}
-            className='flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border p-3'
-          >
-            <Checkbox
-              checked={selected.includes(channel.id)}
-              onCheckedChange={(checked) =>
-                setSelected((previous) =>
-                  checked
-                    ? [...new Set([...previous, channel.id])]
-                    : previous.filter((id) => id !== channel.id)
-                )
-              }
-            />
-            <span className='min-w-0 break-all'>{channel.name}</span>
-            <span className='text-muted-foreground text-xs'>
-              {channel.profile.model}
-            </span>
-          </Label>
-        ))}
-      </fieldset>
-      <QueryFeedback empty={!available.length} />
-      <p className='text-muted-foreground text-sm' aria-live='polite'>
-        {t('{{count}} unique channels selected', { count: chosen.length })}
+      <ChannelsPanel
+        channels={visible}
+        prompts={props.prompts}
+        selected={selected}
+        eligible={eligibleIDs}
+        onToggle={(id, checked) =>
+          setSelected((previous) =>
+            checked
+              ? [...new Set([...previous, id])]
+              : previous.filter((value) => value !== id)
+          )
+        }
+      />
+      <p className='text-muted-foreground text-xs leading-relaxed'>
+        {t(
+          'One request per selected channel. Shared groups never multiply requests.'
+        )}
       </p>
-      <Button
-        disabled={props.blocked || chosen.length === 0 || mutation.isPending}
-        onClick={() => {
-          mutation.reset()
-          setConfirmation({
-            ids: chosen.map((channel) => channel.id).sort((a, b) => a - b),
-            groups: new Set(chosen.flatMap((channel) => channel.groups)).size,
-            key: crypto.randomUUID(),
-          })
-        }}
-      >
-        {t('Run detection')}
-      </Button>
       <AlertDialog
         open={Boolean(confirmation)}
         onOpenChange={(open) => {

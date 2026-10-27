@@ -1,0 +1,16 @@
+# Optional application connection for new-api / QuantumNous.
+# Merge into the MAIN application's Compose project after renderer startup.
+# The application's existing networks remain attached; no renderer ports or
+# browser-worker volumes are exposed to it.
+services:
+  new-api:
+    environment:
+      QUALITY_RENDERER_URL: http://quality-renderer:3000
+      QUALITY_RENDERER_TOKEN: ${QUALITY_RENDERER_TOKEN:?Use the same dedicated token as the renderer ingress}
+    networks:
+      - renderer-ingress
+
+networks:
+  renderer-ingress:
+    name: new-api-quality-renderer-ingress
+    external: true

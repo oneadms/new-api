@@ -28,6 +28,9 @@ export function eligibleChannels(
       channel.supported &&
       channel.status === 1 &&
       channel.profile.enabled &&
+      channel.profile.model !== '' &&
+      channel.models.includes(channel.profile.model) &&
+      channel.profile.prompt_version_id > 0 &&
       (!group || channel.groups.includes(group))
     ) {
       unique.set(channel.id, channel)

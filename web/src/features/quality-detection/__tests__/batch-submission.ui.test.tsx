@@ -28,7 +28,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 
 import { RunBatch } from '../components/RunBatch'
-import { channel, renderQuality } from './fixtures'
+import { channel, prompt, renderQuality } from './fixtures'
 
 let previous: AxiosAdapter | AxiosAdapter[] | undefined
 beforeEach(() => {
@@ -65,6 +65,7 @@ describe('manual batches', () => {
     }
     renderQuality(
       <RunBatch
+        prompts={[prompt]}
         channels={[channel, second, channel]}
         blocked={false}
         onCreated={created}
@@ -107,15 +108,26 @@ describe('manual batches', () => {
     const user = userEvent.setup()
     const view = renderQuality(
       <RunBatch
+        prompts={[prompt]}
         channels={[{ ...channel, supported: false }]}
         blocked={false}
         onCreated={vi.fn()}
       />
     )
     expect(screen.getByRole('button', { name: 'Run detection' })).toBeDisabled()
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Channel A' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
     view.unmount()
-    renderQuality(<RunBatch channels={[channel]} blocked onCreated={vi.fn()} />)
+    renderQuality(
+      <RunBatch
+        channels={[channel]}
+        prompts={[prompt]}
+        blocked
+        onCreated={vi.fn()}
+      />
+    )
     await user.click(
       screen.getByRole('button', { name: 'Select filtered channels' })
     )

@@ -18,9 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { OptionSelect } from '@/components/option-select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 
 import type { StatusFilters } from '../types'
 
@@ -31,18 +31,18 @@ export function StatusFilterBar(props: {
 }) {
   const { t } = useTranslation()
   const states = [
-    ['', t('All statuses')],
-    ['passed', t('Rules passed')],
-    ['review', t('Needs review')],
-    ['partial', t('Some probe requests failed')],
-    ['failed', t('Failed')],
-    ['unknown', t('Insufficient data')],
-    ['stale', t('Stale sample')],
-    ['paused', t('Detection paused')],
+    { value: '', label: t('All statuses') },
+    { value: 'passed', label: t('Rules passed') },
+    { value: 'review', label: t('Needs review') },
+    { value: 'partial', label: t('Some probe requests failed') },
+    { value: 'failed', label: t('Failed') },
+    { value: 'unknown', label: t('Insufficient data') },
+    { value: 'stale', label: t('Stale sample') },
+    { value: 'paused', label: t('Detection paused') },
   ]
   return (
-    <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-5'>
-      <div className='space-y-2'>
+    <div className='grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-5'>
+      <div className='flex min-w-0 flex-col gap-2'>
         <Label htmlFor='status-group'>{t('Search groups')}</Label>
         <Input
           id='status-group'
@@ -56,91 +56,67 @@ export function StatusFilterBar(props: {
           }
         />
       </div>
-      <div className='min-w-0 space-y-2'>
+      <div className='flex min-w-0 flex-col gap-2'>
         <Label htmlFor='status-model'>{t('Model')}</Label>
-        <NativeSelect
+        <OptionSelect
           id='status-model'
-          className='w-full'
+          searchable
+          className='w-full min-w-0'
           value={props.filters.model}
-          onChange={(event) =>
-            props.onChange({
-              ...props.filters,
-              model: event.target.value,
-              page: 1,
-            })
+          onValueChange={(model) =>
+            props.onChange({ ...props.filters, model, page: 1 })
           }
-        >
-          <NativeSelectOption value=''>{t('All models')}</NativeSelectOption>
-          {[
-            ...new Set([...props.models, props.filters.model].filter(Boolean)),
-          ].map((model) => (
-            <NativeSelectOption key={model} value={model}>
-              {model}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
+          options={[
+            { value: '', label: t('All models') },
+            ...[
+              ...new Set(
+                [...props.models, props.filters.model].filter(Boolean)
+              ),
+            ].map((model) => ({ value: model, label: model })),
+          ]}
+        />
       </div>
-      <div className='space-y-2'>
+      <div className='flex min-w-0 flex-col gap-2'>
         <Label htmlFor='status-state'>{t('Detection status')}</Label>
-        <NativeSelect
+        <OptionSelect
           id='status-state'
-          className='w-full'
+          className='w-full min-w-0'
           value={props.filters.state}
-          onChange={(event) =>
-            props.onChange({
-              ...props.filters,
-              state: event.target.value,
-              page: 1,
-            })
+          onValueChange={(state) =>
+            props.onChange({ ...props.filters, state, page: 1 })
           }
-        >
-          {states.map(([value, label]) => (
-            <NativeSelectOption key={value} value={value}>
-              {label}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
+          options={states}
+        />
       </div>
-      <div className='space-y-2'>
+      <div className='flex min-w-0 flex-col gap-2'>
         <Label htmlFor='status-sort'>{t('Sort groups')}</Label>
-        <NativeSelect
+        <OptionSelect
           id='status-sort'
-          className='w-full'
+          className='w-full min-w-0'
           value={props.filters.sort}
-          onChange={(event) =>
-            props.onChange({
-              ...props.filters,
-              sort: event.target.value,
-              page: 1,
-            })
+          onValueChange={(sort) =>
+            props.onChange({ ...props.filters, sort, page: 1 })
           }
-        >
-          <NativeSelectOption value='name'>{t('Name')}</NativeSelectOption>
-          <NativeSelectOption value='state'>
-            {t('Detection status')}
-          </NativeSelectOption>
-        </NativeSelect>
+          options={[
+            { value: 'name', label: t('Name') },
+            { value: 'state', label: t('Detection status') },
+          ]}
+        />
       </div>
-      <div className='space-y-2'>
+      <div className='flex min-w-0 flex-col gap-2'>
         <Label htmlFor='status-window'>{t('Time window')}</Label>
-        <NativeSelect
+        <OptionSelect
           id='status-window'
-          className='w-full'
+          className='w-full min-w-0'
           value={props.filters.hours}
-          onChange={(event) =>
-            props.onChange({
-              ...props.filters,
-              hours: Number(event.target.value),
-              page: 1,
-            })
+          onValueChange={(hours) =>
+            props.onChange({ ...props.filters, hours, page: 1 })
           }
-        >
-          {[1, 6, 24, 168].map((hours) => (
-            <NativeSelectOption key={hours} value={hours}>
-              {t('Last {{hours}} hours', { hours })}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
+          options={[1, 6, 24, 168].map((hours) => ({
+            value: hours,
+            label: t('Last {{hours}} hours', { hours }),
+          }))}
+        />
       </div>
     </div>
   )

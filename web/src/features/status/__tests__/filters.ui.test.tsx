@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -34,8 +34,81 @@ describe('status filters', () => {
         onChange={vi.fn()}
       />
     )
-    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveValue(
-      'model-a'
+    const model = screen.getByRole('combobox', { name: 'Model' })
+    expect(model).toHaveTextContent('model-a')
+    expect(model).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('finds a model by typing in the themed dropdown and resets pagination', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderQuality(
+      <StatusFilterBar
+        filters={{ ...defaultStatusFilters, page: 3 }}
+        models={[
+          'model-a',
+          'model-b',
+          'very-long-model-name-for-a-specialized-provider',
+        ]}
+        onChange={onChange}
+      />
+    )
+    await user.click(screen.getByRole('combobox', { name: 'Model' }))
+    await user.keyboard('model-b')
+    expect(
+      screen.queryByRole('option', { name: 'model-a' })
+    ).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: 'model-b' }))
+    expect(onChange).toHaveBeenCalledWith({
+      ...defaultStatusFilters,
+      model: 'model-b',
+      page: 1,
+    })
+  })
+
+  it('allows keyboard selection and escape returns focus without changing the time window', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderQuality(
+      <StatusFilterBar
+        filters={defaultStatusFilters}
+        models={[]}
+        onChange={onChange}
+      />
+    )
+    const window = screen.getByRole('combobox', { name: 'Time window' })
+    window.focus()
+    await user.keyboard('{Enter}')
+    expect(window).toHaveAttribute('aria-expanded', 'true')
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(window).toHaveAttribute('aria-expanded', 'false')
+    )
+    expect(window).toHaveFocus()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('keeps filter columns shrinkable so long model labels cannot widen a narrow screen', () => {
+    renderQuality(
+      <StatusFilterBar
+        filters={{
+          ...defaultStatusFilters,
+          model: 'very-long-model-name-for-a-specialized-provider',
+        }}
+        models={[]}
+        onChange={vi.fn()}
+      />
+    )
+    const field = screen.getByLabelText('Search groups').parentElement
+    expect(field).toHaveClass('min-w-0')
+    expect(field?.parentElement).toHaveClass(
+      'min-w-0',
+      'sm:grid-cols-2',
+      'xl:grid-cols-5'
+    )
+    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveClass(
+      'w-full',
+      'min-w-0'
     )
   })
 
@@ -49,10 +122,8 @@ describe('status filters', () => {
         onChange={onChange}
       />
     )
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Sort groups' }),
-      'state'
-    )
+    await user.click(screen.getByRole('combobox', { name: 'Sort groups' }))
+    await user.click(screen.getByRole('option', { name: 'Detection status' }))
     expect(onChange).toHaveBeenCalledWith({
       ...defaultStatusFilters,
       model: 'model-a',

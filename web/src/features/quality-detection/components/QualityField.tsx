@@ -25,9 +25,15 @@ import {
 } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
+import { OptionSelect } from '@/components/option-select'
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -41,7 +47,8 @@ type FieldProps<T extends FieldValues> = {
 export function QualityField<T extends FieldValues>(
   props: FieldProps<T> & {
     type?: 'text' | 'number' | 'textarea'
-    options?: { value: string | number; label: string }[]
+    options?: { value: string | number; label: string; disabled?: boolean }[]
+    searchable?: boolean
     min?: number
     max?: number
   }
@@ -49,53 +56,71 @@ export function QualityField<T extends FieldValues>(
   const { t } = useTranslation()
   const id = useId()
   const error = props.form.getFieldState(props.name, props.form.formState).error
-  const registration = props.form.register(props.name, {
-    valueAsNumber: props.type === 'number',
-  })
   const attrs = {
     id,
     disabled: props.disabled,
     'aria-invalid': Boolean(error),
-    'aria-describedby': `${id}-hint ${id}-error`,
+    'aria-describedby':
+      [props.hint ? `${id}-hint` : '', error ? `${id}-error` : '']
+        .filter(Boolean)
+        .join(' ') || undefined,
   }
-  let control = (
-    <Input
-      {...attrs}
-      {...registration}
-      type={props.type ?? 'text'}
-      min={props.min}
-      max={props.max}
-    />
-  )
-  if (props.type === 'textarea') {
-    control = <Textarea {...attrs} {...registration} rows={8} />
-  }
+  let control
   if (props.options) {
     control = (
-      <NativeSelect {...attrs} {...registration} className='w-full'>
-        {props.options.map((option) => (
-          <NativeSelectOption key={option.value} value={option.value}>
-            {option.label}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+      <Controller
+        control={props.form.control}
+        name={props.name}
+        render={({ field }) => (
+          <OptionSelect
+            {...attrs}
+            name={field.name}
+            ref={field.ref}
+            onBlur={field.onBlur}
+            value={field.value}
+            onValueChange={field.onChange}
+            options={props.options ?? []}
+            searchable={props.searchable}
+          />
+        )}
+      />
     )
+  } else {
+    const registration = props.form.register(props.name, {
+      valueAsNumber: props.type === 'number',
+    })
+    control =
+      props.type === 'textarea' ? (
+        <Textarea {...attrs} {...registration} rows={8} />
+      ) : (
+        <Input
+          {...attrs}
+          {...registration}
+          type={props.type ?? 'text'}
+          min={props.min}
+          max={props.max}
+        />
+      )
   }
   return (
-    <div className='min-w-0 space-y-2'>
-      <Label htmlFor={id}>{props.label}</Label>
+    <Field
+      className='min-w-0'
+      data-invalid={Boolean(error)}
+      data-disabled={props.disabled}
+    >
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
       {control}
-      <p id={`${id}-hint`} className='text-muted-foreground text-xs'>
-        {props.hint}
-      </p>
-      <p
-        id={`${id}-error`}
-        role={error ? 'alert' : undefined}
-        className='text-destructive text-xs'
-      >
-        {error?.message && t(error.message)}
-      </p>
-    </div>
+      {props.hint && (
+        <FieldDescription id={`${id}-hint`} className='text-xs'>
+          {props.hint}
+        </FieldDescription>
+      )}
+      {error?.message && (
+        <FieldError id={`${id}-error`} className='text-xs'>
+          {t(error.message)}
+        </FieldError>
+      )}
+    </Field>
   )
 }
 export function QualityToggle<T extends FieldValues>(props: FieldProps<T>) {
@@ -122,6 +147,9 @@ export function QualityToggle<T extends FieldValues>(props: FieldProps<T>) {
             )}
           </div>
           <Switch
+            ref={field.ref}
+            name={field.name}
+            onBlur={field.onBlur}
             id={id}
             checked={Boolean(field.value)}
             onCheckedChange={field.onChange}

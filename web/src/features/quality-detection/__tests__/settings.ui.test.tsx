@@ -50,9 +50,7 @@ describe('quality settings', () => {
     const user = userEvent.setup()
     renderQuality(<SettingsPanel channels={[channel]} />)
     expect(
-      await screen.findByText(
-        'Renderer unavailable. Generation is saved without a thumbnail.'
-      )
+      await screen.findByText('Renderer configuration is missing or invalid.')
     ).toBeInTheDocument()
     const interval = screen.getByRole('spinbutton', {
       name: 'Interval (minutes)',
@@ -93,10 +91,8 @@ describe('quality settings', () => {
     await user.click(
       await screen.findByRole('button', { name: 'Add public group' })
     )
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Group' }),
-      'premium'
-    )
+    await user.click(screen.getByRole('combobox', { name: 'Group' }))
+    await user.click(await screen.findByRole('option', { name: 'premium' }))
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(
       await screen.findByText('Invalid configuration value')

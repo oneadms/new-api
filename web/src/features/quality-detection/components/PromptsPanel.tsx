@@ -149,7 +149,9 @@ export function PromptsPanel(props: { prompts: QualityPrompt[] }) {
               </pre>
             </details>
             <div className='flex flex-wrap gap-2'>
-              <PromptEditor prompt={prompt} />
+              {!prompt.key.startsWith('builtin-') && (
+                <PromptEditor prompt={prompt} />
+              )}
               <PromptEditor prompt={prompt} copy />
               <Button
                 variant='ghost'
