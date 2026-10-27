@@ -29,6 +29,18 @@ export function deferred() {
   return { promise, resolve, reject };
 }
 
+// Observed chrome://sandbox/ body from the pinned Playwright 1.64.1 Chromium.
+export const SANDBOX_STATUS = `Sandbox Status
+Layer 1 Sandbox\tNamespace
+PID namespaces\tYes
+Network namespaces\tYes
+Seccomp-BPF sandbox\tYes
+Seccomp-BPF sandbox supports TSYNC\tYes
+Ptrace Protection with Yama LSM (Broker)\tNo
+Ptrace Protection with Yama LSM (Non-broker)\tNo
+
+You are adequately sandboxed.`;
+
 // Only the external Playwright boundary is replaced. HTTP parsing, limits,
 // policy construction, routing, sandbox checks, and cleanup remain production code.
 export function browserFixture(options = {}) {
@@ -44,7 +56,7 @@ export function browserFixture(options = {}) {
             events: {},
             on(name, handler) { this.events[name] = handler; },
             mainFrame() { return page; },
-            locator() { return { async innerText() { return options.sandbox ?? 'Namespace sandbox Yes\nSeccomp-BPF sandbox Yes'; } }; },
+            locator() { return { async innerText() { return options.sandbox ?? SANDBOX_STATUS; } }; },
             async goto(url) {
               if (url === 'chrome://sandbox/') return;
               const route = {

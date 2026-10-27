@@ -1,0 +1,19 @@
+# new-api / QuantumNous — strategic merge; preserve existing envFrom and volumes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: new-api
+  namespace: production
+spec:
+  template:
+    spec:
+      containers:
+        - name: new-api
+          env:
+            - name: QUALITY_RENDERER_URL
+              value: http://quality-renderer.production.svc.cluster.local:3000
+            - name: QUALITY_RENDERER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: quality-renderer-auth
+                  key: token

@@ -1,0 +1,138 @@
+# new-api / QuantumNous — optional renderer, private to this K3s node.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quality-renderer
+  namespace: production
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: quality-renderer
+  template:
+    metadata:
+      labels:
+        app: quality-renderer
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 25
+      nodeSelector:
+        kubernetes.io/hostname: ${QUALITY_RENDERER_NODE}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+        appArmorProfile:
+          type: Localhost
+          localhostProfile: new-api-quality-renderer
+      initContainers:
+        - name: initialize-directories
+          image: ${QUALITY_RENDERER_IMAGE}
+          imagePullPolicy: Never
+          command:
+            - /bin/sh
+            - -ec
+            - >-
+              umask 077;
+              mkdir -p /scratch-worker/tmp /scratch-ingress/tmp /scratch-socket/ipc;
+              chmod 700 /scratch-worker/tmp /scratch-ingress/tmp /scratch-socket/ipc
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          volumeMounts:
+            - {name: worker-tmp, mountPath: /scratch-worker}
+            - {name: ingress-tmp, mountPath: /scratch-ingress}
+            - {name: socket, mountPath: /scratch-socket}
+      containers:
+        - name: ingress
+          image: ${QUALITY_RENDERER_IMAGE}
+          imagePullPolicy: Never
+          command: [/usr/bin/tini, -g, --, /usr/bin/prlimit, --core=0:0, --nofile=1024:1024, --, node, /app/src/gateway.mjs]
+          ports:
+            - {name: http, containerPort: 3000}
+          env:
+            - name: QUALITY_RENDERER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: quality-renderer-auth
+                  key: token
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          volumeMounts:
+            - {name: socket, mountPath: /run/quality-renderer, subPath: ipc, readOnly: true}
+            - {name: ingress-tmp, mountPath: /tmp, subPath: tmp}
+          startupProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 30
+            timeoutSeconds: 3
+        - name: worker
+          image: ${QUALITY_RENDERER_IMAGE}
+          imagePullPolicy: Never
+          command: [/bin/sh, /app/src/kubernetes-worker.sh]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: Localhost
+              localhostProfile: new-api-quality-renderer/worker-amd64.json
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 1Gi}
+          volumeMounts:
+            - {name: socket, mountPath: /run/quality-renderer, subPath: ipc}
+            - {name: worker-tmp, mountPath: /tmp, subPath: tmp}
+            - {name: shm, mountPath: /dev/shm}
+          startupProbe:
+            exec:
+              command: [node, /app/src/healthcheck.mjs]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            exec:
+              command: [node, /app/src/healthcheck.mjs]
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: [node, /app/src/healthcheck.mjs]
+            periodSeconds: 30
+            timeoutSeconds: 3
+      volumes:
+        - name: socket
+          emptyDir: {medium: Memory, sizeLimit: 8Mi}
+        - name: worker-tmp
+          emptyDir: {medium: Memory, sizeLimit: 256Mi}
+        - name: ingress-tmp
+          emptyDir: {medium: Memory, sizeLimit: 16Mi}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 128Mi}

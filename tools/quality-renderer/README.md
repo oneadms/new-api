@@ -4,6 +4,13 @@ This component accepts bounded HTML and returns a static PNG. The Go application
 never installs or launches a browser, invokes model-generated shell code, or uses
 ordinary relay/billing paths to render a thumbnail. The component is optional.
 
+Deployment options are the Docker Compose topology below and the separate
+[K3s deployment guide](kubernetes/README.md). The K3s guide documents the accepted
+single-node deployment, its private Service, worker isolation, application
+connection and the operator's decision to preserve existing node PID settings.
+The resource and mount settings described for Compose do not automatically apply
+to Kubernetes.
+
 ## Application contract
 
 Configure only the main application's trusted server environment:
@@ -42,7 +49,7 @@ bounds streamed responses even without `Content-Length`. It validates the full
 PNG stream and checksums after checking dimensions, not only the PNG signature.
 The Node boundary checks output size, signature, IHDR dimensions and IEND.
 
-## Mandatory production isolation and topology
+## Docker Compose production isolation and topology
 
 The supplied Compose deployment deliberately has **two containers**, separating
 the network/authentication surface from Chromium:
@@ -81,7 +88,7 @@ the dedicated local container network; cross-host transport requires TLS.
 Both containers are non-root UID/GID 1000, have read-only roots, no host bind
 mounts, `cap_drop: ALL`, `no-new-privileges`, no core dumps, and bounded temporary
 filesystems. The ingress has 0.5 CPU / 256 MiB / 64 PIDs; the worker has 1 CPU /
-1 GiB / 128 PIDs, 128 MiB private shared memory and a 256 MiB `/tmp` tmpfs.
+1 GiB / 256 PIDs (including threads), 128 MiB private shared memory and a 256 MiB `/tmp` tmpfs.
 No host IPC or privileged capability is requested. The temporary Playwright
 profile is created only inside this tmpfs and removed when each browser exits.
 Each request gets a new browser, new context, and new page; no session, cookies,
@@ -191,7 +198,7 @@ its Cosign signature against the publishing repository's workflow identity and
 `https://token.actions.githubusercontent.com` issuer, not an arbitrary signer.
 Rebuild and re-validate intentionally when applying browser or OS security fixes.
 
-### Prebuilt deployment on the target Linux host
+### Prebuilt Docker Compose deployment on the target Linux host
 
 These are operator steps, not actions performed by publication. Use Docker
 Compose v2.24.0 or newer (`!reset` support is required). Obtain `compose.yaml`,
@@ -224,7 +231,7 @@ for the renderer containers themselves.
    Linux runtime** with the worker's unchanged no-network/seccomp settings:
 
    ```sh
-   docker compose -f compose.yaml -f compose.image.yaml run --rm --no-deps --pull never \
+   docker compose -f compose.yaml -f compose.image.yaml run --rm --no-deps --pull never -T --interactive=false \
      -e QUALITY_RENDERER_INTEGRATION=1 quality-renderer-worker npm run test:browser
    ```
 
@@ -244,7 +251,7 @@ for the renderer containers themselves.
    it does not perform a screenshot, validate the main application's token, or
    prove main-application connectivity.
 
-### Connect the main application
+### Connect a Docker Compose application
 
 Start the renderer project first so `new-api-quality-renderer-ingress` exists.
 For the repository's application `docker-compose.yml`, the supplied
@@ -295,7 +302,7 @@ checkout, set the dedicated ingress token and use only the base Compose file:
 
 ```sh
 docker compose -f compose.yaml build
-docker compose -f compose.yaml run --rm --no-deps --pull never \
+docker compose -f compose.yaml run --rm --no-deps --pull never -T --interactive=false \
   -e QUALITY_RENDERER_INTEGRATION=1 quality-renderer-worker npm run test:browser
 docker compose -f compose.yaml up -d --no-build --wait
 ```
@@ -314,16 +321,25 @@ integration flag reports skips; it must not be recorded as a live-browser pass.
 From the repository root run
 `go test ./service -run '^TestQualityRenderer' -count=1` for the Go client.
 
-The current implementation environment had Node 24.18.0 and Go 1.27.0; the Docker
-CLI was present but its Linux engine was unavailable. The pinned Playwright base
-manifest was confirmed to contain both Linux architectures and its pinned npm
-packages installed successfully. Image build, real Chromium sandbox/network
-enforcement, fonts and live screenshot acceptance still require the target-runtime
-checks above. A parsed Compose file, contract test, base-image registry lookup or
-successful image publication is **not** proof of that acceptance. Go race
-detection was also blocked by the environment's disabled CGO; regular renderer
-regression tests and service vet checks can run independently. Do not enable an
-unsafe fallback to hide a failed deployment check.
+Initial development used Node 24.18.0 and Go 1.27.0 on Windows, where the Docker
+CLI was present but its Linux engine was unavailable. That initial local check
+could not establish browser/runtime acceptance. Go race detection was also
+blocked by disabled CGO; regular renderer regression tests can run independently.
+
+On 2026-10-27, the native amd64 K3s deployment passed all 10 real-browser/isolation
+tests with zero skips. An authenticated fixed HTML fixture from the application's
+network produced a checksum-valid 1200×800 PNG using its actual injected token;
+missing/wrong tokens were rejected and an unapproved Pod could not reach the
+renderer. The application connection was enabled without changing node PID
+settings or restarting K3s. No model requests or detection-schedule changes were
+made. See the [K3s acceptance record](kubernetes/README.md#accepted-deployment-record--2026-10-27)
+for the exact locally imported image and rollback records. These fixes have not
+yet been published as a new GHCR release; an older published image is not an
+interchangeable deployment artifact.
+
+Other nodes, images and architectures still require target-runtime acceptance.
+A parsed Compose file, contract test or image publication is not proof of that
+acceptance. Do not enable an unsafe fallback to hide a failed deployment check.
 
 ## Licenses and attribution
 

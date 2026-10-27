@@ -147,6 +147,267 @@ func TestStatusPageChangedConfigurationOrGroupMembershipInvalidatesCurrentEviden
 	assert.Zero(t, group.Group.ChannelCount)
 }
 
+func statusHistoryRun(t *testing.T, source model.QualityProbeRun, batchID, completedAt int64, groups ...string) model.QualityProbeRun {
+	t.Helper()
+	source.ID, source.PublicID, source.BatchID, source.CompletedAt = 0, common.GetUUID(), batchID, completedAt
+	require.NoError(t, model.DB.Create(&source).Error)
+	for _, group := range groups {
+		require.NoError(t, model.DB.Create(&model.QualityProbeRunGroup{RunID: source.ID, GroupName: group}).Error)
+	}
+	return source
+}
+
+func TestStatusGroupHistoryPaginatesRetainedRunsWithoutChangingCurrentAggregate(t *testing.T) {
+	_, _ = statusPageFixture(t)
+	var oldest model.QualityProbeRun
+	require.NoError(t, model.DB.First(&oldest, "channel_id = ?", 1).Error)
+	now := time.Now().Unix()
+	require.NoError(t, model.DB.Model(&model.QualityProbeRun{}).Where("id = ?", oldest.ID).Updates(map[string]any{"completed_at": now - 49*3600, "status": "failed", "quality_result": "not_evaluated"}).Error)
+	tieFirst := statusHistoryRun(t, oldest, 2, now-2*3600, "internal-standard", "internal-member")
+	tieSecond := statusHistoryRun(t, oldest, 3, now-2*3600, "internal-standard", "internal-member")
+	latest := statusHistoryRun(t, oldest, 4, now, "internal-standard", "internal-member")
+	for i, status := range []string{"queued", "running"} {
+		unfinished := latest
+		unfinished.Status = status
+		statusHistoryRun(t, unfinished, int64(5+i), 0, "internal-standard")
+	}
+	bucket := perf_metrics_setting.GetBucketSeconds()
+	end := now - now%bucket
+	for _, metric := range []model.PerfMetric{
+		{ModelName: "text-model", Group: "internal-standard", BucketTs: end - bucket, RequestCount: 1, SuccessCount: 1},
+		{ModelName: "text-model", Group: "internal-standard", BucketTs: end - 2*3600, RequestCount: 1, SuccessCount: 0},
+	} {
+		require.NoError(t, model.DB.Create(&metric).Error)
+	}
+	query := StatusPageQuery{Hours: 1, Page: 1, PageSize: 2, Sort: "name"}
+	for page, expected := range [][]string{{latest.PublicID, tieSecond.PublicID}, {tieFirst.PublicID, oldest.PublicID}, {}} {
+		query.Page = page + 1
+		detail, err := GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+		require.NoError(t, err)
+		ids := make([]string, 0, len(detail.Samples))
+		for _, sample := range detail.Samples {
+			ids = append(ids, sample.PublicID)
+			assert.Nil(t, sample.ThumbnailURL)
+		}
+		assert.Equal(t, expected, ids, "page %d", query.Page)
+		assert.Equal(t, "passed", detail.Group.State)
+		assert.Equal(t, 1, detail.Group.FreshCount)
+		require.NotNil(t, detail.Group.LatestSample)
+		assert.Equal(t, latest.PublicID, detail.Group.LatestSample.PublicID)
+		require.NotNil(t, detail.Group.SuccessRate)
+		assert.Equal(t, 100.0, *detail.Group.SuccessRate)
+		assert.Equal(t, int64(4), detail.Total)
+		assert.Equal(t, query.Page, detail.Page)
+		assert.Equal(t, query.PageSize, detail.PageSize)
+	}
+	query.Hours, query.Page = 24, 1
+	detail, err := GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+	require.NoError(t, err)
+	require.NotNil(t, detail.Group.SuccessRate)
+	assert.Equal(t, 50.0, *detail.Group.SuccessRate)
+	data, err := GetStatusPage(context.Background(), query)
+	require.NoError(t, err)
+	for _, group := range data.Groups {
+		if group.PublicID == detail.Group.PublicID {
+			assert.Equal(t, detail.Group, group)
+		}
+	}
+}
+
+func TestStatusGroupHistorySharesHistoricalScreenshotsAndExcludesPrivateFields(t *testing.T) {
+	_, _ = statusPageFixture(t)
+	var source model.QualityProbeRun
+	require.NoError(t, model.DB.First(&source, "channel_id = ?", 1).Error)
+	source.RawKey, source.HTMLKey, source.ThumbnailKey = "private-raw-key", "private-html-key", "private-thumbnail-key"
+	source.MappedModel, source.PromptName, source.ReviewNote = "private-mapped-model", "private-prompt-name", "private-review-note"
+	source.HasThumbnail = true
+	old := statusHistoryRun(t, source, 2, source.CompletedAt-48*3600, "internal-standard", "internal-member")
+	latest := statusHistoryRun(t, source, 3, source.CompletedAt, "internal-standard", "internal-member")
+	query := StatusPageQuery{Hours: 1, Page: 1, PageSize: 20, Sort: "name"}
+	var shared []StatusSample
+	for _, name := range []string{"internal-standard", "internal-member"} {
+		detail, err := GetStatusGroup(context.Background(), statusGroupID(name), query)
+		require.NoError(t, err)
+		for _, sample := range detail.Samples {
+			if sample.PublicID == old.PublicID {
+				shared = append(shared, sample)
+			}
+		}
+		if name == "internal-standard" {
+			require.NotNil(t, detail.Group.LatestSample)
+			assert.Equal(t, latest.PublicID, detail.Group.LatestSample.PublicID)
+		}
+		serialized, err := common.Marshal(detail)
+		require.NoError(t, err)
+		for _, secret := range []string{"private-", "internal-standard", "internal-member", "channel_id", "prompt_snapshot", "raw_key", "html_key", "thumbnail_key", "config_fingerprint", "review_note"} {
+			assert.NotContains(t, string(serialized), secret)
+		}
+	}
+	require.Len(t, shared, 2)
+	assert.Equal(t, shared[0], shared[1])
+	require.NotNil(t, shared[0].ThumbnailURL)
+	assert.Equal(t, "/api/status-page/artifacts/"+old.PublicID+"/thumbnail", *shared[0].ThumbnailURL)
+}
+
+func TestStatusGroupHistoryModelFilterKeepsOldRepresentativeModelOnlyWhileExposed(t *testing.T) {
+	_, _ = statusPageFixture(t)
+	var old model.QualityProbeRun
+	require.NoError(t, model.DB.First(&old, "channel_id = ?", 1).Error)
+	var imageBytes bytes.Buffer
+	require.NoError(t, png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 2, 2))))
+	key, err := writeQualityArtifact("png", imageBytes.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&old).Updates(map[string]any{"has_thumbnail": true, "thumbnail_key": key}).Error)
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 1).Update("models", "text-model,other-model").Error)
+	require.NoError(t, model.DB.Model(&model.ChannelQualityProfile{}).Where("channel_id = ?", 1).Update("model", "other-model").Error)
+	source := old
+	source.Model = "other-model"
+	latest := statusHistoryRun(t, source, 2, old.CompletedAt, "internal-standard", "internal-member")
+	query := StatusPageQuery{Hours: 24, Page: 1, PageSize: 20, Sort: "name", Model: "text-model"}
+	detail, err := GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+	require.NoError(t, err)
+	require.Len(t, detail.Samples, 1)
+	assert.Equal(t, old.PublicID, detail.Samples[0].PublicID)
+	assert.Equal(t, int64(1), detail.Total)
+	assert.Equal(t, old.CompletedAt, detail.Samples[0].StaleAfter)
+	require.NotNil(t, detail.Samples[0].ThumbnailURL)
+	actual, err := ReadPublicStatusThumbnail(old.PublicID)
+	require.NoError(t, err)
+	assert.Equal(t, imageBytes.Bytes(), actual)
+	assert.Nil(t, detail.Group.LatestSample)
+	assert.Zero(t, detail.Group.FreshCount)
+	assert.Zero(t, detail.Group.ConfiguredCount)
+	query.Model = "other-model"
+	detail, err = GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+	require.NoError(t, err)
+	require.Len(t, detail.Samples, 1)
+	assert.Equal(t, latest.PublicID, detail.Samples[0].PublicID)
+	query.Model = ""
+	detail, err = GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+	require.NoError(t, err)
+	assert.Len(t, detail.Samples, 2)
+	// Stale ability rows cannot keep publishing a model removed from the channel.
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 1).Update("models", "other-model").Error)
+	detail, err = GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+	require.NoError(t, err)
+	require.Len(t, detail.Samples, 1)
+	assert.Equal(t, latest.PublicID, detail.Samples[0].PublicID)
+	// Channel metadata alone is insufficient when the group's model ability is removed.
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 1).Update("models", "text-model,other-model").Error)
+	require.NoError(t, model.DB.Where(map[string]any{"channel_id": 1, "group": "internal-standard", "model": "text-model"}).Delete(&model.Ability{}).Error)
+	detail, err = GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+	require.NoError(t, err)
+	require.Len(t, detail.Samples, 1)
+	assert.Equal(t, latest.PublicID, detail.Samples[0].PublicID)
+}
+
+func TestStatusGroupHistoryRequiresBothCurrentAndHistoricalGroupMembership(t *testing.T) {
+	_, _ = statusPageFixture(t)
+	var source model.QualityProbeRun
+	require.NoError(t, model.DB.First(&source, "channel_id = ?", 1).Error)
+	memberOnly := statusHistoryRun(t, source, 2, source.CompletedAt-3600, "internal-member")
+	statusHistoryRun(t, source, 3, source.CompletedAt, "internal-standard", "internal-member")
+	query := StatusPageQuery{Hours: 24, Page: 1, PageSize: 20, Sort: "name"}
+	standard, err := GetStatusGroup(context.Background(), statusGroupID("internal-standard"), query)
+	require.NoError(t, err)
+	for _, sample := range standard.Samples {
+		assert.NotEqual(t, memberOnly.PublicID, sample.PublicID)
+	}
+	member, err := GetStatusGroup(context.Background(), statusGroupID("internal-member"), query)
+	require.NoError(t, err)
+	var found bool
+	for _, sample := range member.Samples {
+		found = found || sample.PublicID == memberOnly.PublicID
+	}
+	assert.True(t, found)
+	// Moving a channel must neither preserve access in the old group nor import
+	// old runs into the new group, even if ability rows lag behind metadata.
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 1).Update("group", "empty-internal").Error)
+	require.NoError(t, model.DB.Create(&model.Ability{ChannelId: 1, Group: "empty-internal", Model: "text-model", Enabled: true}).Error)
+	for _, group := range []string{"internal-standard", "empty-internal"} {
+		detail, err := GetStatusGroup(context.Background(), statusGroupID(group), query)
+		require.NoError(t, err)
+		assert.Empty(t, detail.Samples)
+	}
+}
+
+func TestStatusGroupHistoryAndThumbnailHonorCurrentPublicationRevocation(t *testing.T) {
+	cases := []struct {
+		name        string
+		revoke      func(*testing.T, *model.QualitySettings, model.QualityProbeRun)
+		hiddenGroup bool
+	}{
+		{"unpublished_channel", func(t *testing.T, _ *model.QualitySettings, _ model.QualityProbeRun) {
+			require.NoError(t, model.DB.Model(&model.ChannelQualityProfile{}).Where("channel_id = ?", 1).Update("publish_sample", false).Error)
+		}, false},
+		{"empty_alias", func(t *testing.T, _ *model.QualitySettings, _ model.QualityProbeRun) {
+			require.NoError(t, model.DB.Model(&model.ChannelQualityProfile{}).Where("channel_id = ?", 1).Update("public_alias", "").Error)
+		}, false},
+		{"disabled_status_page", func(t *testing.T, settings *model.QualitySettings, _ model.QualityProbeRun) {
+			settings.StatusPageEnabled = false
+			_, err := UpdateQualitySettings(*settings)
+			require.NoError(t, err)
+		}, true},
+		{"unpublished_groups", func(t *testing.T, settings *model.QualitySettings, _ model.QualityProbeRun) {
+			settings.PublicGroups = nil
+			_, err := UpdateQualitySettings(*settings)
+			require.NoError(t, err)
+		}, true},
+		{"deleted_channel", func(t *testing.T, _ *model.QualitySettings, _ model.QualityProbeRun) {
+			require.NoError(t, model.DB.Delete(&model.Channel{}, 1).Error)
+		}, false},
+		{"removed_model", func(t *testing.T, _ *model.QualitySettings, _ model.QualityProbeRun) {
+			require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 1).Update("models", "other-model").Error)
+		}, false},
+		{"removed_abilities", func(t *testing.T, _ *model.QualitySettings, _ model.QualityProbeRun) {
+			require.NoError(t, model.DB.Where("channel_id = ? AND model = ?", 1, "text-model").Delete(&model.Ability{}).Error)
+		}, false},
+		{"moved_channel", func(t *testing.T, _ *model.QualitySettings, _ model.QualityProbeRun) {
+			require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 1).Update("group", "empty-internal").Error)
+			require.NoError(t, model.DB.Create(&model.Ability{ChannelId: 1, Group: "empty-internal", Model: "text-model", Enabled: true}).Error)
+		}, false},
+		{"ability_and_history_in_different_groups", func(t *testing.T, _ *model.QualitySettings, run model.QualityProbeRun) {
+			require.NoError(t, model.DB.Where("run_id = ? AND group_name = ?", run.ID, "internal-standard").Delete(&model.QualityProbeRunGroup{}).Error)
+			require.NoError(t, model.DB.Where(map[string]any{"channel_id": 1, "model": "text-model", "group": "internal-member"}).Delete(&model.Ability{}).Error)
+		}, false},
+		{"removed_historical_membership", func(t *testing.T, _ *model.QualitySettings, run model.QualityProbeRun) {
+			require.NoError(t, model.DB.Where("run_id = ?", run.ID).Delete(&model.QualityProbeRunGroup{}).Error)
+		}, false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			settings, _ := statusPageFixture(t)
+			var source model.QualityProbeRun
+			require.NoError(t, model.DB.First(&source, "channel_id = ?", 1).Error)
+			var imageBytes bytes.Buffer
+			require.NoError(t, png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 2, 2))))
+			key, err := writeQualityArtifact("png", imageBytes.Bytes())
+			require.NoError(t, err)
+			source.HasThumbnail, source.ThumbnailKey = true, key
+			old := statusHistoryRun(t, source, 2, source.CompletedAt-48*3600, "internal-standard", "internal-member")
+			statusHistoryRun(t, source, 3, source.CompletedAt, "internal-standard", "internal-member")
+			actual, err := ReadPublicStatusThumbnail(old.PublicID)
+			require.NoError(t, err)
+			assert.Equal(t, imageBytes.Bytes(), actual)
+			tt.revoke(t, settings, old)
+			detail, err := GetStatusGroup(context.Background(), statusGroupID("internal-standard"), StatusPageQuery{Hours: 1, Page: 1, PageSize: 20, Sort: "name"})
+			if tt.hiddenGroup {
+				require.ErrorIs(t, err, ErrStatusPageNotFound)
+			} else {
+				require.NoError(t, err)
+				if tt.name == "removed_model" || tt.name == "removed_abilities" {
+					assert.Nil(t, detail.Group.LatestSample)
+				}
+				for _, sample := range detail.Samples {
+					assert.NotEqual(t, old.PublicID, sample.PublicID)
+				}
+			}
+			_, err = ReadPublicStatusThumbnail(old.PublicID)
+			require.ErrorIs(t, err, ErrStatusPageNotFound)
+		})
+	}
+}
+
 func TestStatusPageThumbnailRevocationAndPrivateGroupsDenyPreviouslyValidIDs(t *testing.T) {
 	settings, runs := statusPageFixture(t)
 	var run model.QualityProbeRun

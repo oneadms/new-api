@@ -8,7 +8,7 @@
         "summary": "读取已发布分组状态", "description": "公开设置和 HeaderNavModules.status 均生效；模块要求登录时返回 401。统计只含数据库闭合时间桶。", "security": [{}, {"AccessToken1": []}],
         "parameters": [
           {"$ref": "#/components/parameters/Hours"}, {"$ref": "#/components/parameters/Model"},
-          {"$ref": "#/components/parameters/Page"}, {"$ref": "#/components/parameters/PageSize"},
+          {"$ref": "#/components/parameters/StatusPageNumber"}, {"$ref": "#/components/parameters/PageSize"},
           {"name": "group", "in": "query", "schema": {"type": "string", "maxLength": 128}, "description": "按公开别名搜索，不接受私有组标识"},
           {"name": "state", "in": "query", "schema": {"type": "string", "enum": ["", "passed", "review", "partial", "failed", "unknown", "stale", "paused"]}},
           {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["name", "state"], "default": "name"}}
@@ -18,11 +18,20 @@
     },
     "/api/status-page/groups/{public_id}": {
       "parameters": [{"$ref": "#/components/parameters/PublicID"}],
-      "get": {"summary": "读取公开分组样本", "security": [{}, {"AccessToken1": []}], "parameters": [{"$ref": "#/components/parameters/Hours"}, {"$ref": "#/components/parameters/Model"}], "responses": {"200": {"description": "data 为 {group:StatusGroup,samples:StatusSample[]}", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"type": "object", "properties": {"group": {"$ref": "#/components/schemas/StatusGroup"}, "samples": {"type": "array", "items": {"$ref": "#/components/schemas/StatusSample"}}}}}}]}}}}, "404": {"$ref": "#/components/responses/NotFound"}}}
+      "get": {
+        "summary": "分页读取公开分组历史样本",
+        "description": "仅查询所选分组仍保留的终态检测记录，包含同一渠道的多次检测；按 completed_at DESC、内部 id DESC 排序。hours 仅影响 group 的业务统计，不限制样本历史；group.latest_sample 和当前状态仍基于每渠道最新记录。model 精确筛选，旧代表模型仍被渠道暴露时允许展示。每次检查当前公开设置、渠道别名、分组/模型能力及同组历史归属。缺少截图的记录保留且 thumbnail_url 为 null。仅读取已有结果，不触发模型调用、渲染或重新生成。",
+        "security": [{}, {"AccessToken1": []}],
+        "parameters": [{"$ref": "#/components/parameters/Hours"}, {"$ref": "#/components/parameters/Model"}, {"$ref": "#/components/parameters/StatusPageNumber"}, {"$ref": "#/components/parameters/PageSize"}],
+        "responses": {
+          "200": {"description": "data 为 {group:StatusGroup,samples:StatusSample[],total,page,page_size}；越过末页返回 samples:[]，total 不变", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"$ref": "#/components/schemas/StatusGroupDetail"}}}]}}}},
+          "400": {"$ref": "#/components/responses/Invalid"}, "401": {"$ref": "#/components/responses/Unauthorized"}, "403": {"$ref": "#/components/responses/Forbidden"}, "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
     },
     "/api/status-page/artifacts/{public_id}/thumbnail": {
       "parameters": [{"$ref": "#/components/parameters/PublicID"}],
-      "get": {"summary": "读取静态 PNG（每次重新鉴权）", "description": "运行的 public_id；同一渠道在各分组共享此 URL。撤回公开权限后返回 404；Cache-Control: no-store。永不返回 HTML。", "security": [{}, {"AccessToken1": []}], "responses": {"200": {"$ref": "#/components/responses/PNG"}, "404": {"$ref": "#/components/responses/NotFound"}}}
+      "get": {"summary": "读取静态 PNG（每次重新鉴权）", "description": "终态运行的 public_id；同一运行在各分组共享此 URL。每次检查当前公开设置、渠道别名、当前分组/模型能力和同组历史归属；代表模型变更不撤回仍暴露模型的旧截图。撤回公开权限或移除模型/能力后返回 404；Cache-Control: no-store。永不返回 HTML。", "security": [{}, {"AccessToken1": []}], "responses": {"200": {"$ref": "#/components/responses/PNG"}, "404": {"$ref": "#/components/responses/NotFound"}}}
     },
     "/api/quality-detection/settings": {
       "get": {"security": [{"AccessToken1": []}], "summary": "管理员读取检测与发布设置", "responses": {"200": {"description": "data 为 QualitySettings", "content": {"application/json": {"schema": {"allOf": [{"$ref": "#/components/schemas/Envelope"}, {"properties": {"data": {"$ref": "#/components/schemas/QualitySettings"}}}]}}}}, "401": {"$ref": "#/components/responses/Unauthorized"}, "403": {"$ref": "#/components/responses/Forbidden"}}},
@@ -82,6 +91,7 @@
       "Hours": {"name": "hours", "in": "query", "schema": {"type": "integer", "enum": [1, 6, 24, 168], "default": 24}},
       "Model": {"name": "model", "in": "query", "schema": {"type": "string", "maxLength": 256}},
       "Page": {"name": "page", "in": "query", "schema": {"type": "integer", "minimum": 1, "default": 1}},
+      "StatusPageNumber": {"name": "page", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100000, "default": 1}},
       "PageSize": {"name": "page_size", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}},
       "ID": {"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}},
       "PublicID": {"name": "public_id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[a-f0-9]{32}$"}}
@@ -112,6 +122,16 @@
       "QualityRun": {"type": "object", "properties": {"id": {"type": "integer", "format": "int64"}, "public_id": {"type": "string"}, "batch_id": {"type": "integer", "format": "int64"}, "channel_id": {"type": "integer"}, "channel_name": {"type": "string"}, "model": {"type": "string"}, "mapped_model": {"type": "string"}, "prompt_version_id": {"type": "integer", "format": "int64"}, "prompt_name": {"type": "string"}, "status": {"type": "string", "enum": ["queued", "running", "completed", "failed", "cancelled", "interrupted", "skipped"]}, "quality_result": {"type": "string", "enum": ["not_evaluated", "rules_passed", "needs_review", "suspected_degradation"]}, "created_at": {"type": "integer", "format": "int64"}, "started_at": {"type": "integer", "format": "int64"}, "completed_at": {"type": "integer", "format": "int64"}, "first_text_ms": {"type": "integer", "nullable": true}, "generation_ms": {"type": "integer", "nullable": true}, "input_tokens": {"type": "integer", "nullable": true}, "output_tokens": {"type": "integer", "nullable": true}, "error_code": {"type": "string"}, "has_output": {"type": "boolean"}, "has_html": {"type": "boolean"}, "has_thumbnail": {"type": "boolean"}, "render_status": {"type": "string"}, "review_status": {"type": "string"}, "review_note": {"type": "string"}, "baseline_id": {"type": "integer", "format": "int64"}}},
       "StatusSample": {"type": "object", "properties": {"public_id": {"type": "string"}, "channel_name": {"type": "string", "description": "仅公开别名"}, "model": {"type": "string"}, "status": {"type": "string"}, "quality_result": {"type": "string"}, "completed_at": {"type": "integer", "format": "int64"}, "stale_after": {"type": "integer", "format": "int64"}, "first_text_ms": {"type": "integer", "nullable": true}, "generation_ms": {"type": "integer", "nullable": true}, "thumbnail_url": {"type": "string", "nullable": true}, "render_status": {"type": "string"}}},
       "StatusGroup": {"type": "object", "properties": {"public_id": {"type": "string"}, "name": {"type": "string", "description": "仅公开别名"}, "channel_count": {"type": "integer"}, "configured_count": {"type": "integer"}, "fresh_count": {"type": "integer"}, "state": {"type": "string", "enum": ["passed", "review", "partial", "failed", "unknown", "stale", "paused"]}, "success_rate": {"type": "number", "nullable": true}, "avg_latency_ms": {"type": "number", "nullable": true}, "tokens_per_second": {"type": "number", "nullable": true}, "series": {"type": "array", "items": {"type": "object", "properties": {"ts": {"type": "integer", "format": "int64"}, "value": {"type": "number", "nullable": true}}}}, "latest_sample": {"allOf": [{"$ref": "#/components/schemas/StatusSample"}], "nullable": true}}},
+      "StatusGroupDetail": {
+        "type": "object", "required": ["group", "samples", "total", "page", "page_size"],
+        "properties": {
+          "group": {"$ref": "#/components/schemas/StatusGroup"},
+          "samples": {"type": "array", "description": "当前允许发布的历史终态记录，按 completed_at DESC、内部 id DESC 排序；不受 hours 限制", "items": {"$ref": "#/components/schemas/StatusSample"}},
+          "total": {"type": "integer", "format": "int64", "minimum": 0, "description": "模型和公开权限筛选后的历史总数"},
+          "page": {"type": "integer", "minimum": 1, "maximum": 100000},
+          "page_size": {"type": "integer", "minimum": 1, "maximum": 100}
+        }
+      },
       "StatusPage": {"type": "object", "properties": {"enabled": {"type": "boolean"}, "paused": {"type": "boolean"}, "generated_at": {"type": "integer", "format": "int64"}, "metrics_data_until": {"type": "integer", "format": "int64"}, "last_probe_completed_at": {"type": "integer", "format": "int64"}, "window_start": {"type": "integer", "format": "int64"}, "window_end": {"type": "integer", "format": "int64"}, "bucket_seconds": {"type": "integer"}, "total": {"type": "integer"}, "page": {"type": "integer"}, "page_size": {"type": "integer"}, "models": {"type": "array", "items": {"type": "string"}}, "summary": {"type": "object", "properties": {"groups": {"type": "integer"}, "attention": {"type": "integer"}, "channels": {"type": "integer"}}}, "groups": {"type": "array", "items": {"$ref": "#/components/schemas/StatusGroup"}}}}
     }
   }

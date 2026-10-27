@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, configure, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   AxiosError,
@@ -41,6 +41,41 @@ afterEach(() => {
 })
 
 describe('saved artifacts', () => {
+  it('loads a saved screenshot after StrictMode cancels and remounts its initial request', async () => {
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL() {
+          return 'blob:strict-mode-sample'
+        }
+        static revokeObjectURL() {}
+      }
+    )
+    api.defaults.adapter = async (config) => ({
+      status: 200,
+      statusText: 'OK',
+      config,
+      headers: {},
+      data: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], {
+        type: 'image/png',
+      }),
+    })
+    configure({ reactStrictMode: true })
+    try {
+      renderQuality(
+        <ControlledThumbnail
+          path='/api/status-page/artifacts/remounted-sample/thumbnail'
+          label='Remounted sample'
+        />
+      )
+      expect(
+        await screen.findByRole('img', { name: 'Remounted sample' })
+      ).toHaveAttribute('src', 'blob:strict-mode-sample')
+    } finally {
+      configure({ reactStrictMode: false })
+    }
+  })
+
   it('renders model HTML as inert text and preserves unknown usage', async () => {
     const output =
       '<script>document.title="changed"</script><h1>Untrusted output</h1>'

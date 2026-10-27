@@ -1,0 +1,35 @@
+# new-api / QuantumNous — no Ingress, NodePort, hostPort or public endpoint.
+apiVersion: v1
+kind: Service
+metadata:
+  name: quality-renderer
+  namespace: production
+spec:
+  type: ClusterIP
+  selector:
+    app: quality-renderer
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quality-renderer-private
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: quality-renderer
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        # A podSelector alone restricts the source to this same namespace.
+        - podSelector:
+            matchLabels:
+              app: new-api
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress: []

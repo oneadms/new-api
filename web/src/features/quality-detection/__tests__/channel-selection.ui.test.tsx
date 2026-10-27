@@ -170,7 +170,7 @@ describe('channel selection and first-time configuration', () => {
     )
     expect(screen.getByText('2 unique channels selected')).toBeVisible()
     await user.click(filter)
-    await user.click(screen.getByRole('option', { name: 'All groups' }))
+    await user.click(await screen.findByRole('option', { name: 'All groups' }))
     expect(screen.getByRole('checkbox', { name: 'Channel A' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Channel B' })).toBeChecked()
   })

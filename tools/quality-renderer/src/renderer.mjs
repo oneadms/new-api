@@ -37,7 +37,11 @@ export class QualityRenderer {
         const page = await probe.newPage();
         await page.goto('chrome://sandbox/', { waitUntil: 'domcontentloaded', timeout: 5_000 });
         const status = await page.locator('body').innerText({ timeout: 5_000 });
-        if (!/Namespace sandbox\s+Yes/i.test(status) || !/Seccomp-BPF sandbox\s+Yes/i.test(status)) {
+        // The pinned Chromium reports the layer-one mechanism and namespaces
+        // separately. Match complete rows; TSYNC alone is not seccomp evidence.
+        const rows = new Set(status.split(/\r?\n/).map((line) => line.trim().replace(/\s+/g, ' ')));
+        if (!rows.has('Layer 1 Sandbox Namespace') || !rows.has('PID namespaces Yes') ||
+            !rows.has('Network namespaces Yes') || !rows.has('Seccomp-BPF sandbox Yes')) {
           throw new RenderError(503, 'sandbox_unavailable');
         }
       } finally {

@@ -42,6 +42,9 @@ export async function loadThumbnail(
     const response = await api.get<Blob>(path, {
       responseType: 'blob',
       signal,
+      // React Query owns sharing and cancellation. The generic GET cache can
+      // otherwise reuse an already-aborted request when the image remounts.
+      disableDuplicate: true,
       skipErrorHandler: true,
     })
     if (response.data.type.split(';')[0] !== 'image/png') {

@@ -236,7 +236,10 @@ describe('native status page', () => {
       statusText: 'OK',
       config,
       headers: {},
-      data: { success: true, data: { group, samples: [] } },
+      data: {
+        success: true,
+        data: { group, samples: [], total: 0, page: 1, page_size: 6 },
+      },
     })
     const user = userEvent.setup()
     renderQuality(
@@ -260,10 +263,10 @@ describe('native status page', () => {
       'sm:max-w-2xl',
       'motion-reduce:transition-none'
     )
-    await within(dialog).findByText('Channel samples')
+    await within(dialog).findByText('Detection history')
     expect(
-      within(dialog).getByText('Channel samples').parentElement
-    ).toHaveClass('overflow-y-auto')
+      within(dialog).getByRole('region', { name: 'Group details' })
+    ).toHaveClass('min-h-0', 'overflow-y-auto')
     expect(dialog).toContainElement(document.activeElement as HTMLElement)
     await user.keyboard('{Escape}')
     await waitFor(() =>

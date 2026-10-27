@@ -64,10 +64,33 @@ const data = {
   summary: { groups: 2, attention: 0, channels: 2 },
   groups: [group, { ...group, public_id: 'premium', name: 'Premium' }],
 }
+const samples = [700, 600, 500, 400, 300, 200, 100].map((offset) => ({
+  public_id: `history-${offset}`,
+  channel_name:
+    'Shared public channel with a deliberately long historical label',
+  model: longModel,
+  status: 'completed',
+  quality_result: 'needs_review',
+  completed_at: data.generated_at - 86400 + offset,
+  stale_after: data.generated_at - 43200,
+  first_text_ms: 24,
+  generation_ms: 2400,
+  thumbnail_url: `/api/status-page/artifacts/history-${offset}/thumbnail`,
+  render_status: 'completed',
+}))
 const errors = []
 const unexpected = []
 const requests = []
 try {
+  const fixtureContext = await browser.newContext({
+    viewport: { width: 1200, height: 800 },
+  })
+  const fixture = await fixtureContext.newPage()
+  await fixture.setContent(
+    '<html><body style="margin:0;background:#f4f5f7;color:#202936;font:48px sans-serif;padding:72px"><h1>Saved detection</h1><p>Historical HTML screenshot</p><svg width="900" height="280"><rect x="0" y="120" width="180" height="160" rx="16" fill="#8594ad"/><rect x="220" y="70" width="180" height="210" rx="16" fill="#60758f"/><rect x="440" y="0" width="180" height="280" rx="16" fill="#415973"/></svg></body></html>'
+  )
+  const samplePNG = await fixture.screenshot({ type: 'png' })
+  await fixtureContext.close()
   for (const scenario of [
     { width: 1440, height: 900, theme: 'dark' },
     { width: 390, height: 844, theme: 'light' },
@@ -103,6 +126,16 @@ try {
         method: request.method(),
         query: url.search,
       })
+      if (
+        url.pathname.startsWith('/api/status-page/artifacts/') &&
+        url.pathname.endsWith('/thumbnail')
+      ) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'image/png',
+          body: samplePNG,
+        })
+      }
       let response
       switch (url.pathname) {
         case '/api/status':
@@ -121,6 +154,18 @@ try {
         case '/api/status-page':
           response = data
           break
+        case '/api/status-page/groups/standard': {
+          const historyPage = Number(url.searchParams.get('page') ?? '1')
+          assert.equal(url.searchParams.get('page_size'), '6')
+          response = {
+            group,
+            samples: samples.slice((historyPage - 1) * 6, historyPage * 6),
+            total: samples.length,
+            page: historyPage,
+            page_size: 6,
+          }
+          break
+        }
         default:
           unexpected.push(url.pathname)
           return route.abort()
@@ -132,6 +177,10 @@ try {
       })
     })
     const page = await context.newPage()
+    const consoleErrors = []
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text())
+    })
     page.on('pageerror', (error) => errors.push(error.message))
     try {
       await page.goto(`${baseURL}/status`)
@@ -202,6 +251,96 @@ try {
       await page
         .getByRole('heading', { name: group.name, exact: true })
         .waitFor()
+      const detailsTrigger = page.getByRole('button', {
+        name: `View details: ${group.name}`,
+        exact: true,
+      })
+      await detailsTrigger.click()
+      const dialog = page.getByRole('dialog', { name: group.name, exact: true })
+      const history = dialog.getByRole('list', {
+        name: 'Detection history',
+        exact: true,
+      })
+      await history.getByRole('img').nth(5).waitFor()
+      assert.equal(await history.getByRole('img').count(), 6)
+      assert.deepEqual(
+        await history
+          .locator('time')
+          .evaluateAll((elements) =>
+            elements.map((element) => element.dateTime)
+          ),
+        samples
+          .slice(0, 6)
+          .map((sample) => new Date(sample.completed_at * 1000).toISOString())
+      )
+      await dialog
+        .getByRole('heading', { name: 'Detection history', exact: true })
+        .scrollIntoViewIfNeeded()
+      const firstImage = await history.getByRole('img').first().boundingBox()
+      assert.ok(
+        firstImage &&
+          firstImage.y < scenario.height &&
+          firstImage.y + firstImage.height > 0,
+        'Opening details shows historical screenshots before business metrics'
+      )
+      await page.screenshot({
+        animations: 'disabled',
+        path: path.join(
+          tmpdir(),
+          `new-api-status-history-${scenario.width}.png`
+        ),
+      })
+      const historyPagination = dialog.getByRole('navigation', {
+        name: 'Detection history pagination',
+        exact: true,
+      })
+      const older = historyPagination.getByRole('button', {
+        name: 'Next',
+        exact: true,
+      })
+      await older.scrollIntoViewIfNeeded()
+      const historyLayout = await older.evaluate((element) => ({
+        bottom: element.getBoundingClientRect().bottom,
+        height: window.innerHeight,
+        scroll: element.closest('[role="region"]').scrollTop,
+        overflow:
+          element.closest('[role="dialog"]').scrollWidth >
+          element.closest('[role="dialog"]').clientWidth,
+      }))
+      assert.ok(
+        historyLayout.bottom <= historyLayout.height,
+        'History pagination remains reachable inside the detail panel'
+      )
+      assert.ok(
+        historyLayout.scroll > 0,
+        'Historical images scroll within the detail panel'
+      )
+      assert.equal(
+        historyLayout.overflow,
+        false,
+        'Historical samples and long names never widen the detail panel'
+      )
+      await older.click()
+      await dialog.getByText('Page 2 of 2', { exact: true }).waitFor()
+      await history.getByRole('img').first().waitFor()
+      assert.equal(await history.getByRole('img').count(), 1)
+      assert.equal(
+        await history.locator('time').first().getAttribute('datetime'),
+        new Date(samples[6].completed_at * 1000).toISOString()
+      )
+      assert.equal(await older.isDisabled(), true)
+      assert.ok(
+        await dialog
+          .getByRole('heading', { name: 'Detection history', exact: true })
+          .evaluate((element) => element === document.activeElement)
+      )
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      assert.ok(
+        await detailsTrigger.evaluate(
+          (element) => element === document.activeElement
+        )
+      )
       await page
         .getByRole('heading', { name: 'Service Status', exact: true })
         .scrollIntoViewIfNeeded()
@@ -228,6 +367,23 @@ try {
         assert.ok(layout.scroll > 0, 'Mobile page scrolls to pagination')
       }
     } catch (error) {
+      console.error({
+        consoleErrors,
+        unexpected,
+        historyRequests: requests.filter((request) =>
+          request.path.startsWith('/api/status-page/')
+        ),
+        images: await page
+          .locator('[role="dialog"] img')
+          .evaluateAll((images) =>
+            images.map((image) => ({
+              src: image.src,
+              complete: image.complete,
+              width: image.naturalWidth,
+              height: image.getBoundingClientRect().height,
+            }))
+          ),
+      })
       await page.screenshot({
         path: path.join(tmpdir(), 'new-api-status-error.png'),
       })
@@ -244,7 +400,7 @@ try {
     'Public filtering and refresh never create a model task'
   )
   console.log(
-    'PASS: public group display, dark/light themed menus, searchable empty state, long labels, numeric time selection, mobile scrolling, read-only refresh.'
+    'PASS: public group display, themed menus, model/time filters, historical PNG pagination and chronological order, mobile panel scrolling, focus restoration, read-only requests.'
   )
   console.log(`Screenshots: ${tmpdir()}/new-api-status-*.png`)
 } finally {

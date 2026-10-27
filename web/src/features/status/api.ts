@@ -50,13 +50,18 @@ export function statusPageOptions(
   })
 }
 
-export function statusGroupOptions(id: string, hours: number, model: string) {
+export function statusGroupOptions(
+  id: string,
+  hours: number,
+  model: string,
+  page = 1
+) {
   return queryOptions({
-    queryKey: ['status-page', 'group', id, hours, model],
+    queryKey: ['status-page', 'group', id, hours, model, page],
     queryFn: ({ signal }) =>
       qualityRequest<StatusGroupDetail>({
         url: `/api/status-page/groups/${encodeURIComponent(id)}`,
-        params: { hours, model },
+        params: { hours, model, page, page_size: 6 },
         signal,
       }),
     refetchInterval: 30_000,

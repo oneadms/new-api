@@ -12,6 +12,11 @@
       "action": "SCMP_ACT_ALLOW"
     },
     {
+      "comment": "Chromium's namespace sandbox chroots into /proc/self/fdinfo after entering its own user namespace. This grants no host capability; cap_drop: ALL is retained.",
+      "names": ["chroot"],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
       "comment": "Modern glibc must fall back to filtered clone rather than fail with EPERM. clone3 is not enabled.",
       "names": ["clone3"],
       "action": "SCMP_ACT_ERRNO",

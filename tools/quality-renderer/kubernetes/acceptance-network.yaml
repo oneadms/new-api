@@ -1,0 +1,13 @@
+# new-api / QuantumNous — acceptance jobs have no inbound or outbound IP access.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quality-renderer-acceptance-deny
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: quality-renderer-acceptance
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []

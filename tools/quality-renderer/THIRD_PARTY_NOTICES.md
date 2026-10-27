@@ -32,6 +32,19 @@ for the real Chromium sandbox remains allowed. No unconfined or privileged
 fallback is included. Copyright for these new-api modifications remains with
 QuantumNous contributors under the project license, subject to upstream terms.
 
+## containerd AppArmor profile
+
+`kubernetes/apparmor.profile` derives from containerd v2.2.7's default profile:
+https://github.com/containerd/containerd/blob/v2.2.7/contrib/apparmor/template.go
+
+- Copyright The docker Authors, The Moby Authors, and The containerd Authors.
+- Licensed under Apache-2.0; the full text is retained in `LICENSE.apache-2.0`.
+- This component gives the profile a dedicated new-api name and additionally
+  denies execution and executable file mappings under `/tmp`, `/dev/shm`, and
+  `/run/quality-renderer`. Existing proc/sys/mount restrictions are retained.
+- The profile is loaded only for the renderer workload; it does not replace the
+  node's general containerd or Docker profile.
+
 ## Browser, base image, fonts and Node.js
 
 - Container: `mcr.microsoft.com/playwright:v1.64.1-noble`.

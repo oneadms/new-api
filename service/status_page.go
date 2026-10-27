@@ -61,8 +61,11 @@ type StatusGroup struct {
 }
 
 type StatusGroupDetail struct {
-	Group   StatusGroup    `json:"group"`
-	Samples []StatusSample `json:"samples"`
+	Group    StatusGroup    `json:"group"`
+	Samples  []StatusSample `json:"samples"`
+	Total    int64          `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
 }
 
 type StatusPageData struct {
@@ -150,7 +153,7 @@ func loadStatusPage(ctx context.Context, query StatusPageQuery, detailID string)
 	if err != nil {
 		return nil, nil, err
 	}
-	return aggregateStatusPage(data, settings, snapshot, query, groups)
+	return aggregateStatusPage(ctx, data, settings, snapshot, query, groups, detailID)
 }
 
 func statusGroupID(name string) string {
@@ -158,7 +161,7 @@ func statusGroupID(name string) string {
 	return hex.EncodeToString(digest[:16])
 }
 
-func aggregateStatusPage(data *StatusPageData, settings *model.QualitySettings, snapshot model.StatusPageSnapshot, query StatusPageQuery, groups []string) (*StatusPageData, map[string]StatusGroupDetail, error) {
+func aggregateStatusPage(ctx context.Context, data *StatusPageData, settings *model.QualitySettings, snapshot model.StatusPageSnapshot, query StatusPageQuery, groups []string, detailID string) (*StatusPageData, map[string]StatusGroupDetail, error) {
 	profiles := map[int]model.ChannelQualityProfile{}
 	for _, profile := range snapshot.Profiles {
 		if profile.PublishSample && profile.PublicAlias != "" {
@@ -180,7 +183,7 @@ func aggregateStatusPage(data *StatusPageData, settings *model.QualitySettings, 
 		}
 		history[relation.RunID][relation.GroupName] = true
 	}
-	groupChannels := map[string]map[int]bool{}
+	groupChannels := map[string]map[int][]string{}
 	models := map[string]bool{}
 	for _, ability := range snapshot.Abilities {
 		channel := channels[ability.ChannelId]
@@ -193,9 +196,9 @@ func aggregateStatusPage(data *StatusPageData, settings *model.QualitySettings, 
 			continue
 		}
 		if groupChannels[ability.Group] == nil {
-			groupChannels[ability.Group] = map[int]bool{}
+			groupChannels[ability.Group] = map[int][]string{}
 		}
-		groupChannels[ability.Group][ability.ChannelId] = true
+		groupChannels[ability.Group][ability.ChannelId] = append(groupChannels[ability.Group][ability.ChannelId], ability.Model)
 	}
 	for name := range models {
 		data.Models = append(data.Models, name)
@@ -223,27 +226,15 @@ func aggregateStatusPage(data *StatusPageData, settings *model.QualitySettings, 
 				group.ConfiguredCount++
 			}
 			run, found := runs[channelID]
-			if !found || !history[run.ID][published.Name] || (query.Model != "" && run.Model != query.Model) {
+			if !found || !history[run.ID][published.Name] || !slices.Contains(members[channelID], run.Model) {
 				continue
 			}
-			fingerprint, err := QualityConfigFingerprint(channel, profile, settings)
+			sample, current, err := publicStatusSample(run, channel, profile, settings)
 			if err != nil {
 				return nil, nil, err
 			}
-			staleAfter := run.CompletedAt + int64(settings.IntervalMinutes)*120 + 1800 + 60
-			current := configured && fingerprint == run.ConfigFingerprint && channel.Status == common.ChannelStatusEnabled
-			if !current {
-				staleAfter = run.CompletedAt
-			}
-			sample := StatusSample{PublicID: run.PublicID, ChannelName: profile.PublicAlias, Model: run.Model,
-				Status: run.Status, QualityResult: run.QualityResult, CompletedAt: run.CompletedAt, StaleAfter: staleAfter,
-				FirstTextMS: run.FirstTextMS, GenerationMS: run.GenerationMS, RenderStatus: run.RenderStatus}
-			if run.HasThumbnail {
-				url := "/api/status-page/artifacts/" + run.PublicID + "/thumbnail"
-				sample.ThumbnailURL = &url
-			}
 			detail.Samples = append(detail.Samples, sample)
-			if data.GeneratedAt >= staleAfter || !current {
+			if data.GeneratedAt >= sample.StaleAfter || !current {
 				old++
 				continue
 			}
@@ -306,6 +297,23 @@ func aggregateStatusPage(data *StatusPageData, settings *model.QualitySettings, 
 				data.LastProbeCompletedAt = sample.CompletedAt
 			}
 		}
+		// Current aggregate evidence is fixed before loading history. Only the
+		// requested detail receives a database-counted and bounded history page.
+		if detailID == group.PublicID {
+			historicalRuns, total, err := model.LoadStatusGroupHistory(ctx, published.Name, members, query.Page, query.PageSize)
+			if err != nil {
+				return nil, nil, err
+			}
+			detail.Samples = make([]StatusSample, 0, len(historicalRuns))
+			detail.Total, detail.Page, detail.PageSize = total, query.Page, query.PageSize
+			for _, run := range historicalRuns {
+				sample, _, err := publicStatusSample(run, channels[run.ChannelID], profiles[run.ChannelID], settings)
+				if err != nil {
+					return nil, nil, err
+				}
+				detail.Samples = append(detail.Samples, sample)
+			}
+		}
 		details[group.PublicID] = detail
 		data.Groups = append(data.Groups, *group)
 		if group.State == "partial" || group.State == "failed" || group.State == "review" {
@@ -325,6 +333,30 @@ func aggregateStatusPage(data *StatusPageData, settings *model.QualitySettings, 
 	start := min((query.Page-1)*query.PageSize, len(data.Groups))
 	data.Groups = data.Groups[start:min(start+query.PageSize, len(data.Groups))]
 	return data, details, nil
+}
+
+// publicStatusSample is the allowlisted public representation shared by the
+// current aggregate and historical pages. Configuration drift marks evidence
+// stale but does not remove otherwise publishable historical results.
+func publicStatusSample(run model.QualityProbeRun, channel *model.Channel, profile model.ChannelQualityProfile, settings *model.QualitySettings) (StatusSample, bool, error) {
+	fingerprint, err := QualityConfigFingerprint(channel, profile, settings)
+	if err != nil {
+		return StatusSample{}, false, err
+	}
+	current := profile.Enabled && profile.Model != "" && profile.Model == run.Model && profile.PromptVersionID > 0 &&
+		fingerprint == run.ConfigFingerprint && channel.Status == common.ChannelStatusEnabled
+	staleAfter := run.CompletedAt + int64(settings.IntervalMinutes)*120 + 1800 + 60
+	if !current {
+		staleAfter = run.CompletedAt
+	}
+	sample := StatusSample{PublicID: run.PublicID, ChannelName: profile.PublicAlias, Model: run.Model,
+		Status: run.Status, QualityResult: run.QualityResult, CompletedAt: run.CompletedAt, StaleAfter: staleAfter,
+		FirstTextMS: run.FirstTextMS, GenerationMS: run.GenerationMS, RenderStatus: run.RenderStatus}
+	if run.HasThumbnail {
+		url := "/api/status-page/artifacts/" + run.PublicID + "/thumbnail"
+		sample.ThumbnailURL = &url
+	}
+	return sample, current, nil
 }
 
 func applyStatusMetrics(group *StatusGroup, metrics []model.PerfMetric, name string, start, end, bucket int64) {
@@ -381,6 +413,9 @@ func ReadPublicStatusThumbnail(id string) ([]byte, error) {
 	if err != nil {
 		return nil, ErrStatusPageNotFound
 	}
+	if run.CompletedAt <= 0 || !slices.Contains([]string{"completed", "failed", "cancelled", "interrupted", "skipped"}, run.Status) {
+		return nil, ErrStatusPageNotFound
+	}
 	profiles, err := model.ListQualityProfiles()
 	if err != nil {
 		return nil, err
@@ -396,7 +431,7 @@ func ReadPublicStatusThumbnail(id string) ([]byte, error) {
 		return nil, ErrStatusPageNotFound
 	}
 	channel, err := model.GetChannelById(run.ChannelID, false)
-	if err != nil {
+	if err != nil || !slices.Contains(channel.GetModels(), run.Model) {
 		return nil, ErrStatusPageNotFound
 	}
 	groups := []string{}
@@ -405,7 +440,7 @@ func ReadPublicStatusThumbnail(id string) ([]byte, error) {
 			groups = append(groups, group.Name)
 		}
 	}
-	allowed, err := model.QualityRunPublishedInGroups(run.ID, groups)
+	allowed, err := model.QualityRunPublishedInGroups(run, groups)
 	if err != nil {
 		return nil, err
 	}

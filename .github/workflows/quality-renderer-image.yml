@@ -42,6 +42,7 @@ jobs:
         run: |
           npm ci --omit=dev --ignore-scripts --no-audit --no-fund
           npm run check
+          sh -n src/kubernetes-worker.sh
           npm test
 
       - name: Validate local, prebuilt and application Compose configurations

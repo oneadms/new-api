@@ -45,7 +45,8 @@ services:
     cpus: 1.0
     mem_limit: 1g
     memswap_limit: 1g
-    pids_limit: 128
+    # Counts Chromium threads as well as processes; 128 exhausts on startup.
+    pids_limit: 256
     shm_size: 128m
     ulimits:
       nofile: {soft: 1024, hard: 1024}

@@ -30,6 +30,7 @@ export function PublicSample(props: {
   sample: StatusSample
   generatedAt: number
   large?: boolean
+  historical?: boolean
 }) {
   const { t } = useTranslation()
   const sample = props.sample
@@ -37,13 +38,15 @@ export function PublicSample(props: {
   return (
     <article className='min-w-0 space-y-3'>
       <div className='flex flex-wrap items-center gap-2'>
-        <span className='font-medium break-all'>{sample.channel_name}</span>
+        <span className='font-medium wrap-anywhere'>{sample.channel_name}</span>
         <ResultBadge value={sample.quality_result} />
-        {sample.stale_after > 0 && props.generatedAt >= sample.stale_after && (
-          <ResultBadge value='stale' />
-        )}
+        {!props.historical &&
+          sample.stale_after > 0 &&
+          props.generatedAt >= sample.stale_after && (
+            <ResultBadge value='stale' />
+          )}
       </div>
-      <p className='text-muted-foreground text-xs break-all'>
+      <p className='text-muted-foreground text-xs wrap-anywhere'>
         {sample.model} · <SavedTime value={sample.completed_at} />
       </p>
       <ControlledThumbnail
@@ -53,11 +56,13 @@ export function PublicSample(props: {
       />
       {props.large && (
         <>
-          <p className='text-muted-foreground text-xs'>
-            {t(
-              'A shared channel sample may appear in several groups. A sample does not prove model identity or overall ability.'
-            )}
-          </p>
+          {!props.historical && (
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'A shared channel sample may appear in several groups. A sample does not prove model identity or overall ability.'
+              )}
+            </p>
+          )}
           <div className='flex flex-wrap gap-3 text-xs'>
             <span>
               {t('Execution')}: <ResultBadge value={sample.status} />

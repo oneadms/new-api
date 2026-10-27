@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assertWorkerIsolation, DOCUMENT_URL } from '../src/policy.mjs';
 import { QualityRenderer } from '../src/renderer.mjs';
-import { browserFixture, deferred, pngFixture } from './fixtures.mjs';
+import { browserFixture, deferred, pngFixture, SANDBOX_STATUS } from './fixtures.mjs';
 
 test('browser launches sandboxed with an explicit credential-free environment', async (t) => {
   const previous = process.env.QUALITY_RENDERER_TOKEN;
@@ -17,12 +17,31 @@ test('browser launches sandboxed with an explicit credential-free environment', 
   assert.ok(!JSON.stringify(options).includes('gateway-only-secret'));
 });
 
-test('unavailable runtime sandbox fails before any model document is delivered', async () => {
-  const fixture = browserFixture({ sandbox: 'Namespace sandbox No\nSeccomp-BPF sandbox No' });
-  await assert.rejects(new QualityRenderer(fixture.chromium).render('model HTML'), { code: 'sandbox_unavailable' });
-  assert.equal(fixture.state.documents.length, 0);
+test('pinned Chromium namespace and seccomp status permits rendering', async () => {
+  const fixture = browserFixture({ sandbox: SANDBOX_STATUS });
+  const image = await new QualityRenderer(fixture.chromium).render('<p>quality</p>');
+  assert.deepEqual(image, pngFixture());
+  assert.equal(fixture.state.documents.length, 1);
   assert.equal(fixture.state.closes, 1);
 });
+
+for (const scenario of [
+  { name: 'unrecognized status', sandbox: 'Namespace sandbox Yes\nSeccomp-BPF sandbox Yes' },
+  { name: 'missing layer-one status', sandbox: SANDBOX_STATUS.replace('Layer 1 Sandbox\tNamespace', '') },
+  { name: 'setuid instead of namespace sandbox', sandbox: SANDBOX_STATUS.replace('Layer 1 Sandbox\tNamespace', 'Layer 1 Sandbox\tSUID') },
+  { name: 'disabled PID namespaces', sandbox: SANDBOX_STATUS.replace('PID namespaces\tYes', 'PID namespaces\tNo') },
+  { name: 'disabled network namespaces', sandbox: SANDBOX_STATUS.replace('Network namespaces\tYes', 'Network namespaces\tNo') },
+  { name: 'disabled seccomp with TSYNC present', sandbox: SANDBOX_STATUS.replace('Seccomp-BPF sandbox\tYes', 'Seccomp-BPF sandbox\tNo') },
+  { name: 'missing seccomp status with TSYNC present', sandbox: SANDBOX_STATUS.replace('Seccomp-BPF sandbox\tYes', '') },
+  { name: 'inexact affirmative value', sandbox: SANDBOX_STATUS.replace('PID namespaces\tYes', 'PID namespaces\tYes (unverified)') },
+]) {
+  test(`${scenario.name} rejects rendering before model HTML is delivered`, async () => {
+    const fixture = browserFixture({ sandbox: scenario.sandbox });
+    await assert.rejects(new QualityRenderer(fixture.chromium).render('model HTML'), { code: 'sandbox_unavailable' });
+    assert.equal(fixture.state.documents.length, 0);
+    assert.equal(fixture.state.closes, 1);
+  });
+}
 
 test('only the single synthetic document is fulfilled and all other routes are aborted', async () => {
   const fixture = browserFixture();

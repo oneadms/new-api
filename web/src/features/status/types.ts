@@ -75,4 +75,10 @@ export type StatusFilters = {
   page_size: number
   sort: string
 }
-export type StatusGroupDetail = { group: StatusGroup; samples: StatusSample[] }
+export type StatusGroupDetail = {
+  group: StatusGroup
+  samples: StatusSample[]
+  total: number
+  page: number
+  page_size: number
+}

@@ -46,11 +46,17 @@
 
 `StatusGroup`：public_id:string、name:string（公开别名）、channel_count:number、configured_count:number、fresh_count:number、state:'passed'|'review'|'partial'|'failed'|'unknown'|'stale'|'paused'、success_rate:number|null、avg_latency_ms:number|null、tokens_per_second:number|null、series:Array<{ts:number,value:number|null}>、latest_sample:StatusSample|null。
 
-`GET /api/status-page/groups/:public_id?hours=24&model=` 返回 `{group:StatusGroup,samples:StatusSample[]}`。服务端同样检查当前公开设置。
+`GET /api/status-page/groups/:public_id?hours=24&model=&page=1&page_size=20` 返回 `{group:StatusGroup,samples:StatusSample[],total:number,page:number,page_size:number}`。
+
+- `samples` 是所选分组仍保留的历史终态运行（completed/failed/cancelled/interrupted/skipped），包含同一渠道的多次检测；按 `completed_at DESC, id DESC` 稳定排序。`id` 仅用于服务端排序，不公开输出。
+- `page` 默认1，范围1–100000；`page_size` 默认20，范围1–100。`total` 是应用模型与公开权限筛选后的历史记录总数；超出末页返回 `samples:[]`，保留实际总数与请求分页参数。无效分页返回400。数据库执行计数、LIMIT和OFFSET，仅详情请求读取所选分组的历史。
+- `hours` 仅限制 `group` 的业务统计窗口，不截断检测历史；`group.latest_sample`、状态与当前计数仍使用原有每渠道最新记录聚合，历史分页不会将旧记录变成当前状态。列表接口仍只加载每渠道最新记录，不读取全量历史。
+- `model` 精确筛选样本模型；检测配置的代表模型变更后，旧模型记录在渠道仍暴露该模型时可继续显示，但不作为新代表模型的当前证据。未生成或不可用的截图仍保留对应记录，`thumbnail_url:null`，公共查询不会触发模型调用、渲染或自动重新生成。
+- 每次读取都要求状态页当前开启、分组当前已配置公开、渠道存在且 `publish_sample` 为真并有非空公开别名，以及渠道当前分组/模型元数据和该分组的模型能力记录匹配。运行还必须具有同一分组的历史 `QualityProbeRunGroup` 关联；移动渠道不会将旧记录带入新分组。渠道临时禁用或检测暂停本身不删除已发布历史，当前状态仍按既有规则标记陈旧或暂停。
 
 `StatusSample`：public_id:string、channel_name:string（仅公开别名）、model:string、status:string、quality_result:string、completed_at:number、stale_after:number、first_text_ms:number|null、generation_ms:number|null、thumbnail_url:string|null、render_status:string。无原始HTML、提示词、内部渠道ID或原始错误。
 
-`GET /api/status-page/artifacts/:public_id/thumbnail` 返回PNG；public_id对应运行公开标识，检查当前分组与渠道发布规则后读取同一产物。撤回后立即拒绝，不使用绕过权限的永久公开存储URL。
+`GET /api/status-page/artifacts/:public_id/thumbnail` 返回PNG；public_id对应终态运行公开标识，同一运行在多个公开分组中共享此标识和缩略图URL。每次读取均重新检查当前状态页、渠道发布规则、当前分组/模型能力和同组历史归属，代表模型变更不自动撤回仍暴露模型的历史截图。移除模型、能力、公开别名或公开权限后立即拒绝，不使用绕过权限的永久公开存储URL。
 
 ## 执行和渲染的内部契约
 

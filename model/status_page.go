@@ -65,6 +65,39 @@ func LoadStatusPageSnapshot(ctx context.Context, groups []string, selectedModel 
 	return result, err
 }
 
+// LoadStatusGroupHistory pages final runs using the currently published
+// channel/model pairs supplied by the status service. Historical membership is
+// enforced before counting or paginating, independently of the metrics window.
+func LoadStatusGroupHistory(ctx context.Context, group string, channelModels map[int][]string, page, pageSize int) ([]QualityProbeRun, int64, error) {
+	runs := []QualityProbeRun{}
+	var total int64
+	modelChannels := map[string][]int{}
+	for channelID, models := range channelModels {
+		for _, name := range models {
+			modelChannels[name] = append(modelChannels[name], channelID)
+		}
+	}
+	if len(modelChannels) == 0 {
+		return runs, total, nil
+	}
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		eligible := tx.Where("1 = 0")
+		for name, ids := range modelChannels {
+			eligible = eligible.Or("model = ? AND channel_id IN ?", name, ids)
+		}
+		membership := tx.Model(&QualityProbeRunGroup{}).Select("run_id").Where("group_name = ?", group)
+		query := tx.Model(&QualityProbeRun{}).Where(eligible).
+			Where("id IN (?) AND completed_at > 0", membership).
+			Where("status IN ?", []string{"completed", "failed", "cancelled", "interrupted", "skipped"})
+		if err := query.Count(&total).Error; err != nil {
+			return err
+		}
+		return query.Order("completed_at DESC").Order("id DESC").
+			Limit(pageSize).Offset((page - 1) * pageSize).Find(&runs).Error
+	})
+	return runs, total, err
+}
+
 func GetQualityRunByPublicID(id string) (*QualityProbeRun, error) {
 	var run QualityProbeRun
 	if err := DB.Where("public_id = ?", id).First(&run).Error; err != nil {
@@ -73,13 +106,17 @@ func GetQualityRunByPublicID(id string) (*QualityProbeRun, error) {
 	return &run, nil
 }
 
-// QualityRunPublishedInGroups checks historical membership independently of
-// current channel membership, so moving a channel cannot move its old history.
-func QualityRunPublishedInGroups(runID int64, groups []string) (bool, error) {
+// QualityRunPublishedInGroups requires both historical membership and current
+// model abilities in the same published group. Moving a channel or removing its
+// model ability cannot move or retain access to its old screenshots.
+func QualityRunPublishedInGroups(run *QualityProbeRun, groups []string) (bool, error) {
 	if len(groups) == 0 {
 		return false, nil
 	}
+	abilities := DB.Model(&Ability{}).Select("?", clause.Column{Name: "group"}).
+		Where("channel_id = ? AND model = ?", run.ChannelID, run.Model).
+		Where(map[string]any{"group": groups})
 	var count int64
-	err := DB.Model(&QualityProbeRunGroup{}).Where("run_id = ? AND group_name IN ?", runID, groups).Count(&count).Error
+	err := DB.Model(&QualityProbeRunGroup{}).Where("run_id = ? AND group_name IN (?)", run.ID, abilities).Count(&count).Error
 	return count > 0, err
 }

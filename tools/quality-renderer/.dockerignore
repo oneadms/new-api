@@ -7,5 +7,8 @@
 !tests/**
 !integration/
 !integration/**
+!kubernetes/
+!kubernetes/*.mjs
+!seccomp_profile.json
 !THIRD_PARTY_NOTICES.md
 !LICENSE.apache-2.0
