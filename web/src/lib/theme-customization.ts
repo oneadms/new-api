@@ -85,11 +85,13 @@ export type ThemeScale = 'default' | 'sm' | 'lg' | 'xl'
 export type ContentLayout = 'full' | 'centered'
 
 /**
- * 字体设置独立于配色预设。
- * - `default` 跟随当前预设：Anthropic 使用衬线字体，基础配色使用无衬线字体。
- * - `sans` 使用 Public Sans 及对应的中文回退字体。
- * - `serif` 使用 Lora 及对应的中文回退字体。
- * 等宽内容保留自己的字体，不受此设置影响。
+ * Font axis for the theme.
+ *
+ * - `default` — use the browser's sans-serif unless the active preset
+ *   specifies its own font (Anthropic uses serif).
+ * - `sans` — explicitly use Public Sans.
+ * - `serif` — use Lora + CJK fallbacks. Monospace contexts keep their
+ *   own family via Tailwind preflight and `.font-mono`.
  */
 export type ThemeFont = 'default' | 'sans' | 'serif'
 
@@ -99,7 +101,7 @@ export type ThemeFont = 'default' | 'sans' | 'serif'
  * needs simple attribute selectors (no `:not()` gymnastics, no per-preset
  * font branches).
  */
-export type ResolvedThemeFont = Exclude<ThemeFont, 'default'>
+export type ResolvedThemeFont = 'system' | Exclude<ThemeFont, 'default'>
 
 export type ThemeCustomization = {
   preset: ThemePreset
@@ -148,22 +150,16 @@ export const CONTENT_LAYOUT_VALUES: ReadonlySet<ContentLayout> = new Set([
   'centered',
 ])
 
-export const THEME_COOKIE_KEYS = {
-  preset: 'theme_preset',
-  font: 'theme_font',
-  radius: 'theme_radius',
-  scale: 'theme_scale',
-  contentLayout: 'theme_content_layout',
-} as const
-
 /**
- * 预设的默认字体与配色注册表统一维护；未声明的预设使用无衬线字体。
- * 仅在用户选择跟随预设时使用此映射，显式字体偏好始终优先。
+ * Preset → default font mapping. Used by the provider to resolve the user's
+ * `font: 'default'` preference against the active preset.
+ *
+ * Presets without a font override use the browser's sans-serif. Public
+ * Sans is reserved for an explicit user choice.
  */
 export const PRESET_DEFAULT_FONT: Partial<
   Record<ThemePreset, ResolvedThemeFont>
 > = {
-  default: 'sans',
   anthropic: 'serif',
 }
 
@@ -178,7 +174,7 @@ export function resolveThemeFont(
   preset: ThemePreset
 ): ResolvedThemeFont {
   if (font === 'default') {
-    return PRESET_DEFAULT_FONT[preset] ?? 'sans'
+    return PRESET_DEFAULT_FONT[preset] ?? 'system'
   }
   return font
 }

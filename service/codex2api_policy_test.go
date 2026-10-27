@@ -20,6 +20,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -407,7 +408,7 @@ func TestCodex2APIPolicyVerifiedStrikesDisableUserAndBlockIP(t *testing.T) {
 	model.DB.Unscoped().Where("id = ?", userID).Delete(&model.User{})
 	model.DB.Where("user_id = ? OR client_ip = ?", userID, clientIP).Delete(&model.Codex2APIPolicyStrike{})
 	model.DB.Where("ip = ?", clientIP).Delete(&model.Codex2APIPolicyIPBlock{})
-	user := &model.User{Id: userID, Username: "policy-test-user", Password: "password", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "policy-test-aff"}
+	user := &model.User{Id: userID, Username: "policy-test-user", Password: "password", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "policy-test-aff", AuthVersion: 7, Quota: 123456, UsedQuota: 400}
 	require.NoError(t, model.DB.Create(user).Error)
 	token := &model.Token{Id: tokenID, UserId: userID, Key: "policy-test-token", Status: common.TokenStatusEnabled, Name: "policy-test-token", ExpiredTime: -1}
 	require.NoError(t, model.DB.Create(token).Error)
@@ -447,6 +448,9 @@ func TestCodex2APIPolicyVerifiedStrikesDisableUserAndBlockIP(t *testing.T) {
 	var gotUser model.User
 	require.NoError(t, model.DB.First(&gotUser, userID).Error)
 	require.Equal(t, common.UserStatusDisabled, gotUser.Status)
+	assert.EqualValues(t, 8, gotUser.AuthVersion, "policy enforcement invalidates prior authenticated sessions")
+	assert.Equal(t, 123456, gotUser.Quota)
+	assert.Equal(t, 400, gotUser.UsedQuota)
 	var gotToken model.Token
 	require.NoError(t, model.DB.First(&gotToken, tokenID).Error)
 	require.Equal(t, common.TokenStatusDisabled, gotToken.Status)

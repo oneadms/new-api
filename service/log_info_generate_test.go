@@ -1,6 +1,10 @@
 package service
 
 import (
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 
@@ -15,33 +19,24 @@ func TestAppendRelayTimingInfoSplitsGatewayAndUpstreamLatency(t *testing.T) {
 		UpstreamHeadersTime: start.Add(31 * time.Second),
 		FirstResponseTime:   start.Add(45*time.Second + 700*time.Millisecond),
 	}
-	other := map[string]interface{}{}
+	other := model.NewLogOther()
 
 	appendRelayTimingInfo(info, other)
 
-	assertTimingField(t, other, "pre_upstream_ms", int64(30_000))
-	assertTimingField(t, other, "upstream_header_ms", int64(1_000))
-	assertTimingField(t, other, "upstream_frt_ms", int64(15_700))
+	parsed, err := common.StrToMap(other.JSONString())
+	require.NoError(t, err)
+	assert.Equal(t, float64(30_000), parsed["pre_upstream_ms"])
+	assert.Equal(t, float64(1_000), parsed["upstream_header_ms"])
+	assert.Equal(t, float64(15_700), parsed["upstream_frt_ms"])
 }
 
 func TestAppendRelayTimingInfoOmitsUnavailableCheckpoints(t *testing.T) {
 	start := time.Unix(1_700_000_000, 0)
-	other := map[string]interface{}{}
+	other := model.NewLogOther()
 
 	appendRelayTimingInfo(&relaycommon.RelayInfo{StartTime: start}, other)
 
-	if len(other) != 0 {
-		t.Fatalf("unexpected timing fields: %#v", other)
-	}
-}
-
-func assertTimingField(t *testing.T, other map[string]interface{}, key string, want int64) {
-	t.Helper()
-	got, ok := other[key]
-	if !ok {
-		t.Fatalf("missing %s in %#v", key, other)
-	}
-	if got != want {
-		t.Fatalf("%s = %#v, want %d", key, got, want)
-	}
+	parsed, err := common.StrToMap(other.JSONString())
+	require.NoError(t, err)
+	assert.Empty(t, parsed)
 }

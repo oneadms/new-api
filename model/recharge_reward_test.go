@@ -148,8 +148,10 @@ func TestRechargeEpayCommitsQuotaAndRewardsExactlyOnce(t *testing.T) {
 	require.NoError(t, DB.Create(&topUp).Error)
 	expectedQuota := common.QuotaFromDecimal(decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
 
-	require.NoError(t, RechargeEpay(topUp.TradeNo, "wechat", "127.0.0.1"))
-	require.NoError(t, RechargeEpay(topUp.TradeNo, "wechat", "127.0.0.1"))
+	_, rechargeErr := RechargeEpay(topUp.TradeNo, "wechat", "127.0.0.1")
+	require.NoError(t, rechargeErr)
+	_, rechargeErr = RechargeEpay(topUp.TradeNo, "wechat", "127.0.0.1")
+	require.NoError(t, rechargeErr)
 
 	var user User
 	require.NoError(t, DB.First(&user, userId).Error)
@@ -183,7 +185,8 @@ func TestRechargeEpaySupportsWalletAboveLegacyInt32Limit(t *testing.T) {
 	expectedCredit, err := common.WalletQuotaFromDecimal(decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
 	require.NoError(t, err)
 
-	require.NoError(t, RechargeEpay(topUp.TradeNo, "alipay", "127.0.0.1"))
+	_, rechargeErr := RechargeEpay(topUp.TradeNo, "alipay", "127.0.0.1")
+	require.NoError(t, rechargeErr)
 
 	var user User
 	require.NoError(t, DB.First(&user, userId).Error)
@@ -206,8 +209,8 @@ func TestRechargeEpayRollsBackWhenWalletCreditWouldOverflow(t *testing.T) {
 	}
 	require.NoError(t, DB.Create(&topUp).Error)
 
-	err = RechargeEpay(topUp.TradeNo, "wechat", "127.0.0.1")
-	assert.ErrorIs(t, err, ErrUserQuotaLimitExceeded)
+	_, err = RechargeEpay(topUp.TradeNo, "wechat", "127.0.0.1")
+	assert.ErrorIs(t, err, ErrTopUpQuotaLimitExceeded)
 
 	var user User
 	require.NoError(t, DB.First(&user, userId).Error)

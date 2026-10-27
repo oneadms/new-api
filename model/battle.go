@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -117,7 +116,7 @@ func DebitBattleQuota(params BattleQuotaMutationParams) (*BattleRecord, error) {
 			common.SysLog("failed to decrease battle user quota cache: " + err.Error())
 		}
 	})
-	RecordLog(params.UserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战掉落额度 %s", logger.LogQuota(params.Quota)))
+	RecordLog(params.UserId, LogTypeSystem, common.NewMessage("Battle quota drop: {{quota}}", map[string]any{"quota": logger.FormatQuota(params.Quota)}))
 	return record, nil
 }
 
@@ -222,8 +221,8 @@ func TransferBattleQuota(params BattleQuotaTransferParams) (*BattleRecord, error
 			common.SysLog("failed to increase battle transfer user quota cache: " + err.Error())
 		}
 	})
-	RecordLog(params.FromUserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战结算扣除额度 %s", logger.LogQuota(params.Quota)))
-	RecordLog(params.ToUserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战结算获得额度 %s", logger.LogQuota(params.Quota)))
+	RecordLog(params.FromUserId, LogTypeSystem, common.NewMessage("Battle settlement deducted: {{quota}}", map[string]any{"quota": logger.FormatQuota(params.Quota)}))
+	RecordLog(params.ToUserId, LogTypeSystem, common.NewMessage("Battle settlement received: {{quota}}", map[string]any{"quota": logger.FormatQuota(params.Quota)}))
 	return record, nil
 }
 
@@ -280,7 +279,7 @@ func CreditBattleQuota(params BattleQuotaMutationParams) (*BattleRecord, error) 
 			common.SysLog("failed to increase battle user quota cache: " + err.Error())
 		}
 	})
-	RecordLog(params.UserId, LogTypeSystem, fmt.Sprintf("原谅帽大作战拾取额度 %s", logger.LogQuota(params.Quota)))
+	RecordLog(params.UserId, LogTypeSystem, common.NewMessage("Battle quota collected: {{quota}}", map[string]any{"quota": logger.FormatQuota(params.Quota)}))
 	return record, nil
 }
 

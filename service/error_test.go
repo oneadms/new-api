@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/types"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -55,7 +56,6 @@ func TestResetStatusCode(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -216,7 +216,7 @@ func TestPrepareRelayErrorForResponseOmitsEmptyRequestID(t *testing.T) {
 }
 
 func TestPrepareTaskErrorForResponseMasksUpstreamMessages(t *testing.T) {
-	taskErr := &dto.TaskError{
+	taskErr := &taskdto.TaskError{
 		Code:       "task_failed",
 		Message:    "task upstream error",
 		StatusCode: http.StatusBadRequest,
@@ -228,7 +228,7 @@ func TestPrepareTaskErrorForResponseMasksUpstreamMessages(t *testing.T) {
 }
 
 func TestPrepareTaskErrorForResponseKeepsLocalErrors(t *testing.T) {
-	taskErr := &dto.TaskError{
+	taskErr := &taskdto.TaskError{
 		Code:       "build_request_failed",
 		Message:    "local build request failed",
 		StatusCode: http.StatusInternalServerError,
@@ -241,7 +241,7 @@ func TestPrepareTaskErrorForResponseKeepsLocalErrors(t *testing.T) {
 }
 
 func TestPrepareMidjourneyResponseForResponseMasksUpstreamMessages(t *testing.T) {
-	resp := &dto.MidjourneyResponse{
+	resp := &taskdto.MidjourneyResponse{
 		Code:        23,
 		Description: "队列已满，请稍后尝试",
 		Properties:  map[string]any{"discordInstanceId": "111"},
@@ -257,7 +257,7 @@ func TestPrepareMidjourneyResponseForResponseMasksUpstreamMessages(t *testing.T)
 }
 
 func TestPrepareMidjourneyResponseForResponseKeepsResultForLocalLoadSignal(t *testing.T) {
-	resp := &dto.MidjourneyResponse{
+	resp := &taskdto.MidjourneyResponse{
 		Code:        30,
 		Description: "当前分组负载已饱和，请稍后再试",
 		Result:      "keep-this",
@@ -271,10 +271,10 @@ func TestPrepareMidjourneyResponseForResponseKeepsResultForLocalLoadSignal(t *te
 }
 
 func TestPrepareMidjourneyTaskForResponseByStoredTextMasksPublicText(t *testing.T) {
-	task := &dto.MidjourneyDto{
+	task := &taskdto.MidjourneyDto{
 		Description: "公益站暂时不可用",
 		FailReason:  "No available account instance",
-		Properties:  &dto.Properties{FinalPrompt: "keep"},
+		Properties:  &taskdto.Properties{FinalPrompt: "keep"},
 	}
 
 	PrepareMidjourneyTaskForResponseByStoredText(task, true)

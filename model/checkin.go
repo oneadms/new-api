@@ -141,7 +141,7 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int, 
 		// 步骤1: 创建签到记录
 		// 数据库有唯一约束 (user_id, checkin_date)，可以防止并发重复签到
 		if err := tx.Create(checkin).Error; err != nil {
-			return errors.New("签到失败，请稍后重试")
+			return common.NewMessage("Check-in failed, please try again later")
 		}
 
 		// 步骤2: 在事务中更新用户额度，运气签到必须先拥有完整押注额度
@@ -177,7 +177,7 @@ func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded in
 	// 步骤1: 创建签到记录
 	// 数据库有唯一约束 (user_id, checkin_date)，可以防止并发重复签到
 	if err := DB.Create(checkin).Error; err != nil {
-		return nil, errors.New("签到失败，请稍后重试")
+		return nil, common.NewMessage("Check-in failed, please try again later")
 	}
 
 	// 步骤2: 更新用户额度，运气签到必须先拥有完整押注额度
@@ -202,7 +202,7 @@ func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded in
 }
 
 // GetUserCheckinStats 获取用户签到统计信息
-func GetUserCheckinStats(userId int, month string) (map[string]interface{}, error) {
+func GetUserCheckinStats(userId int, month string) (map[string]any, error) {
 	// 获取指定月份的所有签到记录
 	startDate := month + "-01"
 	endDate := month + "-31"
@@ -230,7 +230,7 @@ func GetUserCheckinStats(userId int, month string) (map[string]interface{}, erro
 	DB.Model(&Checkin{}).Where("user_id = ?", userId).Count(&totalCheckins)
 	DB.Model(&Checkin{}).Where("user_id = ?", userId).Select("COALESCE(SUM(quota_awarded), 0)").Scan(&totalQuota)
 
-	return map[string]interface{}{
+	return map[string]any{
 		"total_quota":      totalQuota,      // 所有时间累计获得的额度
 		"total_checkins":   totalCheckins,   // 所有时间累计签到次数
 		"checkin_count":    len(records),    // 本月签到次数

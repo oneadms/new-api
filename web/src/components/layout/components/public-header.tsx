@@ -36,6 +36,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SystemUpdateAction } from '@/features/system-update/system-update-action'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
@@ -200,6 +201,7 @@ export function PublicHeader(props: PublicHeaderProps) {
             {props.rightContent ?? (
               <div className='flex items-center gap-1'>
                 {props.showLanguageSwitcher !== false && <LanguageSwitcher />}
+                <SystemUpdateAction presentation='version' />
                 {props.showThemeSwitch !== false && <ThemeSwitch />}
                 {props.showNotifications !== false && (
                   <NotificationPopover

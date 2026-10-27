@@ -57,6 +57,7 @@ SectionPageLayoutBreadcrumb.displayName = 'SectionPageLayout.Breadcrumb'
 export type SectionPageLayoutProps = {
   children: ReactNode
   fixedContent?: boolean
+  stackActionsOnMobile?: boolean
 }
 
 export function SectionPageLayout(props: SectionPageLayoutProps) {
@@ -93,7 +94,13 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
             <div className='mb-2 sm:mb-3'>{breadcrumb}</div>
           )}
           <div className='flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center'>
-            <div className='min-w-0 flex-1'>
+            <div
+              className={
+                props.stackActionsOnMobile
+                  ? 'min-w-0 flex-1 max-sm:basis-full'
+                  : 'min-w-0 flex-1'
+              }
+            >
               <h1>{title}</h1>
               {description != null && <p>{description}</p>}
             </div>

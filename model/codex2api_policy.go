@@ -1,5 +1,10 @@
 package model
 
+import (
+	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
+)
+
 // Codex2APIPolicyStrike stores a verified policy decision received from a
 // Codex2API upstream.  The table intentionally contains digests and request
 // metadata only; raw API keys and prompt bodies are never persisted here.
@@ -30,4 +35,39 @@ type Codex2APIPolicyIPBlock struct {
 	Reason    string `json:"reason" gorm:"type:varchar(255)"`
 	ExpiresAt int64  `json:"expires_at" gorm:"index"`
 	CreatedAt int64  `json:"created_at" gorm:"index"`
+}
+
+// DisableUserForPolicy atomically disables a non-administrator and their API
+// tokens while fencing stale auth-cache writes. Accounting columns are untouched.
+func DisableUserForPolicy(userID int) error {
+	changed := false
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).First(&user, userID).Error; err != nil {
+			return err
+		}
+		if user.Role >= common.RoleAdminUser || user.Status == common.UserStatusDisabled {
+			return nil
+		}
+		if _, err := IncrementUserAuthVersionWithTx(tx, userID); err != nil {
+			return err
+		}
+		if err := tx.Model(&User{}).Where("id = ?", userID).Update("status", common.UserStatusDisabled).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&Token{}).Where("user_id = ?", userID).Update("status", common.TokenStatusDisabled).Error; err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	}); err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	if err := PublishUserAuthCache(userID); err != nil {
+		return err
+	}
+	return InvalidateUserTokensCache(userID)
 }

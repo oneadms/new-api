@@ -45,7 +45,8 @@ func TestQualityRoutesRejectAnonymousAndOrdinaryUsersBeforeHandlers(t *testing.T
 		common.SetMainDatabaseType(previousType)
 		require.NoError(t, sqlDB.Close())
 	})
-	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Option{}))
+	require.NoError(t, model.EnsureLegacyAccessTokenRetireAt(common.GetTimestamp()))
 	token := "quality-route-ordinary-user"
 	require.NoError(t, db.Create(&model.User{Id: 78001, Username: "quality-reader", Role: common.RoleCommonUser,
 		Status: common.UserStatusEnabled, Group: "default", AccessToken: &token, AffCode: "quality-reader", AuthVersion: 1}).Error)

@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -30,10 +29,7 @@ func GetCheckinStatus(c *gin.Context) {
 
 	stats, err := model.GetUserCheckinStats(userId, month)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		common.ApiError(c, err)
 		return
 	}
 
@@ -68,17 +64,14 @@ func DoCheckin(c *gin.Context) {
 
 	checkin, err := model.UserCheckin(userId, request.StakeQuota)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		common.ApiError(c, err)
 		return
 	}
-	action := "用户签到，获得额度"
+	action := "User checked in and received {{quota}}"
 	if request.StakeQuota != nil {
-		action = "用户运气签到，额度变化"
+		action = "Lucky check-in quota change: {{quota}}"
 	}
-	model.RecordLog(userId, model.LogTypeSystem, fmt.Sprintf("%s %s", action, logger.LogQuota(checkin.QuotaAwarded)))
+	model.RecordLog(userId, model.LogTypeSystem, common.NewMessage(action, map[string]any{"quota": logger.FormatQuota(checkin.QuotaAwarded)}))
 	won := checkin.QuotaAwarded >= 0
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

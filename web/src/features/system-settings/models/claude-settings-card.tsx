@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
 
+import { JsonCodeEditor } from '@/components/json-code-editor'
 import {
   Form,
   FormControl,
@@ -34,7 +35,6 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 
 import {
   SettingsForm,
@@ -196,7 +196,16 @@ export function ClaudeSettingsCard({ defaultValues }: ClaudeSettingsCardProps) {
               <FormItem>
                 <FormLabel>{t('Request Header Overrides')}</FormLabel>
                 <FormControl>
-                  <Textarea rows={8} {...field} />
+                  <JsonCodeEditor
+                    value={field.value}
+                    onChange={field.onChange}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    textareaRef={field.ref}
+                    aria-invalid={Boolean(
+                      form.formState.errors.claude?.model_headers_settings
+                    )}
+                  />
                 </FormControl>
                 <FormDescription>
                   {t(
@@ -215,7 +224,16 @@ export function ClaudeSettingsCard({ defaultValues }: ClaudeSettingsCardProps) {
               <FormItem>
                 <FormLabel>{t('Default Max Tokens')}</FormLabel>
                 <FormControl>
-                  <Textarea rows={8} {...field} />
+                  <JsonCodeEditor
+                    value={field.value}
+                    onChange={field.onChange}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    textareaRef={field.ref}
+                    aria-invalid={Boolean(
+                      form.formState.errors.claude?.default_max_tokens
+                    )}
+                  />
                 </FormControl>
                 <FormDescription>
                   {t('Example')}{' '}
@@ -236,7 +254,7 @@ export function ClaudeSettingsCard({ defaultValues }: ClaudeSettingsCardProps) {
                     <FormLabel>{t('Thinking Suffix Adapter')}</FormLabel>
                     <FormDescription>
                       {t(
-                        'Adapt `-thinking` suffix requests to Anthropic native thinking behavior while keeping billing predictable.'
+                        'Adapt `-thinking`, `-nothinking`, and effort suffixes such as `-high` to Anthropic native thinking behavior while keeping billing predictable. When off, model names are sent upstream unchanged.'
                       )}
                     </FormDescription>
                   </SettingsSwitchContent>

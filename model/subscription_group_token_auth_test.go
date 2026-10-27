@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
@@ -17,6 +18,7 @@ import (
 
 func TestTokenAuthRejectsExistingTokensUsingSubscriptionRestrictedGroups(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
 	originalUsableGroups := setting.UserUsableGroups2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
@@ -39,7 +41,6 @@ func TestTokenAuthRejectsExistingTokensUsingSubscriptionRestrictedGroups(t *test
 				require.NoError(t, model.DB.Where("user_id = ?", testCase.userId).Delete(&model.Token{}).Error)
 				require.NoError(t, model.DB.Unscoped().Delete(&model.User{}, testCase.userId).Error)
 				require.NoError(t, model.DB.Delete(&model.SubscriptionPlan{}, testCase.userId).Error)
-				require.NoError(t, model.InvalidateUserCache(testCase.userId))
 				model.InvalidateSubscriptionPlanCache(testCase.userId)
 			})
 
@@ -76,7 +77,7 @@ func TestTokenAuthRejectsExistingTokensUsingSubscriptionRestrictedGroups(t *test
 			router.ServeHTTP(response, request)
 
 			assert.Equal(t, http.StatusForbidden, response.Code)
-			assert.Contains(t, response.Body.String(), "无权访问 vip 分组")
+			assert.Contains(t, response.Body.String(), "No permission to access group vip")
 		})
 	}
 }

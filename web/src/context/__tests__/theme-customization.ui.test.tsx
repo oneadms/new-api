@@ -20,8 +20,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { getCookie, removeCookie, setCookie } from '@/lib/cookies'
-import { THEME_COOKIE_KEYS } from '@/lib/theme-customization'
+import { THEME_STORAGE_KEYS } from '@/lib/theme-storage'
 
 import {
   ThemeCustomizationProvider,
@@ -54,11 +53,15 @@ function renderThemeControls() {
 }
 
 beforeEach(() => {
-  for (const name of Object.values(THEME_COOKIE_KEYS)) removeCookie(name)
+  for (const name of Object.values(THEME_STORAGE_KEYS)) {
+    localStorage.removeItem(name)
+  }
 })
 
 afterEach(() => {
-  for (const name of Object.values(THEME_COOKIE_KEYS)) removeCookie(name)
+  for (const name of Object.values(THEME_STORAGE_KEYS)) {
+    localStorage.removeItem(name)
+  }
   for (const attribute of document.body.getAttributeNames()) {
     if (attribute.startsWith('data-theme-')) {
       document.body.removeAttribute(attribute)
@@ -70,7 +73,9 @@ describe('theme preset preferences', () => {
   it.each([undefined, 'removed-preset'])(
     'applies Anthropic colors and typography when the saved preset is %s',
     (savedPreset) => {
-      if (savedPreset) setCookie(THEME_COOKIE_KEYS.preset, savedPreset)
+      if (savedPreset) {
+        localStorage.setItem(THEME_STORAGE_KEYS.preset, savedPreset)
+      }
 
       renderThemeControls()
 
@@ -83,20 +88,22 @@ describe('theme preset preferences', () => {
   )
 
   it('keeps an existing color preset and explicit font preference on load', () => {
-    setCookie(THEME_COOKIE_KEYS.preset, 'forest-whisper')
-    setCookie(THEME_COOKIE_KEYS.font, 'sans')
+    localStorage.setItem(THEME_STORAGE_KEYS.preset, 'forest-whisper')
+    localStorage.setItem(THEME_STORAGE_KEYS.font, 'sans')
 
     renderThemeControls()
 
     expect(document.body).toHaveAttribute('data-theme-preset', 'forest-whisper')
     expect(document.body).toHaveAttribute('data-theme-font', 'sans')
-    expect(getCookie(THEME_COOKIE_KEYS.preset)).toBe('forest-whisper')
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.preset)).toBe(
+      'forest-whisper'
+    )
   })
 
   it('restores Anthropic after resetting customization and reloading', async () => {
     const user = userEvent.setup()
-    setCookie(THEME_COOKIE_KEYS.preset, 'forest-whisper')
-    setCookie(THEME_COOKIE_KEYS.font, 'sans')
+    localStorage.setItem(THEME_STORAGE_KEYS.preset, 'forest-whisper')
+    localStorage.setItem(THEME_STORAGE_KEYS.font, 'sans')
     const view = renderThemeControls()
 
     await user.click(
@@ -105,7 +112,7 @@ describe('theme preset preferences', () => {
 
     expect(document.body).toHaveAttribute('data-theme-preset', 'anthropic')
     expect(document.body).toHaveAttribute('data-theme-font', 'serif')
-    expect(getCookie(THEME_COOKIE_KEYS.preset)).toBeUndefined()
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.preset)).toBeNull()
     view.unmount()
 
     renderThemeControls()
@@ -115,11 +122,11 @@ describe('theme preset preferences', () => {
 
   it('preserves an explicit choice of the base palette after reloading', async () => {
     const user = userEvent.setup()
-    setCookie(THEME_COOKIE_KEYS.preset, 'anthropic')
+    localStorage.setItem(THEME_STORAGE_KEYS.preset, 'anthropic')
     const view = renderThemeControls()
 
     await user.click(screen.getByRole('button', { name: 'Use base palette' }))
-    expect(getCookie(THEME_COOKIE_KEYS.preset)).toBe('default')
+    expect(localStorage.getItem(THEME_STORAGE_KEYS.preset)).toBe('default')
     view.unmount()
 
     renderThemeControls()
@@ -128,6 +135,6 @@ describe('theme preset preferences', () => {
       screen.getByRole('status', { name: 'Active preset' })
     ).toHaveTextContent('default')
     expect(document.body).not.toHaveAttribute('data-theme-preset')
-    expect(document.body).toHaveAttribute('data-theme-font', 'sans')
+    expect(document.body).toHaveAttribute('data-theme-font', 'system')
   })
 })

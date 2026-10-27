@@ -1,15 +1,17 @@
 package service
 
 import (
+	"github.com/QuantumNous/new-api/i18n"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +21,8 @@ func TestNewBillingSessionUsesWalletForSubscriptionDisabledGroup(t *testing.T) {
 	truncate(t)
 	seedUser(t, 2401, 1_000_000)
 	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	require.NoError(t, i18n.Init())
 	common.SetContextKey(ctx, constant.ContextKeySubscriptionDisabledGroups, map[string]struct{}{"vip": {}})
 
 	info := &relaycommon.RelayInfo{
@@ -48,6 +52,8 @@ func TestNewBillingSessionUsesWalletForGloballyDisabledGroup(t *testing.T) {
 	seedUser(t, 2403, 1_000_000)
 	seedSubscription(t, 3403, 2403, 10_000, 0)
 	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	require.NoError(t, i18n.Init())
 	info := &relaycommon.RelayInfo{
 		UserId:       2403,
 		UsingGroup:   "vip",
@@ -81,6 +87,8 @@ func TestNewBillingSessionUsesWalletWhenAutoGroupIsGloballyDisabled(t *testing.T
 	truncate(t)
 	seedUser(t, 2404, 1_000_000)
 	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	require.NoError(t, i18n.Init())
 	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "auto")
 	info := &relaycommon.RelayInfo{
 		UserId:       2404,
@@ -102,6 +110,8 @@ func TestNewBillingSessionUsesWalletWhenAutoGroupIsSubscriptionDisabled(t *testi
 	truncate(t)
 	seedUser(t, 2402, 1_000_000)
 	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	require.NoError(t, i18n.Init())
 	common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "auto")
 	common.SetContextKey(ctx, constant.ContextKeySubscriptionDisabledGroups, map[string]struct{}{"auto": {}})
 
@@ -123,6 +133,8 @@ func TestNewBillingSessionUsesWalletWhenAutoGroupIsSubscriptionDisabled(t *testi
 
 func TestNewBillingSessionRejectsSubscriptionOnlyForDisabledGroup(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	require.NoError(t, i18n.Init())
 	common.SetContextKey(ctx, constant.ContextKeySubscriptionDisabledGroups, map[string]struct{}{"vip": {}})
 	info := &relaycommon.RelayInfo{
 		UsingGroup: "vip",

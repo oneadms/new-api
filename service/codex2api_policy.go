@@ -1343,36 +1343,8 @@ func disableCodex2APIPolicyUser(userID int) {
 	if userID <= 0 || model.DB == nil {
 		return
 	}
-	var user model.User
-	if err := model.DB.First(&user, userID).Error; err != nil {
-		return
-	}
-	// Never let an upstream policy response disable an administrator account.
-	if user.Role >= common.RoleAdminUser || user.Status == common.UserStatusDisabled {
-		return
-	}
-	// Update only the status column. Calling User.Update with a stale snapshot
-	// could overwrite quota/accounting fields that another request changed
-	// concurrently. The conditional role/status predicates also make the
-	// operation idempotent across multiple policy responses.
-	result := model.DB.Model(&model.User{}).
-		Where("id = ? AND role < ? AND status <> ?", userID, common.RoleAdminUser, common.UserStatusDisabled).
-		Update("status", common.UserStatusDisabled)
-	if result.Error != nil {
-		common.SysError(fmt.Sprintf("failed to disable user %d after Codex2API policy strikes: %v", userID, result.Error))
-		return
-	}
-	if result.RowsAffected == 0 {
-		return
-	}
-	if err := model.DB.Model(&model.Token{}).Where("user_id = ?", userID).Update("status", common.TokenStatusDisabled).Error; err != nil {
-		common.SysError(fmt.Sprintf("failed to disable tokens for user %d after Codex2API policy strikes: %v", userID, err))
-	}
-	if err := model.InvalidateUserCache(userID); err != nil {
-		common.SysError(fmt.Sprintf("failed to invalidate user cache for %d after Codex2API policy strikes: %v", userID, err))
-	}
-	if err := model.InvalidateUserTokensCache(userID); err != nil {
-		common.SysError(fmt.Sprintf("failed to invalidate tokens for user %d after Codex2API policy strikes: %v", userID, err))
+	if err := model.DisableUserForPolicy(userID); err != nil {
+		common.SysError(fmt.Sprintf("failed to disable user %d after Codex2API policy strikes: %v", userID, err))
 	}
 }
 

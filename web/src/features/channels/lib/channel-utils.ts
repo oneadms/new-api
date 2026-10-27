@@ -52,6 +52,10 @@ export function getChannelTypeIcon(type: number): string {
     7: 'OpenAI', // OhMyGPT
     8: 'OpenAI', // Custom
     58: 'NewAPI', // Advanced Custom
+    59: 'Sub2API', // Sub2API
+    60: 'NewAPI', // New API
+    62: 'Vllm', // vLLM
+    63: 'SGLang', // SGLang
     3: 'Azure', // Azure
 
     // Anthropic
@@ -100,7 +104,7 @@ export function getChannelTypeIcon(type: number): string {
     52: 'Vidu', // Vidu
     36: 'Suno', // SunoAPI
     55: 'OpenAI', // Sora
-    54: 'Doubao', // DoubaoVideo
+    54: 'Doubao', // Doubao
     56: 'Replicate', // Replicate
 
     // Tools & Platforms
@@ -614,6 +618,14 @@ export type TagRow = Channel & {
  */
 export function isTagAggregateRow(row: Channel | TagRow): row is TagRow {
   return Array.isArray((row as TagRow).children)
+}
+
+export function getChannelTableRowId(row: Channel | TagRow): string {
+  if (isTagAggregateRow(row)) {
+    return `tag:${row.tag || ''}`
+  }
+
+  return `channel:${row.id}`
 }
 
 /**

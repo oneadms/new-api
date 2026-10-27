@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
@@ -33,10 +34,16 @@ async function renderExample() {
     resources: { en: { translation: {} } },
     interpolation: { escapeValue: false },
   })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  client.setQueryData(['status'], { system_name: 'New API' })
   return render(
-    <I18nextProvider i18n={i18n}>
-      <GatewayExperience />
-    </I18nextProvider>
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <GatewayExperience />
+      </I18nextProvider>
+    </QueryClientProvider>
   )
 }
 
