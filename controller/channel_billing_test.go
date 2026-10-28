@@ -181,3 +181,57 @@ func TestUpdateChannelNewAPIBalanceUsesTheSmallerRemainingQuota(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateChannelCodex2APIBalance(t *testing.T) {
+	setupResponsesWSRequestTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}))
+	for _, tc := range []struct {
+		name, response string
+		status         int
+		want           float64
+		wantErr        bool
+	}{
+		{name: "current quota ignores lifetime usage", response: `{"key":{"quota_limit":100,"quota_used":12.25,"total_used":999,"status":"active"}}`, want: 87.75},
+		{name: "zero usage", response: `{"key":{"quota_limit":100,"quota_used":0,"status":"active"}}`, want: 100},
+		{name: "exhausted", response: `{"key":{"quota_limit":100,"quota_used":101,"status":"quota_exhausted"}}`},
+		{name: "unlimited", response: `{"key":{"quota_limit":0,"quota_used":12,"status":"active"}}`, wantErr: true},
+		{name: "missing fields", response: `{"key":{"status":"active"}}`, wantErr: true},
+		{name: "null quota", response: `{"key":{"quota_limit":100,"quota_used":null,"status":"active"}}`, wantErr: true},
+		{name: "negative usage", response: `{"key":{"quota_limit":100,"quota_used":-1,"status":"active"}}`, wantErr: true},
+		{name: "overflow", response: `{"key":{"quota_limit":1e999,"quota_used":1,"status":"active"}}`, wantErr: true},
+		{name: "expired", response: `{"key":{"quota_limit":100,"quota_used":1,"status":"expired"}}`, wantErr: true},
+		{name: "disabled", response: `{"key":{"quota_limit":100,"quota_used":1,"status":"disabled"}}`, wantErr: true},
+		{name: "endpoint disabled", response: `{"error":"disabled"}`, status: http.StatusNotFound, wantErr: true},
+		{name: "invalid key", response: `{"error":"invalid key"}`, status: http.StatusUnauthorized, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodGet, r.Method)
+				assert.Equal(t, "/api/key-usage/summary", r.URL.Path)
+				assert.Equal(t, "Bearer codex2api-test-key", r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+				}
+				_, _ = w.Write([]byte(tc.response))
+			}))
+			defer server.Close()
+			baseURL := server.URL + "/"
+			channel := &model.Channel{Type: constant.ChannelTypeCodex2API, BaseURL: &baseURL, Key: "codex2api-test-key", Name: "codex2api-balance", Balance: 12.5}
+			require.NoError(t, model.DB.Create(channel).Error)
+			t.Cleanup(func() { require.NoError(t, model.DB.Delete(channel).Error) })
+			result, err := updateChannelBalance(channel)
+			want := tc.want
+			if tc.wantErr {
+				require.Error(t, err)
+				want = 12.5
+			} else {
+				require.NoError(t, err)
+				assert.InDelta(t, want, result.Balance, 1e-9)
+			}
+			var stored model.Channel
+			require.NoError(t, model.DB.First(&stored, channel.Id).Error)
+			assert.InDelta(t, want, stored.Balance, 1e-9)
+		})
+	}
+}

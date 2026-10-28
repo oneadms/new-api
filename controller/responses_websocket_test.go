@@ -3,6 +3,9 @@ package controller
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -40,6 +43,7 @@ var responsesWSTestUserSequence atomic.Int64
 
 func setupResponsesWSRequestTest(t *testing.T) (*model.User, *model.Token) {
 	t.Helper()
+	require.NoError(t, i18n.Init())
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
 	previousType := common.MainDatabaseType()
@@ -206,6 +210,14 @@ func TestResponsesWSRequestRunnerRejectsRevokedCredentials(t *testing.T) {
 		}},
 		{name: "deleted token", status: http.StatusUnauthorized, update: func(t *testing.T, _ *model.User, token *model.Token) {
 			require.NoError(t, model.DB.Delete(token).Error)
+		}},
+		{name: "policy blocked IP", status: http.StatusForbidden, update: func(t *testing.T, _ *model.User, _ *model.Token) {
+			t.Setenv("CODEX2API_POLICY_ENABLED", "true")
+			t.Setenv("CODEX2API_POLICY_IP_BLOCK_ENABLED", "true")
+			require.NoError(t, model.DB.AutoMigrate(&model.Codex2APIPolicyIPBlock{}))
+			block := &model.Codex2APIPolicyIPBlock{IP: "203.0.113.8", ExpiresAt: time.Now().Add(time.Hour).Unix()}
+			require.NoError(t, model.DB.Create(block).Error)
+			t.Cleanup(func() { require.NoError(t, model.DB.Delete(block).Error) })
 		}},
 		{name: "changed IP restriction", status: http.StatusForbidden, update: func(t *testing.T, _ *model.User, token *model.Token) {
 			require.NoError(t, model.DB.Model(token).Update("allow_ips", "198.51.100.0/24").Error)
@@ -665,6 +677,7 @@ func TestResponsesWebSocketDialsNativeResponsesChannelTypes(t *testing.T) {
 	}{
 		{name: "new api", channelType: constant.ChannelTypeNewAPI, want: bearer},
 		{name: "sub2api", channelType: constant.ChannelTypeSub2API, want: bearer},
+		{name: "codex2api", channelType: constant.ChannelTypeCodex2API, want: bearer},
 		{name: "advanced custom query auth", channelType: constant.ChannelTypeAdvancedCustom, otherSettings: queryAuthRoute, want: func(key string) upstreamTarget {
 			return upstreamTarget{Path: "/upstream/responses", QueryKey: key}
 		}},
@@ -1427,4 +1440,115 @@ func TestResponsesWebSocketPreRoutingRejectionsFollowHealthClassification(t *tes
 			assert.Zero(t, successes)
 		})
 	}
+}
+
+const responsesWSPolicyTestSecret = "0123456789abcdef0123456789abcdef-ws-test"
+
+func signedResponsesWSPolicyError(t *testing.T, requestID, eventID, decisionID string) []byte {
+	t.Helper()
+	evidence := sha256.Sum256([]byte("test policy evidence"))
+	fields := []string{requestID, decisionID, "block", "balanced", "upstream_cyber_policy", "critical", "true", "test-rule-1", hex.EncodeToString(evidence[:])}
+	responseMAC := hmac.New(sha256.New, []byte(responsesWSPolicyTestSecret))
+	_, _ = responseMAC.Write([]byte(strings.Join(append([]string{"policy-decision-v1"}, fields...), "\n")))
+	eventFields := append([]string{"policy-event-v1", requestID, decisionID, eventID}, fields[2:]...)
+	eventMAC := hmac.New(sha256.New, []byte(responsesWSPolicyTestSecret))
+	_, _ = eventMAC.Write([]byte(strings.Join(eventFields, "\n")))
+	payload, err := common.Marshal(map[string]any{
+		"type": "error", "status": 400,
+		"error": map[string]any{
+			"type": "invalid_request_error", "code": "cyber_policy", "message": "Policy rejected this request",
+			"details": map[string]any{
+				"request_id": requestID, "decision_id": decisionID, "event_id": eventID,
+				"action": "block", "profile": "balanced", "reason_code": "upstream_cyber_policy", "severity": "critical",
+				"strike_eligible": true, "rule_version": "test-rule-1", "evidence_sha256": fields[8],
+				"signature_version": "v1", "response_signature": hex.EncodeToString(responseMAC.Sum(nil)),
+				"event_signature_version": "v1", "event_signature": hex.EncodeToString(eventMAC.Sum(nil)),
+			},
+		},
+	})
+	require.NoError(t, err)
+	return payload
+}
+
+func TestResponsesWebSocketCodex2APIPolicyEnforcesAcrossTurns(t *testing.T) {
+	fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(ws *websocket.Conn, r *http.Request) {
+		var previous []byte
+		for turn := range 2 {
+			_, payload, err := ws.ReadMessage()
+			if !assert.NoError(t, err) {
+				return
+			}
+			var request map[string]any
+			if !assert.NoError(t, common.Unmarshal(payload, &request)) {
+				return
+			}
+			eventID, _ := request["__newapi_policy_event_id"].(string)
+			if !assert.NotEmpty(t, eventID) {
+				return
+			}
+			assert.NotEqual(t, "forged", eventID)
+			if previous != nil {
+				if !assert.NoError(t, ws.WriteMessage(websocket.TextMessage, previous)) {
+					return
+				}
+			}
+			previous = signedResponsesWSPolicyError(t, r.Header.Get("X-NewAPI-Request-ID"), eventID, fmt.Sprintf("ws-decision-%d", turn))
+			if !assert.NoError(t, ws.WriteMessage(websocket.TextMessage, previous)) {
+				return
+			}
+		}
+		_, _, _ = ws.ReadMessage()
+	})
+	require.NoError(t, model.DB.Model(fixture.channel).Update("type", constant.ChannelTypeCodex2API).Error)
+	require.NoError(t, model.DB.AutoMigrate(&model.Codex2APIPolicyStrike{}, &model.Codex2APIPolicyIPBlock{}))
+	bindings, err := common.Marshal([]service.Codex2APIPolicyBinding{{PlatformID: "ws-test", Target: fixture.channel.GetBaseURL(), CodexKeyFingerprint: service.Codex2APIKeyFingerprint("upstream-first"), Secret: responsesWSPolicyTestSecret, Enabled: true}})
+	require.NoError(t, err)
+	for key, value := range map[string]string{
+		"CODEX2API_POLICY_ENABLED": "true", "CODEX2API_POLICY_IDENTITY_FORWARD_ENABLED": "true",
+		"CODEX2API_POLICY_BINDINGS": string(bindings), "CODEX2API_POLICY_AUDIT_ENABLED": "true",
+		"CODEX2API_POLICY_STRIKE_ENABLED": "true", "CODEX2API_POLICY_ACCOUNT_BAN_ENABLED": "true",
+		"CODEX2API_POLICY_IP_BLOCK_ENABLED": "true", "CODEX2API_POLICY_BAN_AFTER": "2", "CODEX2API_POLICY_WINDOW_SECONDS": "86400",
+	} {
+		t.Setenv(key, value)
+	}
+	t.Cleanup(func() {
+		fixture.closeAndWait(t)
+		require.NoError(t, model.DB.Where("user_id = ?", fixture.user.Id).Delete(&model.Codex2APIPolicyStrike{}).Error)
+		require.NoError(t, model.DB.Where("ip = ?", "127.0.0.1").Delete(&model.Codex2APIPolicyIPBlock{}).Error)
+	})
+	for turn := range 2 {
+		require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create","model":"ws-billing","input":"hi","__newapi_policy_event_id":"forged"}`)))
+		event := readResponsesWSTestEvent(t, fixture.client)
+		assert.Equal(t, "error", event["type"])
+		assert.Equal(t, float64(400), event["status"])
+		var strikes []model.Codex2APIPolicyStrike
+		require.NoError(t, model.DB.Where("user_id = ?", fixture.user.Id).Order("id").Find(&strikes).Error)
+		require.Len(t, strikes, turn+1, "a late duplicate must not count twice")
+		assert.Equal(t, fixture.token.Id, strikes[turn].TokenId)
+		assert.Equal(t, "127.0.0.1", strikes[turn].ClientIP)
+		assert.Equal(t, "ws-test", strikes[turn].Platform)
+		if turn == 0 {
+			require.NoError(t, model.DB.First(fixture.user, fixture.user.Id).Error)
+			assert.Equal(t, common.UserStatusEnabled, fixture.user.Status)
+		} else {
+			assert.NotEqual(t, strikes[0].EventID, strikes[1].EventID)
+			assert.Equal(t, strikes[0].RequestID, strikes[1].RequestID)
+		}
+	}
+	_, _, err = fixture.client.ReadMessage()
+	assert.True(t, websocket.IsCloseError(err, websocket.ClosePolicyViolation), "expected policy closure, got %v", err)
+	fixture.closeAndWait(t)
+	// Refunds run asynchronously; wait for the persisted token quota before
+	// tearing down the database used by their worker.
+	require.Eventually(t, func() bool {
+		return model.DB.First(fixture.token, fixture.token.Id).Error == nil && fixture.token.RemainQuota == 3000
+	}, 3*time.Second, 10*time.Millisecond)
+	assertResponsesWSAccounting(t, fixture, nil)
+	assert.Equal(t, common.UserStatusDisabled, fixture.user.Status)
+	assert.Equal(t, common.TokenStatusDisabled, fixture.token.Status)
+	assert.Equal(t, int64(2), fixture.user.AuthVersion)
+	assert.True(t, service.IsCodex2APIPolicyIPBlocked("127.0.0.1"))
+	require.NoError(t, model.DB.First(fixture.channel, fixture.channel.Id).Error)
+	assert.Equal(t, common.ChannelStatusEnabled, fixture.channel.Status)
+	assert.Equal(t, int32(1), fixture.connections.Load())
 }

@@ -495,7 +495,7 @@ test.each(migratedProviders)(
 )
 
 test.each([true, false])(
-  'gateway category contains only New API and Sub2API without changing existing categories (plugin permission: %s)',
+  'gateway category includes Codex2API without changing existing categories (plugin permission: %s)',
   async (canBindPlugin) => {
     const user = userEvent.setup()
     const select = vi.fn()
@@ -519,8 +519,15 @@ test.each([true, false])(
       expect(
         screen.getByRole('option', { name: 'Sub2API Built-in #59' })
       ).toBeVisible()
+      expect(
+        screen.getByRole('option', { name: 'Codex2API Built-in #1001' })
+      ).toBeVisible()
     }
-    expect(screen.getAllByRole('option')).toHaveLength(2)
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+    await user.click(
+      screen.getByRole('option', { name: 'Codex2API Built-in #1001' })
+    )
+    expect(select).toHaveBeenLastCalledWith({ kind: 'builtin', type: 1001 })
     await user.click(
       screen.getByRole('option', { name: 'New API Built-in #60' })
     )

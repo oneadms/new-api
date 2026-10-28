@@ -464,6 +464,7 @@ var streamSupportedChannels = map[int]bool{
 	constant.ChannelTypeSiliconFlow:    true,
 	constant.ChannelTypeAdvancedCustom: true,
 	constant.ChannelTypeSub2API:        true,
+	constant.ChannelTypeCodex2API:      true,
 	constant.ChannelTypeNewAPI:         true,
 	constant.ChannelTypeVLLM:           true,
 	constant.ChannelTypeSGLang:         true,

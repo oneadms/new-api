@@ -21,12 +21,14 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // Codex2APIPolicyBinding binds one outbound Codex2API key and one upstream
@@ -105,14 +107,88 @@ const Codex2APIPolicyViolationContextKey = "codex2api_policy_violation"
 const policyViolationContextKey = Codex2APIPolicyViolationContextKey
 
 type codex2APIPolicyRequestState struct {
-	RequestID      string
-	UserID         string
-	ClientIP       string
-	BodySHA256     string
-	Secret         string
-	PlatformID     string
-	KeyFingerprint string
-	Target         string
+	RequestID       string
+	UserID          string
+	ClientIP        string
+	BodySHA256      string
+	Secret          string
+	PlatformID      string
+	KeyFingerprint  string
+	Target          string
+	ExpectedEventID string
+}
+
+// Codex2APIWebSocketPolicy retains the signed handshake identity, never a Gin
+// context. Every turn is authenticated again before BindRequest is called.
+type Codex2APIWebSocketPolicy struct {
+	state   codex2APIPolicyRequestState
+	tokenID int
+}
+
+func NewCodex2APIWebSocketPolicy(c *gin.Context) *Codex2APIWebSocketPolicy {
+	state, ok := policyStateFromContext(c)
+	if !ok {
+		return nil
+	}
+	return &Codex2APIWebSocketPolicy{state: state, tokenID: c.GetInt("token_id")}
+}
+
+// BindRequest assigns a server-generated turn ID understood by Codex2API and
+// restores verification state onto this turn's fresh request context. The peer
+// removes the private field before forwarding the payload to a model provider.
+func (p *Codex2APIWebSocketPolicy) BindRequest(c *gin.Context, payload []byte) ([]byte, error) {
+	const eventField = "__newapi_policy_event_id"
+	if p == nil {
+		return sjson.DeleteBytes(payload, eventField)
+	}
+	cfg := GetCodex2APIPolicyConfig()
+	matched := false
+	if cfg.Enabled && cfg.IdentityForwardEnabled {
+		for _, binding := range cfg.Bindings {
+			if binding.Enabled && binding.PlatformID == p.state.PlatformID &&
+				binding.CodexKeyFingerprint == p.state.KeyFingerprint &&
+				codex2APITargetMatches(binding.Target, p.state.Target) &&
+				hmac.Equal([]byte(binding.Secret), []byte(p.state.Secret)) {
+				matched = true
+				break
+			}
+		}
+	}
+	if !matched || strconv.Itoa(c.GetInt(string(constant.ContextKeyUserId))) != p.state.UserID ||
+		c.GetInt("token_id") != p.tokenID || c.ClientIP() != p.state.ClientIP {
+		return nil, errors.New(i18n.T(c, i18n.MsgRelayCodex2APIWebSocketBindingInvalid))
+	}
+	state := p.state
+	state.ExpectedEventID = common.NewRequestId()
+	payload, err := sjson.SetBytes(payload, eventField, state.ExpectedEventID)
+	if err != nil {
+		return nil, err
+	}
+	c.Set(policyStateContextKey, state)
+	c.Set(policyTrackerContextKey, newCodex2APIPolicyTracker(state))
+	return payload, nil
+}
+
+// ProcessEvent distinguishes a valid current-turn decision from a signed late
+// event. Late events must neither punish the user nor finish a newer request.
+func (p *Codex2APIWebSocketPolicy) ProcessEvent(c *gin.Context, payload []byte) (applied, stale bool) {
+	if p == nil {
+		return false, false
+	}
+	cfg := GetCodex2APIPolicyConfig()
+	if !cfg.Enabled || !cfg.IdentityForwardEnabled {
+		return false, false
+	}
+	decision, valid := parsePolicyDecisionEnvelope(payload, p.state)
+	if !valid {
+		return false, false
+	}
+	state, ok := policyStateFromContext(c)
+	if !ok || state.ExpectedEventID == "" || decision.EventID != state.ExpectedEventID {
+		return false, true
+	}
+	processCodex2APIPolicyDecision(c, state, policyTrackerFromContext(c), decision)
+	return true, false
 }
 
 // codex2APIPolicyDecisionEnvelope is the compact decision object embedded in
@@ -945,6 +1021,8 @@ func parsePolicyDecisionEnvelope(payload []byte, state codex2APIPolicyRequestSta
 	paths := []string{
 		"response.error.details.codex2api_policy",
 		"error.details.codex2api_policy",
+		"response.error.details",
+		"error.details",
 		"response.details.codex2api_policy",
 		"details.codex2api_policy",
 		"codex2api_policy",

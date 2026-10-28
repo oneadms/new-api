@@ -2,6 +2,7 @@ package relay
 
 import (
 	"fmt"
+	"github.com/QuantumNous/new-api/relay/channel/codex2api"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -121,6 +122,8 @@ func GetAdaptor(apiType int) channel.Adaptor {
 		return &advancedcustom.Adaptor{}
 	case constant.APITypeSub2API:
 		return &sub2api.Adaptor{}
+	case constant.APITypeCodex2API:
+		return &codex2api.Adaptor{}
 	case constant.APITypeNewAPI:
 		return &newapi.Adaptor{}
 	}

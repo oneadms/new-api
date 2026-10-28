@@ -166,18 +166,11 @@ func GetResponseBody(method, url string, channel *model.Channel, headers http.He
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("status code: %d", res.StatusCode)
 	}
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	err = res.Body.Close()
-	if err != nil {
-		return nil, err
-	}
-	return body, nil
+	return io.ReadAll(res.Body)
 }
 
 func updateChannelCloseAIBalance(channel *model.Channel) (float64, error) {
@@ -428,6 +421,41 @@ func updateChannelMoonshotBalance(channel *model.Channel) (float64, error) {
 	return availableBalanceUsd, nil
 }
 
+func updateChannelCodex2APIBalance(channel *model.Channel) (float64, error) {
+	baseURL := strings.TrimRight(channel.GetBaseURL(), "/")
+	if baseURL == "" {
+		return 0, common.NewMessage("Base URL is required for this channel type")
+	}
+	body, err := GetResponseBody(http.MethodGet, baseURL+"/api/key-usage/summary?range=today&page_size=1", channel, GetAuthHeader(channel.Key))
+	if err != nil {
+		return 0, err
+	}
+	var usage struct {
+		Key struct {
+			QuotaLimit *float64 `json:"quota_limit"`
+			QuotaUsed  *float64 `json:"quota_used"`
+			Status     string   `json:"status"`
+		} `json:"key"`
+	}
+	if err := common.Unmarshal(body, &usage); err != nil {
+		return 0, err
+	}
+	limit, used := usage.Key.QuotaLimit, usage.Key.QuotaUsed
+	if limit == nil || used == nil || *limit < 0 || *used < 0 || math.IsNaN(*limit) || math.IsNaN(*used) || math.IsInf(*limit, 0) || math.IsInf(*used, 0) {
+		return 0, common.NewMessage("Codex2API returned invalid quota data")
+	}
+	if usage.Key.Status != "active" && usage.Key.Status != "quota_exhausted" {
+		return 0, common.NewMessage("The Codex2API key is inactive or expired")
+	}
+	if *limit == 0 {
+		return 0, common.NewMessage("The Codex2API key has unlimited quota and no finite balance")
+	}
+	// Both values are USD amounts; total_used is lifetime usage, not this quota cycle.
+	balance := max(0, *limit-*used)
+	channel.UpdateBalance(balance)
+	return balance, nil
+}
+
 func updateChannelSub2APIBalance(channel *model.Channel) (float64, error) {
 	baseURL := channel.GetBaseURL()
 	if baseURL == "" {
@@ -661,6 +689,8 @@ func updateStandardChannelBalance(channel *model.Channel) (float64, error) {
 		return updateChannelMoonshotBalance(channel)
 	case constant.ChannelTypeSub2API:
 		return updateChannelSub2APIBalance(channel)
+	case constant.ChannelTypeCodex2API:
+		return updateChannelCodex2APIBalance(channel)
 	case constant.ChannelTypeNewAPI:
 		return updateChannelNewAPIBalance(channel)
 	default:

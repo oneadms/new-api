@@ -22,6 +22,7 @@ import { formatTimestampToDate } from '@/lib/format'
 import {
   CHANNEL_STATUS_CONFIG,
   CHANNEL_TYPES,
+  CHANNEL_TYPE_CODEX2API,
   MULTI_KEY_STATUS_CONFIG,
   RESPONSE_TIME_CONFIG,
   RESPONSE_TIME_THRESHOLDS,
@@ -53,6 +54,7 @@ export function getChannelTypeIcon(type: number): string {
     8: 'OpenAI', // Custom
     58: 'NewAPI', // Advanced Custom
     59: 'Sub2API', // Sub2API
+    [CHANNEL_TYPE_CODEX2API]: 'OpenAI',
     60: 'NewAPI', // New API
     62: 'Vllm', // vLLM
     63: 'SGLang', // SGLang

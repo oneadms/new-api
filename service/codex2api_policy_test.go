@@ -16,6 +16,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
@@ -28,6 +29,7 @@ const testCodex2APIPolicySecret = "0123456789abcdef0123456789abcdef-test"
 
 func testCodex2APIPolicyContext(t *testing.T, body string) (*gin.Context, *relaycommon.RelayInfo, *http.Request) {
 	t.Helper()
+	require.NoError(t, i18n.Init())
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -491,4 +493,94 @@ func TestBodySHA256UsesReplayReaderWithoutConsumingLiveBody(t *testing.T) {
 	remaining, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Equal(t, payload, string(remaining))
+}
+
+func TestCodex2APIWebSocketPolicyBindsFreshTurnsAndRejectsReplay(t *testing.T) {
+	setTestCodex2APIPolicyEnv(t, "http://127.0.0.1:18095", true)
+	first, info, _ := testCodex2APIPolicyContext(t, `{}`)
+	handshake := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18095/v1/responses", nil)
+	require.NoError(t, SignCodex2APIRequest(first, info, handshake))
+	policy := NewCodex2APIWebSocketPolicy(first)
+	require.NotNil(t, policy)
+	firstPayload, err := policy.BindRequest(first, []byte(`{"type":"response.create","event_id":"client-event","__newapi_policy_event_id":"forged"}`))
+	require.NoError(t, err)
+	var firstRequest map[string]any
+	require.NoError(t, common.Unmarshal(firstPayload, &firstRequest))
+	firstEventID, ok := firstRequest["__newapi_policy_event_id"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, firstEventID)
+	assert.NotEqual(t, "forged", firstEventID)
+	assert.Equal(t, "client-event", firstRequest["event_id"])
+	_, envelope := signedPolicyEnvelopeForTest(t, handshake, firstEventID)
+	frame := append([]byte(`{"type":"error","error":{"details":`), envelope...)
+	frame = append(frame, []byte(`}}`)...)
+	applied, stale := policy.ProcessEvent(first, frame)
+	assert.True(t, applied)
+	assert.False(t, stale)
+	assert.True(t, first.GetBool(policyViolationContextKey))
+
+	second, _, _ := testCodex2APIPolicyContext(t, `{}`)
+	_, err = policy.BindRequest(second, []byte(`{"type":"response.create"}`))
+	require.NoError(t, err)
+	applied, stale = policy.ProcessEvent(second, frame)
+	assert.False(t, applied)
+	assert.True(t, stale)
+	assert.False(t, second.GetBool(policyViolationContextKey))
+	secondState, ok := policyStateFromContext(second)
+	require.True(t, ok)
+	assert.NotEqual(t, firstEventID, secondState.ExpectedEventID)
+	_, secondEnvelope := signedPolicyEnvelopeForTest(t, handshake, secondState.ExpectedEventID)
+	for _, tc := range []struct {
+		name                   string
+		payload                []byte
+		wantApplied, wantStale bool
+	}{
+		{name: "tampered signature", payload: bytes.Replace(secondEnvelope, []byte(`"reason_code":"upstream_cyber_policy"`), []byte(`"reason_code":"forged"`), 1)},
+		{name: "unsigned error", payload: []byte(`{"type":"error","error":{"code":"cyber_policy"}}`)},
+		{name: "current signed event", payload: secondEnvelope, wantApplied: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			applied, stale := policy.ProcessEvent(second, tc.payload)
+			assert.Equal(t, tc.wantApplied, applied)
+			assert.Equal(t, tc.wantStale, stale)
+		})
+	}
+}
+
+func TestCodex2APIWebSocketPolicyRevalidatesBindingAndIdentity(t *testing.T) {
+	for _, mutation := range []string{"binding revoked", "secret rotated", "policy disabled", "identity disabled", "user changed", "token changed", "IP changed"} {
+		t.Run(mutation, func(t *testing.T) {
+			setTestCodex2APIPolicyEnv(t, "http://127.0.0.1:18095", true)
+			c, info, _ := testCodex2APIPolicyContext(t, `{}`)
+			handshake := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18095/v1/responses", nil)
+			require.NoError(t, SignCodex2APIRequest(c, info, handshake))
+			policy := NewCodex2APIWebSocketPolicy(c)
+			require.NotNil(t, policy)
+			switch mutation {
+			case "binding revoked":
+				t.Setenv("CODEX2API_POLICY_BINDINGS", "[]")
+			case "secret rotated":
+				bindings, err := common.Marshal([]Codex2APIPolicyBinding{{PlatformID: "primary-newapi", Target: "http://127.0.0.1:18095", CodexKeyFingerprint: Codex2APIKeyFingerprint(info.ApiKey), Secret: strings.Repeat("x", 32), Enabled: true}})
+				require.NoError(t, err)
+				t.Setenv("CODEX2API_POLICY_BINDINGS", string(bindings))
+			case "policy disabled":
+				t.Setenv("CODEX2API_POLICY_ENABLED", "false")
+			case "identity disabled":
+				t.Setenv("CODEX2API_POLICY_IDENTITY_FORWARD_ENABLED", "false")
+			case "user changed":
+				c.Set(string(constant.ContextKeyUserId), 43)
+			case "token changed":
+				c.Set("token_id", 1)
+			case "IP changed":
+				c.Request.RemoteAddr = "198.51.100.2:1234"
+			}
+			payload, err := policy.BindRequest(c, []byte(`{"type":"response.create"}`))
+			require.Error(t, err)
+			assert.Nil(t, payload)
+		})
+	}
+	var unbound *Codex2APIWebSocketPolicy
+	payload, err := unbound.BindRequest(nil, []byte(`{"type":"response.create","__newapi_policy_event_id":"forged"}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"response.create"}`, string(payload))
 }

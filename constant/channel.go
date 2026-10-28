@@ -1,5 +1,8 @@
 package constant
 
+// Fork-specific channels use a separate range to avoid colliding with upstream IDs.
+const ChannelTypeCodex2API = 1001
+
 const (
 	ChannelTypeUnknown        = 0
 	ChannelTypeOpenAI         = 1
@@ -142,6 +145,7 @@ func GetChannelBaseURL(channelType int) string {
 }
 
 var ChannelTypeNames = map[int]string{
+	ChannelTypeCodex2API:      "Codex2API",
 	ChannelTypeUnknown:        "Unknown",
 	ChannelTypeOpenAI:         "OpenAI",
 	ChannelTypeMidjourney:     "Midjourney",

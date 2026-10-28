@@ -94,7 +94,9 @@ func init() {
 	for _, aiModel := range openAIModels {
 		openAIModelsMap[aiModel.Id] = aiModel
 	}
-	channelId2Models = make(map[int][]string)
+	// This fork channel lives outside the upstream ID range and discovers all
+	// models from its configured gateway.
+	channelId2Models = map[int][]string{constant.ChannelTypeCodex2API: {}}
 	for i := 1; i <= constant.ChannelTypeDummy; i++ {
 		apiType, success := common.ChannelType2APIType(i)
 		if !success || apiType == constant.APITypeAIProxyLibrary {

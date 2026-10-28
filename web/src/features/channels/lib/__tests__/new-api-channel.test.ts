@@ -21,6 +21,7 @@ import { describe, expect, test } from 'vitest'
 import type { TaskPluginOption } from '../../api'
 import {
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_CODEX2API,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_OPTIONS,
@@ -256,5 +257,46 @@ describe('New API channel task plugin extensions', () => {
     expect(JSON.parse(openai.channel.setting ?? '{}')).not.toHaveProperty(
       'task_extend_plugin_keys'
     )
+  })
+})
+
+describe('Codex2API channel', () => {
+  test('offers the dedicated gateway with model discovery', () => {
+    expect(CHANNEL_TYPE_OPTIONS).toContainEqual({
+      value: CHANNEL_TYPE_CODEX2API,
+      label: 'Codex2API',
+    })
+    expect(MODEL_FETCHABLE_TYPES.has(CHANNEL_TYPE_CODEX2API)).toBe(true)
+    expect(getKeyPromptForType(CHANNEL_TYPE_CODEX2API)).toBe(
+      'Codex2API API Key'
+    )
+  })
+
+  test('requires a URL and preserves WebSocket and protocol settings on save', () => {
+    const form = {
+      ...newAPIForm(''),
+      type: CHANNEL_TYPE_CODEX2API,
+      allow_service_tier: true,
+      allow_speed: true,
+      responses_websocket_enabled: true,
+    }
+    expect(channelFormSchema.safeParse(form).success).toBe(false)
+    const parsed = channelFormSchema.parse({
+      ...form,
+      base_url: 'https://codex2api.example/',
+    })
+    const payload = transformFormDataToCreatePayload(parsed).channel
+    expect(payload).toMatchObject({
+      type: CHANNEL_TYPE_CODEX2API,
+      base_url: 'https://codex2api.example',
+      key: 'test-key',
+    })
+    expect(JSON.parse(payload.setting ?? '{}')).toMatchObject({
+      responses_websocket_enabled: true,
+    })
+    expect(JSON.parse(payload.settings ?? '{}')).toMatchObject({
+      allow_service_tier: true,
+      allow_speed: true,
+    })
   })
 })

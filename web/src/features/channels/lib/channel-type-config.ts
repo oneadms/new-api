@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   CHANNEL_TYPES,
+  CHANNEL_TYPE_CODEX2API,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
 } from '../constants'
@@ -158,6 +159,16 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       baseUrl: 'Fallback base URL',
       key: 'Used by route auth templates',
       models: 'Models exposed by this channel',
+    },
+  },
+  [CHANNEL_TYPE_CODEX2API]: {
+    id: CHANNEL_TYPE_CODEX2API,
+    name: CHANNEL_TYPES[CHANNEL_TYPE_CODEX2API],
+    icon: 'OpenAI',
+    hints: {
+      baseUrl: 'Codex2API server address, without /v1',
+      key: 'Codex2API API Key',
+      models: 'Models fetched from upstream /v1/models',
     },
   },
   59: {

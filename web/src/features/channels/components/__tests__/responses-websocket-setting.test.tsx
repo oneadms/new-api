@@ -23,7 +23,11 @@ import { assert, describe, expect, test } from 'vitest'
 
 import { Form } from '@/components/ui/form'
 
-import { CHANNEL_TYPE_NEW_API, CHANNEL_TYPE_SUB2API } from '../../constants'
+import {
+  CHANNEL_TYPE_CODEX2API,
+  CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_SUB2API,
+} from '../../constants'
 import { CHANNEL_TYPE_ADVANCED_CUSTOM } from '../../lib/advanced-custom'
 import {
   buildSettingJSON,
@@ -41,6 +45,7 @@ const supportedChannelTypes = [
   57,
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   CHANNEL_TYPE_SUB2API,
+  CHANNEL_TYPE_CODEX2API,
   CHANNEL_TYPE_NEW_API,
 ]
 

@@ -127,7 +127,7 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 			return false
 		}
 		switch ch.Type {
-		case constant.ChannelTypeOpenAI, constant.ChannelTypeCodex, constant.ChannelTypeSub2API, constant.ChannelTypeNewAPI:
+		case constant.ChannelTypeOpenAI, constant.ChannelTypeCodex, constant.ChannelTypeSub2API, constant.ChannelTypeNewAPI, constant.ChannelTypeCodex2API:
 			return true
 		case constant.ChannelTypeAdvancedCustom:
 			// The session forwards native Responses events without protocol

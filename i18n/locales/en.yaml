@@ -1,6 +1,7 @@
 # English translations
 
 # Errors returned to AI clients
+relay.codex2api_websocket_binding_invalid: "The Codex2API WebSocket identity binding has changed. Reconnect and try again."
 common.database_error: "Database error, please contact the administrator"
 auth.user_banned: "User has been banned"
 token.get_info_failed: "Failed to get token info, please try again later"

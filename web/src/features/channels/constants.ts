@@ -38,6 +38,9 @@ export const CHANNEL_TYPE_VLLM = 62
 
 export const CHANNEL_TYPE_SGLANG = 63
 
+// Keep fork channel IDs separate from upstream additions.
+export const CHANNEL_TYPE_CODEX2API = 1001
+
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
@@ -99,6 +102,7 @@ export const CHANNEL_TYPES = {
   61: 'Task Plugin',
   62: 'vLLM',
   63: 'SGLang',
+  [CHANNEL_TYPE_CODEX2API]: 'Codex2API',
 } as const
 
 export type ChannelProviderPresentation = {
@@ -176,6 +180,9 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
     badge: { labelKey: 'Flexible integration', tone: 'primary' },
   },
   59: { descriptionKey: 'Connect to model services through a Sub2API gateway' },
+  [CHANNEL_TYPE_CODEX2API]: {
+    descriptionKey: 'Connect to model services through a Codex2API gateway',
+  },
   60: {
     descriptionKey:
       'Connect to New API model services with support for multiple task plugins',
@@ -188,9 +195,58 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
 >
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
-  1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 61, 42, 34, 20,
-  4, 62, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 22, 21,
-  44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
+  1,
+  14,
+  24,
+  33,
+  43,
+  3,
+  41,
+  17,
+  45,
+  25,
+  26,
+  23,
+  48,
+  60,
+  58,
+  59,
+  CHANNEL_TYPE_CODEX2API,
+  61,
+  42,
+  34,
+  20,
+  4,
+  62,
+  40,
+  27,
+  15,
+  46,
+  18,
+  31,
+  35,
+  49,
+  19,
+  47,
+  37,
+  38,
+  39,
+  11,
+  8,
+  57,
+  22,
+  21,
+  44,
+  2,
+  5,
+  36,
+  50,
+  51,
+  52,
+  53,
+  54,
+  55,
+  56,
 ]
 
 export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
@@ -524,6 +580,7 @@ export const MODEL_FETCHABLE_TYPES = new Set([
   57,
   58,
   59,
+  CHANNEL_TYPE_CODEX2API,
   60,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
@@ -535,6 +592,7 @@ export const FIELD_PASSTHROUGH_TYPES = new Set([
   57,
   58,
   59,
+  CHANNEL_TYPE_CODEX2API,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
@@ -545,6 +603,7 @@ export const OPENAI_FIELD_PASSTHROUGH_TYPES = new Set([
   57,
   58,
   59,
+  CHANNEL_TYPE_CODEX2API,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
@@ -554,6 +613,7 @@ export const CLAUDE_FIELD_PASSTHROUGH_TYPES = new Set([
   14,
   58,
   59,
+  CHANNEL_TYPE_CODEX2API,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
@@ -569,6 +629,7 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
   51: 'Format: Access Key ID|Secret Access Key',
   57: 'Paste Codex OAuth JSON credential (access_token / refresh_token / account_id)',
   59: 'Enter API key for this channel',
+  [CHANNEL_TYPE_CODEX2API]: 'Codex2API API Key',
   60: 'Enter API key for this channel',
   62: 'vLLM API key, or EMPTY if authentication is disabled',
   63: 'SGLang API key, or EMPTY if authentication is disabled',

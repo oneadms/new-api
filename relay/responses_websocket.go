@@ -120,6 +120,7 @@ type responsesWSSession struct {
 	lockedKeyIndex  int
 	lockedContext   map[appconstant.ContextKey]any
 	lockedRoute     dto.AdvancedCustomRoute
+	codex2APIPolicy *service.Codex2APIWebSocketPolicy
 }
 
 func ResponsesWebSocketHelper(c *gin.Context, client *websocket.Conn, runner ResponsesWSRequestRunner) *types.NewAPIError {
@@ -288,6 +289,10 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 		if apiErr != nil {
 			return apiErr
 		}
+		payload, err := s.codex2APIPolicy.BindRequest(c, payload)
+		if err != nil {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
 		if err := s.writeTarget(websocket.TextMessage, payload); err != nil {
 			state.closeCode = websocket.CloseInternalServerErr
 			return types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
@@ -339,6 +344,11 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			}
 			if !s.setTarget(target) {
 				return types.NewError(context.Canceled, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+			}
+			s.codex2APIPolicy = service.NewCodex2APIWebSocketPolicy(c)
+			payload, err := s.codex2APIPolicy.BindRequest(c, payload)
+			if err != nil {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 			}
 			if err := s.writeTarget(websocket.TextMessage, payload); err != nil {
 				state.closeCode = websocket.CloseInternalServerErr
@@ -395,6 +405,16 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				return nil
 			}
 			info.SetFirstResponseTime()
+			applied, stale := s.codex2APIPolicy.ProcessEvent(c, incoming.body)
+			if stale {
+				continue
+			}
+			if applied {
+				user, err := appmodel.GetUserCache(c.GetInt(string(appconstant.ContextKeyUserId)))
+				if err != nil || user.Status != common.UserStatusEnabled || service.IsCodex2APIPolicyIPBlocked(c.ClientIP()) {
+					state.closeCode, state.closeReason = websocket.ClosePolicyViolation, "policy enforcement"
+				}
+			}
 			var event struct {
 				dto.ResponsesStreamResponse
 				StreamID string `json:"stream_id"`

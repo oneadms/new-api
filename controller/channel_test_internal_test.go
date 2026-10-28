@@ -136,6 +136,7 @@ func TestResponsesCompactChannelSupport(t *testing.T) {
 		{name: "Codex", channelType: constant.ChannelTypeCodex, apiType: constant.APITypeCodex, want: true},
 		{name: "Advanced Custom", channelType: constant.ChannelTypeAdvancedCustom, apiType: constant.APITypeAdvancedCustom, want: true},
 		{name: "Sub2API", channelType: constant.ChannelTypeSub2API, apiType: constant.APITypeSub2API, want: true},
+		{name: "Codex2API", channelType: constant.ChannelTypeCodex2API, apiType: constant.APITypeCodex2API, want: true},
 		{name: "New API", channelType: constant.ChannelTypeNewAPI, apiType: constant.APITypeNewAPI, want: true},
 		{name: "Anthropic", channelType: constant.ChannelTypeAnthropic, apiType: constant.APITypeAnthropic, want: false},
 	}
@@ -159,6 +160,7 @@ func TestMultiprotocolGatewayEndpointTypes(t *testing.T) {
 
 	assert.Equal(t, want, common.GetEndpointTypesByChannelType(constant.ChannelTypeNewAPI, "gpt-5"))
 	assert.Equal(t, want, common.GetEndpointTypesByChannelType(constant.ChannelTypeSub2API, "gpt-5"))
+	assert.Equal(t, want, common.GetEndpointTypesByChannelType(constant.ChannelTypeCodex2API, "gpt-5"))
 }
 
 func TestCopyChannelRejectsInvalidLegacyProxySettings(t *testing.T) {
@@ -492,4 +494,23 @@ func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "A channel test task is already running or queued")
+}
+
+func TestCodex2APIChannelRegistration(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeCodex2API, Key: "test-key"}
+	require.Error(t, validateChannel(channel, true))
+	channel.BaseURL = common.GetPointer("https://codex2api.example")
+	require.NoError(t, validateChannel(channel, true))
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/channel/models", nil)
+	DashboardListModels(c)
+	var response struct {
+		Success bool             `json:"success"`
+		Data    map[int][]string `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.True(t, response.Success)
+	assert.Contains(t, response.Data, constant.ChannelTypeCodex2API)
+	assert.Empty(t, response.Data[constant.ChannelTypeCodex2API], "models must be fetched from the configured gateway")
 }
